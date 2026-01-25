@@ -1,0 +1,23 @@
+{
+  "name": "omniscripta-app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Bobcat/omniscripta-app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Bobcat/omniscripta-app/issues"
+  },
+  "homepage": "https://github.com/Bobcat/omniscripta-app#readme",
+  "devDependencies": {
+    "esbuild": "^0.27.2"
+  }
+}
