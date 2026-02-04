@@ -9,64 +9,8 @@ export class TopicsView {
         this.topics = [];
     }
 
-    async load(srtUrl) {
-        if (!this.container) return;
-        this.container.innerHTML = '';
-        this.container.classList.add('hidden');
-
-        if (!srtUrl) return;
-
-        try {
-            // Strategy: 
-            // 1. We have ".../job_ID/whisperx/file.srt" (or something similar)
-            // 2. We want ".../job_ID/job.json" to find the original filename
-            // 3. We want ".../job_ID/result/orig_filename_topics_v1_merged.json"
-
-            // Step 1: Find job root. Assume structure ends in "/whisperx/..."
-            // If not, we fall back to simple replacement.
-            let jobRoot = null;
-            if (srtUrl.includes('/whisperx/')) {
-                jobRoot = srtUrl.split('/whisperx/')[0];
-            }
-
-            let topicsUrl = null;
-
-            if (jobRoot) {
-                // Fetch job.json
-                const jobRes = await fetch(`${jobRoot}/job.json`);
-                if (jobRes.ok) {
-                    const jobData = await jobRes.json();
-                    if (jobData && jobData.orig_filename) {
-                        // orig_filename = "myfile.mp3" -> basename = "myfile"
-                        // topics = "myfile_topics_v1_merged.json"
-                        // location = jobRoot + "/result/" + topics
-                        const base = jobData.orig_filename.substring(0, jobData.orig_filename.lastIndexOf('.')) || jobData.orig_filename;
-                        topicsUrl = `${jobRoot}/result/${base}_topics_v1_merged.json`;
-                    }
-                }
-            }
-
-            // Fallback if job.json strategy failed or structure didn't match
-            if (!topicsUrl) {
-                console.warn("Could not deduce topics path via job.json, trying fallback.");
-                topicsUrl = srtUrl.replace(/\.srt$/i, '_topics_v1_merged.json');
-            }
-
-            const res = await fetch(topicsUrl);
-            if (!res.ok) throw new Error(`Topics not found at ${topicsUrl}`);
-            const data = await res.json();
-
-            if (data && data.rows && Array.isArray(data.rows)) {
-                this.topics = data.rows;
-                this.render();
-                // Visibility is handled by render() checking topics length
-            }
-        } catch (e) {
-            console.warn("Could not load topics:", e);
-            // Ensure hidden if failed
-            this.container.classList.add('hidden');
-        }
-    }
+    // Old load() logic removed. Topics are now injected by server into SRT metadata and extracted by app.js.
+    // This component is now purely for rendering.
 
     render() {
         if (!this.container) return;
@@ -117,9 +61,53 @@ export class TopicsView {
                 if (this.onSeek) this.onSeek(sec);
             };
 
+            // Store parsed seconds for fast lookup
+            item.dataset.startSec = _srtTcToSeconds(row.start_time);
+            item.dataset.endSec = _srtTcToSeconds(row.end_time);
+
             list.appendChild(item);
         }
 
         this.container.appendChild(list);
+    }
+
+    setActiveTime(time) {
+        if (!this.container) return;
+        const items = this.container.getElementsByClassName('topic-item');
+        let activeFound = false;
+
+        for (const item of items) {
+            const start = parseFloat(item.dataset.startSec);
+            const end = parseFloat(item.dataset.endSec);
+
+            // Active if time is within range [start, end)
+            if (time >= start && time < end) {
+                if (!item.classList.contains('active')) {
+                    // Clear other actives? Or trust loop clears?
+                    // Safer to just clear all once at start or iterate all.
+                    // Iterating all is O(N) but N is small (topics).
+                    item.classList.add('active');
+                    this.scrollToItem(item);
+                }
+                activeFound = true;
+            } else {
+                item.classList.remove('active');
+            }
+        }
+    }
+
+    scrollToItem(el) {
+        if (!el || !this.container) return;
+
+        // Only scroll if out of view? Or always center? User asked for "meescrollen".
+        const c = this.container.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+
+        // Simple visibility check
+        const isVisible = (r.top >= c.top && r.bottom <= c.bottom);
+
+        if (!isVisible) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
     }
 }

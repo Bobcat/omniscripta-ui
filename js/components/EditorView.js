@@ -1,15 +1,13 @@
-<!DOCTYPE html>
 
-<html lang="en">
+import { mountEditor } from "../editor.js";
 
-<head>
-  <meta charset="utf-8" />
-  <meta content="width=device-width,initial-scale=1" name="viewport" />
-  <title>Transcript editor</title>
-  <link rel="stylesheet" href="css/style.css">
-</head>
+export class EditorView {
+    constructor(app) {
+        this.app = app;
+    }
 
-<body>
+    getHtml() {
+        return `
   <header>
     <div class="header-line header-line1">
       <div class="header-left">
@@ -299,7 +297,17 @@
       </div>
     </div>
   </div>
-  <script type="module" src="js/app.js"></script>
-</body>
+    `;
+    }
 
-</html>
+    mount(container, data) {
+        container.innerHTML = this.getHtml();
+
+        // Pass everything to the legacy mount function
+        // If jobId is present, we might want to tell the editor to load it?
+        // The current app.js checks URL params. 
+        // We should adapt app.js (editor.js) to accept params in options, OR mock the URL params.
+        // For now, let's pass data.
+        mountEditor(data);
+    }
+}

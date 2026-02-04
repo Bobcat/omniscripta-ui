@@ -1,5 +1,8 @@
-
 const SETTINGS_KEY = 'transcript_editor_settings_v1';
+
+export function getApiUrl(path) {
+    return path.startsWith('/') ? path : `/${path}`;
+}
 
 export function loadSettings() {
     const defaults = {
@@ -34,13 +37,13 @@ export function saveSettings(settings) {
 }
 
 export async function fetchJobStatus(jobId) {
-    const r = await fetch(`/api/demo/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+    const r = await fetch(getApiUrl(`/api/demo/jobs/${encodeURIComponent(jobId)}`), { cache: "no-store" });
     if (!r.ok) throw new Error(`Fetch job failed: ${r.status}`);
     return await r.json();
 }
 
 export async function fetchSrt(url) {
-    const r = await fetch(url, { cache: "no-store" });
+    const r = await fetch(getApiUrl(url), { cache: "no-store" });
     if (!r.ok) throw new Error(`fetch srt failed: ${r.status}`);
     return await r.text();
 }

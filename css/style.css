@@ -1762,6 +1762,17 @@
       background: var(--mode-active);
     }
 
+    .topic-item.active {
+      background: rgba(59, 130, 246, 0.08);
+      /* Light blue tint */
+      border-left: 3px solid var(--accent);
+    }
+
+    .topic-item.active .topic-title {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
     .topic-time {
       font-family: monospace;
       /* Consolas-like */
@@ -1863,55 +1874,496 @@
     }
 
     /* --- Responsive / Mobile --- */
-    @media (max-width: 768px) {
+    /* Only apply stacked layout if JS detected a mobile device */
+    body.mobile #docViewContainer {
+      flex-direction: column;
+    }
 
-      /* Stack Document and Topics vertically */
-      #docViewContainer {
-        flex-direction: column;
-      }
+    body.mobile #textView {
+      padding: 16px;
+      width: 100%;
+      order: 1;
+      /* Text first */
+    }
 
-      #textView {
-        padding: 16px;
-        width: 100%;
-        order: 1;
-        /* Text first */
-      }
+    body.mobile #topicsView {
+      width: 100%;
+      height: 18vh;
+      /* Shared height */
+      border-left: none;
+      border-top: 1px solid var(--border);
+      order: 2;
+    }
 
-      /* Topics below text */
-      #topicsView {
-        width: 100%;
-        height: 30vh;
-        /* Shared height */
-        border-left: none;
-        border-top: 1px solid var(--border);
-        order: 2;
-      }
+    body.mobile .tv-block {
+      display: block;
+      /* Stack vertically */
+      margin-bottom: 20px;
+      gap: 0;
+    }
 
-      /* Stack Timestamps/Speakers ABOVE text blocks */
-      .tv-block {
-        display: block;
-        /* Stack vertically */
-        margin-bottom: 20px;
-        gap: 0;
-      }
+    body.mobile .tv-meta {
+      width: 100%;
+      text-align: left;
+      margin-bottom: 4px;
+      display: flex;
+      flex-direction: row;
+      align-items: baseline;
+      gap: 10px;
+    }
 
-      .tv-meta {
-        width: 100%;
-        text-align: left;
-        margin-bottom: 4px;
-        display: flex;
-        flex-direction: row;
-        align-items: baseline;
-        gap: 10px;
-      }
+    body.mobile .tv-time {
+      display: inline;
+      font-size: 0.8rem;
+    }
 
-      .tv-time {
-        display: inline;
-        font-size: 0.8rem;
-      }
+    body.mobile .tv-speaker {
+      display: inline;
+      font-size: 0.9rem;
+    }
 
-      .tv-speaker {
-        display: inline;
-        font-size: 0.9rem;
-      }
+    /* --- Mobile / Desktop Utility Classes --- */
+    body.mobile .desktop-only {
+      display: none !important;
+    }
+
+    body.desktop .mobile-only {
+      display: none !important;
+    }
+
+    /* Additional cleanup for mobile review mode */
+    body.mobile .header-actions {
+      gap: 4px;
+      position: relative;
+      /* Anchor for dropdown */
+    }
+
+    /* Desktop: Flow normally */
+    body.desktop .header-file-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    /* Mobile: Dropdown Menu */
+    body.mobile .header-file-actions {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      border-radius: 6px;
+      flex-direction: column;
+      padding: 8px;
+      min-width: 200px;
+      z-index: 1000;
+      margin-top: 8px;
+    }
+
+    body.mobile .header-file-actions.show-menu {
+      display: flex;
+    }
+
+    body.mobile .header-file-actions button,
+    body.mobile .header-file-actions label {
+      width: 100%;
+      text-align: left;
+      margin-bottom: 4px;
+      justify-content: flex-start;
+    }
+
+
+    /* --- Custom Audio Player --- */
+    #customPlayer {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .custom-player-wrapper {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      gap: 12px;
+      padding: 4px 8px;
+      box-sizing: border-box;
+    }
+
+    .cp-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 50%;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .cp-btn:hover {
+      background: rgba(0, 0, 0, 0.05);
+    }
+
+    .cp-time-current,
+    .cp-time-total {
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: var(--muted);
+      min-width: 45px;
+      text-align: center;
+    }
+
+    .cp-timeline-wrapper {
+      flex: 1;
+      position: relative;
+      height: 32px;
+      display: flex;
+      align-items: center;
+    }
+
+    /* Range Input Styling */
+    .cp-timeline {
+      -webkit-appearance: none;
+      appearance: none;
+      /* Standard property */
+      width: 100%;
+      height: 4px;
+      background: #e0e0e0;
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* 3. The input on top (transparent, for interaction) */
+    .cp-timeline {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+      position: relative;
+      z-index: 3;
+      margin: 0;
+      /* Ensure track doesn't show default white on drag in some browsers */
+      box-shadow: none;
+      border: none;
+    }
+
+    /* Chrome/Safari Overlay Track Fix */
+    .cp-timeline::-webkit-slider-runnable-track {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+
+    /* Thumb (Invisible but clickable) */
+    .cp-timeline::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 16px;
+      width: 16px;
+      border-radius: 50%;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      cursor: pointer;
+      margin-top: 0;
+    }
+
+    /* Firefox */
+    .cp-timeline::-moz-range-track {
+      background: transparent;
+      border: none;
+    }
+
+    .cp-timeline::-moz-range-thumb {
+      height: 16px;
+      width: 16px;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      cursor: pointer;
+    }
+
+    /* The filled progress bar - Darker/Accent color */
+    .cp-progress-bar {
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      height: 6px;
+      /* Slightly thicker */
+      background: var(--primary);
+      /* Stronger color */
+      width: 0%;
+      border-radius: 3px;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    /* The background track */
+    .cp-track-bg {
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 100%;
+      height: 6px;
+      background: #e2e8f0;
+      /* Lighter background */
+      border-radius: 3px;
+      z-index: 1;
+    }
+
+    /* --- Mobile Sticky Player Logic --- */
+    body.mobile #player-container {
+      position: fixed !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      width: 100% !important;
+      z-index: 9999 !important;
+      /* Force on top */
+      border-top: 1px solid var(--border);
+      background: var(--panel);
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+      display: flex !important;
+      /* Ensure flex layout is kept */
+    }
+
+    /* Ensure content is not hidden behind player */
+    body.mobile #docViewContainer {
+      padding-bottom: 80px;
+      /* Space for player */
+      height: 100dvh;
+      /* Use dynamic viewport height */
+      box-sizing: border-box;
+      overflow-y: auto;
+      /* Ensure scrolling happens here */
+    }
+
+    body.mobile #textView {
+      /* Add padding to bottom of scrollable text area */
+      padding-bottom: 100px;
+    }
+
+    /* Fix indentation of timestamp/speaker/text on mobile */
+    /* Fix indentation of timestamp/speaker/text on mobile */
+    /* Fix indentation of timestamp/speaker/text on mobile */
+    body.mobile .tv-meta,
+    body.mobile .tv-block,
+    body.mobile .tv-text {
+      padding-left: 0 !important;
+      margin-left: 0 !important;
+    }
+
+    /* Mobile Header Info (in-flow) */
+    .mobile-header-info {
+      display: block;
+      padding: 10px 12px;
+      margin-bottom: 0px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-align: center;
+      background: #fcfcfc;
+      flex-shrink: 0;
+    }
+
+    /* Floating Menu Button */
+    #floatingMobileMenuBtn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: fixed;
+      top: 8px;
+      right: 12px;
+      z-index: 10001;
+      /* Above e'rything */
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 1.4rem;
+      width: 40px;
+      height: 40px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      padding: 0;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    /* Hide main header on mobile (Aggressive) */
+    body.mobile>header,
+    body.mobile header {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      overflow: hidden !important;
+    }
+
+    /* --- Mobile Relative Sizing (60/40) --- */
+    body.mobile #docViewContainer {
+      flex-direction: column !important;
+      /* Stack vertically */
+    }
+
+    body.mobile #textView {
+      /* 60% relative height */
+      flex: 6 1 0% !important;
+      overflow-y: auto !important;
+      padding-bottom: 20px !important;
+      min-height: 0;
+      /* Fix indentation */
+      padding-left: 0 !important;
+      margin-left: 0 !important;
+      padding-right: 0 !important;
+    }
+
+    /* Floating Menu Button */
+    #floatingMobileMenuBtn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: fixed;
+      top: 8px;
+      right: 12px;
+      z-index: 10001;
+      /* Above e'rything */
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 1.4rem;
+      width: 40px;
+      height: 40px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      padding: 0;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    /* Hide main header on mobile (Aggressive) */
+    body.mobile>header,
+    body.mobile header {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      overflow: hidden !important;
+    }
+
+    /* --- Mobile Relative Sizing (60/40) --- */
+    body.mobile #docViewContainer {
+      flex-direction: column !important;
+      /* Stack vertically */
+    }
+
+
+
+    body.mobile #textView {
+      /* 60% relative height */
+      flex: 6 1 0% !important;
+      overflow-y: auto !important;
+      padding-bottom: 20px !important;
+      min-height: 0;
+      /* Fix indentation - Give some breathing room */
+      padding-left: 10px !important;
+      margin-left: 0 !important;
+      padding-right: 10px !important;
+      padding-top: 10px;
+    }
+
+    /* Fix Metadata alignment on mobile */
+    body.mobile .tv-time {
+      width: auto !important;
+      text-align: left !important;
+      padding-right: 8px !important;
+      /* Small gap before speaker */
+      flex: 0 0 auto !important;
+    }
+
+    body.mobile .tv-speaker {
+      width: auto !important;
+      max-width: none !important;
+      /* Allow full name */
+    }
+
+    body.mobile #topicsView {
+      /* 40% relative height */
+      flex: 4 1 0% !important;
+      width: 100% !important;
+      /* Full width */
+      border-left: none !important;
+      border-top: 1px solid var(--border) !important;
+      min-height: 0 !important;
+      /* Allow shrinking */
+      padding-bottom: 100px;
+      overflow-y: auto !important;
+      display: block !important;
+    }
+
+
+
+    /* --- Mobile Player Optimization --- */
+    body.mobile .cp-speed {
+      display: none !important;
+      /* Remove speed selector to save space */
+    }
+
+    body.mobile .custom-player-wrapper {
+      gap: 6px;
+      /* Tighter gap */
+      padding: 0 4px;
+    }
+
+    body.mobile .cp-play {
+      margin-right: 0;
+    }
+
+    /* Ensure progress bar expands */
+    body.mobile .cp-timeline-wrapper {
+      flex: 1 1 auto;
+      margin: 0 4px;
+    }
+
+    /* Topics View Height Increase for comfort */
+    body.mobile #topicsView {
+      /* Approximate height for 1 comfortable item + margins */
+      min-height: 80px;
+    }
+
+
+    .cp-speed {
+      font-family: inherit;
+      font-size: 0.75rem;
+      border-radius: 4px;
+      padding: 2px 2px;
+      /* Very tight padding */
+      border: 1px solid var(--border);
+      background: var(--bg);
+      cursor: pointer;
+      margin-left: 8px;
+      width: auto;
+      /* Browser specific hacks to reduce width */
+      text-align: center;
+      text-align-last: center;
+    }
+
+    #mobileMenuBtn {
+      font-size: 1.2rem;
+      padding: 4px 10px;
+      background: none;
+      border: 1px solid var(--border);
+    }
+
+    .hidden {
+      display: none !important;
     }
