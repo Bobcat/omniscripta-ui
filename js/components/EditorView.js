@@ -1,13 +1,13 @@
 
-import { mountEditor } from "../editor.js";
+import { mountEditor, unmountEditor } from "../editor.js";
 
 export class EditorView {
-    constructor(app) {
-        this.app = app;
-    }
+  constructor(app) {
+    this.app = app;
+  }
 
-    getHtml() {
-        return `
+  getHtml() {
+    return `
   <header>
     <div class="header-line header-line1">
       <div class="header-left">
@@ -298,16 +298,17 @@ export class EditorView {
     </div>
   </div>
     `;
-    }
+  }
 
-    mount(container, data) {
-        container.innerHTML = this.getHtml();
+  mount(container, data) {
+    container.innerHTML = this.getHtml();
+    mountEditor({
+      ...data,
+      updateProject: (id, payload) => this.app.projectService.updateProject(id, payload)
+    });
+  }
 
-        // Pass everything to the legacy mount function
-        // If jobId is present, we might want to tell the editor to load it?
-        // The current app.js checks URL params. 
-        // We should adapt app.js (editor.js) to accept params in options, OR mock the URL params.
-        // For now, let's pass data.
-        mountEditor(data);
-    }
+  unmount() {
+    return unmountEditor();
+  }
 }

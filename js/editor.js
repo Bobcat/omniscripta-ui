@@ -6,7 +6,7 @@ import { AudioPlayer } from "./components/AudioPlayer.js";
 // ... imports ...
 export function mountEditor(options = {}) {
   // Capture options if needed
-  const { jobId, audioUrl, srtUrlPreview } = options;
+  const { jobId, audioUrl, srtUrlPreview, startTime } = options;
 
   const transcriptInput = document.getElementById('transcriptInput');
 
@@ -80,7 +80,9 @@ export function mountEditor(options = {}) {
   const modeSegmentsBtn = document.getElementById('modeSegmentsBtn');
   const modeTextBtn = document.getElementById('modeTextBtn');
 
-  let editorMode = document.body.classList.contains('mobile') ? 'text' : 'segments'; // 'segments' | 'text'
+  let editorMode = (options.lastViewMode === 'text' || options.lastViewMode === 'segments')
+    ? options.lastViewMode
+    : (document.body.classList.contains('mobile') ? 'text' : 'segments');
 
   // Component Instances
   const textView = new TextView({
@@ -92,7 +94,7 @@ export function mountEditor(options = {}) {
         if (idx >= 0) {
           // preserveScroll=false (default?) or true? We want to jump segments view too?
           // Actually old logic was: player.currentTime = seg.start; setActiveSegment...
-          setActiveSegment(idx, 'smooth', 'center', true); // Force scroll in segments view
+          setActiveSegment(idx, 'auto', 'center', true); // Instant jump on click
           player.currentTime = segments[idx].start;
         }
       }
@@ -117,8 +119,7 @@ export function mountEditor(options = {}) {
         if (seg) {
           const idx = segments.indexOf(seg);
           if (idx >= 0) {
-            currentSegmentIndex = idx;
-            textView.setActive(seg.id, 'smooth', true);
+            setActiveSegment(idx, 'smooth', 'center', true);
           }
         }
       }
@@ -130,6 +131,10 @@ export function mountEditor(options = {}) {
     audioElement: player,
     container: document.getElementById('customPlayer')
   });
+
+  if (startTime && typeof startTime === 'number') {
+    player.currentTime = startTime;
+  }
 
   // Sync Topics View on timeupdate
   player.addEventListener('timeupdate', () => {
@@ -1387,6 +1392,13 @@ export function mountEditor(options = {}) {
   player.addEventListener('play', () => {
     try { clampToLoopStartIfNeeded(); } catch { }
     try { snapToVisibleIfNeeded(); } catch { }
+
+    // Ensure active segment is in view (e.g. if user scrolled away)
+    if (currentSegmentIndex >= 0) {
+      // Use 'auto' to snap instantly if out of view, avoiding slow scrolls
+      setActiveSegment(currentSegmentIndex, 'auto', 'center');
+    }
+
     if (!_playRaf) _playRaf = requestAnimationFrame(playbackLoop);
   });
   player.addEventListener('pause', () => {
@@ -2250,6 +2262,10 @@ export function mountEditor(options = {}) {
           try {
             const idx2 = findIndexById(targetId);
             if (idx2 >= 0) setActiveSegment(idx2, 'auto', 'center');
+            const seg = segments[idx2];
+            if (seg && topicsView && typeof topicsView.setActiveTime === 'function') {
+              try { topicsView.setActiveTime(seg.start, true, 'auto'); } catch { }
+            }
           } catch { }
         }, 0);
       }
@@ -2842,22 +2858,46 @@ export function mountEditor(options = {}) {
     const rows = segmentsDiv.querySelectorAll('.segment');
     if (!rows.length || index < 0 || index >= rows.length) return;
 
+    // Smart Scroll: Force 'auto' (instant) if jumping > 2 minutes (120s)
+    let behavior = scrollBehavior;
+    try {
+      if (index >= 0 && segments[index]) {
+        const targetTime = segments[index].start;
+        let currentTime = 0;
+        // Use currentSegmentIndex to find previous time
+        if (currentSegmentIndex >= 0 && segments[currentSegmentIndex]) {
+          currentTime = segments[currentSegmentIndex].start;
+        }
+        // If starting from scratch (-1) assume 0. 
+        // This handles the "Resume Project" case (jumping from 0 to 15:00)
+
+        if (Math.abs(targetTime - currentTime) > 120) {
+          behavior = 'auto';
+        }
+      }
+    } catch (e) { }
+
     rows.forEach((el, idx) => el.classList.toggle('active', idx === index));
     currentSegmentIndex = index;
 
 
     // Mirror active highlight into Text View (if rendered)
-    // Mirror active highlight into Text View (if rendered)
-    try { textView.setActive(segments[index].id, scrollBehavior, forceScroll); } catch { }
-    // Only scroll if the active row is outside the visible area (prevents "trillen" during undo/redo)
-    if (scrollBehavior !== null) {
+    try { textView.setActive(segments[index].id, behavior, forceScroll); } catch { }
+
+    // Mirror to Topics View as well (so it jumps if we jump)
+    if (segments[index]) {
+      try { topicsView.setActiveTime(segments[index].start, true, behavior); } catch { }
+    }
+
+    // Only scroll if the active row is outside the visible area
+    if (behavior !== null) {
       const row = rows[index];
       const c = segmentsDiv.getBoundingClientRect();
       const r = row.getBoundingClientRect();
       const pad = 8;
       const inView = (r.top >= c.top + pad) && (r.bottom <= c.bottom - pad);
       if (forceScroll || !inView) {
-        row.scrollIntoView({ block, behavior: scrollBehavior || 'auto' });
+        row.scrollIntoView({ block, behavior: behavior || 'auto' });
       }
     }
   }
@@ -3402,19 +3442,30 @@ export function mountEditor(options = {}) {
     if (docContainer) docContainer.classList.toggle('hidden', editorMode !== 'text');
     syncModeButtons();
 
+    // Save mode to project data if active
+    if (options.jobId && typeof options.updateProject === 'function') {
+      try { options.updateProject(options.jobId, { lastViewMode: editorMode }); } catch (e) { }
+    }
+
     const cur = segments[currentSegmentIndex] || null;
 
     if (editorMode === 'text') {
       renderTextView();
       if (cur) {
-        // Ensure active segment is scrolled into view after mode switch
-        requestAnimationFrame(() => setTextViewActive(cur.id, 'smooth', true));
+        // Ensure active segment is scrolled into view (instant/auto to avoid slow scroll on switch/load)
+        requestAnimationFrame(() => setTextViewActive(cur.id, 'auto', true));
+      }
+      // Also sync topics view
+      if (topicsView && typeof topicsView.setActiveTime === 'function') {
+        try { topicsView.setActiveTime(player.currentTime, true, 'auto'); } catch { }
       }
     } else {
       if (cur) {
-        // Ensure active segment row is scrolled into view after mode switch
-        requestAnimationFrame(() => setActiveSegment(currentSegmentIndex, 'smooth', 'center', true));
+        // Ensure active segment row is scrolled into view (instant/auto)
+        requestAnimationFrame(() => setActiveSegment(currentSegmentIndex, 'auto', 'center', true));
       }
+      // Recalculate heights (in case they were rendered while hidden)
+      requestAnimationFrame(() => updateTextareaSizing());
     }
   }
 
@@ -4793,7 +4844,7 @@ Valid range: ${secondsToTimecodeWhole(minInt)} — ${secondsToTimecodeWhole(maxI
     enforceTiming({ sort: false });
   }
 
-  async function autoloadFromQueryParams() {
+  async function autoloadFromQueryParams(startTime = null) {
     try {
       const params = new URLSearchParams(window.location.search);
 
@@ -4866,6 +4917,16 @@ Valid range: ${secondsToTimecodeWhole(minInt)} — ${secondsToTimecodeWhole(maxI
         buildSegmentsFromSrtText(srtText);
         loadDoneFromStorage();
         renderSegments();
+        // Initial sync to saved startTime (if provided)
+        if (typeof startTime === 'number' && Number.isFinite(startTime)) {
+          setTimeout(() => {
+            const idx = findSegmentIndexAtTime(startTime);
+            if (idx >= 0) setActiveSegment(idx, 'auto', 'center', true); // Use 'auto' for instant jump on load
+            if (topicsView && typeof topicsView.setActiveTime === 'function') {
+              try { topicsView.setActiveTime(startTime, true, 'auto'); } catch { }
+            }
+          }, 100);
+        }
         updateDonePill();
         setCleanNow();
 
@@ -4900,9 +4961,10 @@ Valid range: ${secondsToTimecodeWhole(minInt)} — ${secondsToTimecodeWhole(maxI
         sb.title = "Download .srt (Browser mode)";
       }
     }
-    autoloadFromQueryParams();
+    autoloadFromQueryParams(startTime);
     // Ensure correct initial view (e.g. text mode for mobile)
     setEditorMode(editorMode);
+
   }, 0);
 
 
@@ -4927,5 +4989,18 @@ Valid range: ${secondsToTimecodeWhole(minInt)} — ${secondsToTimecodeWhole(maxI
     headerFileActions.addEventListener('click', () => {
       headerFileActions.classList.remove('show-menu');
     });
+    // ... (Bottom of file) ...
   }
+}
+
+export function unmountEditor() {
+  const player = document.getElementById('player');
+  let currentTime = 0;
+  if (player) {
+    currentTime = player.currentTime; // Capture FIRST
+    player.pause();
+    player.removeAttribute('src'); // Stop buffering/playback
+    player.load(); // Force reset
+  }
+  return { currentTime };
 }

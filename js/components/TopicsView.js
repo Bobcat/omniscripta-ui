@@ -71,7 +71,7 @@ export class TopicsView {
         this.container.appendChild(list);
     }
 
-    setActiveTime(time) {
+    setActiveTime(time, forceScroll = false, behavior = 'smooth') {
         if (!this.container) return;
         const items = this.container.getElementsByClassName('topic-item');
         let activeFound = false;
@@ -82,12 +82,10 @@ export class TopicsView {
 
             // Active if time is within range [start, end)
             if (time >= start && time < end) {
-                if (!item.classList.contains('active')) {
-                    // Clear other actives? Or trust loop clears?
-                    // Safer to just clear all once at start or iterate all.
-                    // Iterating all is O(N) but N is small (topics).
+                const wasActive = item.classList.contains('active');
+                if (!wasActive || forceScroll) {
                     item.classList.add('active');
-                    this.scrollToItem(item);
+                    this.scrollToItem(item, behavior);
                 }
                 activeFound = true;
             } else {
@@ -96,18 +94,8 @@ export class TopicsView {
         }
     }
 
-    scrollToItem(el) {
+    scrollToItem(el, behavior = 'smooth') {
         if (!el || !this.container) return;
-
-        // Only scroll if out of view? Or always center? User asked for "meescrollen".
-        const c = this.container.getBoundingClientRect();
-        const r = el.getBoundingClientRect();
-
-        // Simple visibility check
-        const isVisible = (r.top >= c.top && r.bottom <= c.bottom);
-
-        if (!isVisible) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
+        el.scrollIntoView({ behavior: behavior, block: 'center' });
     }
 }

@@ -1,13 +1,16 @@
 import { getApiUrl } from "../api.js";
+import { ProjectService } from "../services/ProjectService.js";
 
 export class UploadView {
   constructor(app) {
     this.app = app;
+    this.projectService = new ProjectService();
   }
 
   getHtml() {
     return `
-      <div class="wrap upload-wrap">
+      <div class="upload-wrap">
+        <div class="wrap">
         <div class="top">
           <div class="dot" aria-hidden="true"></div>
           <div class="brand">123transcribe</div>
@@ -75,6 +78,8 @@ export class UploadView {
             <div class="line" id="stateline"></div>
           </div>
         </div>
+        </div>
+      </div>
       </div>
     `;
   }
@@ -85,6 +90,10 @@ export class UploadView {
   }
 
   initLogic() {
+    // We need to define restoreState and other functions before calling them, 
+    // but they are defined inside this method in the current structure.
+    // So we will call restoreState() at the END of this method.
+
     const fileEl = document.createElement('input');
     fileEl.type = 'file';
     fileEl.accept = 'audio/*,.mp3,.wav,.m4a,.flac,.ogg,.opus';
@@ -100,8 +109,33 @@ export class UploadView {
     const statelineEl = document.getElementById('stateline');
     const filelineEl = document.getElementById('fileline');
 
-    let pollTimer = null;
+    // Clear any existing poller from previous mounts
+    if (this.pollTimer) {
+      clearTimeout(this.pollTimer);
+      this.pollTimer = null;
+    }
+
     let lastProgress = 0;
+
+    // --- State Persistence Logic ---
+    const restoreState = () => {
+      const job = this.app.state.activeJob;
+      if (job && job.status !== 'done' && job.status !== 'error') {
+        // Restore UI
+        showProgress();
+        setFilename(job.filename);
+        chooseBtn.disabled = true;
+        chooseBtn.textContent = (job.status === 'queued' || job.status === 'upload') ? "Uploading..." : "Transcribing...";
+
+        lastProgress = job.progress || 0;
+        setProgress(lastProgress);
+
+        // Resume polling if not already
+        if (!this.pollTimer) {
+          poll(job.id);
+        }
+      }
+    };
 
     const clamp01 = (x) => {
       if (typeof x !== 'number' || !isFinite(x)) return 0;
@@ -131,7 +165,7 @@ export class UploadView {
     };
 
     const stopPolling = () => {
-      if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+      if (this.pollTimer) { clearTimeout(this.pollTimer); this.pollTimer = null; }
     };
 
     // NOTE: Instead of redirect, we signal the app to switch views
@@ -142,6 +176,9 @@ export class UploadView {
 
       // Use App's navigation
       setTimeout(() => {
+        // Save project to history/sidebar
+        // We use a generic name first, or the file name if we have it in scope. 
+        // Ideally we pass the file name to onJobReady or store it in class
         this.app.navigateTo('editor', { jobId });
       }, 250);
     };
@@ -162,6 +199,15 @@ export class UploadView {
 
         setLine(st.state, st.phase, st.message);
 
+        // Update Global State
+        this.app.state.activeJob = {
+          id: jobId,
+          filename: this.currentFilename || (this.app.state.activeJob ? this.app.state.activeJob.filename : "Audio"),
+          progress: p,
+          status: st.state
+        };
+        this.app.refreshProjects(); // Trigger sidebar update to gray out item
+
         if (st.state === "done") {
           onJobReady(jobId);
           return;
@@ -177,7 +223,7 @@ export class UploadView {
         setLine("error", "poll", e && e.message ? e.message : String(e));
       }
 
-      pollTimer = setTimeout(() => poll(jobId), 900);
+      this.pollTimer = setTimeout(() => poll(jobId), 900);
     };
 
     const uploadWithProgress = (file, fields) => {
@@ -227,6 +273,7 @@ export class UploadView {
       stopPolling();
       showProgress();
       setFilename(f.name);
+      this.currentFilename = f.name; // Store for later usage
 
       chooseBtn.disabled = true;
       chooseBtn.textContent = "Uploading…";
@@ -244,6 +291,11 @@ export class UploadView {
         const jobId = res.job_id;
         chooseBtn.textContent = "Transcribing…";
         setLine("queued", "start", "Starting transcription…");
+
+        // Save project immediately so it appears in sidebar
+        this.projectService.addProject(jobId, this.currentFilename || "Audio Upload");
+        this.app.refreshProjects(); // Notify app to update sidebar
+
         poll(jobId);
       } catch (e) {
         setProgress(0);
@@ -254,5 +306,7 @@ export class UploadView {
         fileEl.value = "";
       }
     });
+
+    restoreState(); // Restore state if returning to view
   }
 }
