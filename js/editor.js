@@ -3483,6 +3483,99 @@ export function mountEditor(options = {}) {
   if (modeTextBtn) modeTextBtn.addEventListener('click', () => setEditorMode('text'));
 
 
+  // === Mobile Doc-View Splitter (textView / topicsView) ===
+  const SPLIT_STORAGE_KEY = 'omniscripta_tv_split_ratio';
+  const SPLIT_MIN = 0.15;  // minimum 15% for either panel
+  const SPLIT_MAX = 0.85;
+
+  function initDocViewSplitter() {
+    const splitter = document.getElementById('docViewSplitter');
+    const docContainer = document.getElementById('docViewContainer');
+    const textViewEl = document.getElementById('textView');
+    const topicsEl = document.getElementById('topicsView');
+    if (!splitter || !docContainer) return;
+
+    // Restore saved ratio
+    try {
+      const saved = localStorage.getItem(SPLIT_STORAGE_KEY);
+      if (saved) {
+        const r = parseFloat(saved);
+        if (Number.isFinite(r) && r >= SPLIT_MIN && r <= SPLIT_MAX) {
+          docContainer.style.setProperty('--tv-split-ratio', r);
+        }
+      }
+    } catch { }
+
+    let dragging = false;
+    let startY = 0;
+    let startRatio = 0;
+
+    splitter.addEventListener('pointerdown', (e) => {
+      // Only primary pointer (finger / left mouse button)
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      dragging = true;
+      startY = e.clientY;
+      // Read current ratio
+      const cur = getComputedStyle(docContainer).getPropertyValue('--tv-split-ratio');
+      startRatio = parseFloat(cur) || 0.6;
+
+      splitter.setPointerCapture(e.pointerId);
+      splitter.classList.add('dragging');
+
+      // Prevent child panels from capturing scroll events during drag
+      if (textViewEl) textViewEl.style.pointerEvents = 'none';
+      if (topicsEl) topicsEl.style.pointerEvents = 'none';
+    });
+
+    splitter.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+
+      const rect = docContainer.getBoundingClientRect();
+      const usableHeight = rect.height - (splitter.offsetHeight || 12);
+      if (usableHeight < 1) return;
+
+      // Delta pixels from where we started → convert to ratio change
+      const deltaY = e.clientY - startY;
+      let ratio = startRatio + (deltaY / usableHeight);
+
+      // Clamp
+      ratio = Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, ratio));
+
+      docContainer.style.setProperty('--tv-split-ratio', ratio);
+    });
+
+    const endDrag = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      splitter.classList.remove('dragging');
+
+      // Re-enable child panel interactions
+      if (textViewEl) textViewEl.style.pointerEvents = '';
+      if (topicsEl) topicsEl.style.pointerEvents = '';
+
+      // Persist ratio
+      try {
+        const current = getComputedStyle(docContainer).getPropertyValue('--tv-split-ratio');
+        const val = parseFloat(current);
+        if (Number.isFinite(val)) {
+          localStorage.setItem(SPLIT_STORAGE_KEY, val.toFixed(3));
+        }
+      } catch { }
+    };
+
+    splitter.addEventListener('pointerup', endDrag);
+    splitter.addEventListener('pointercancel', endDrag);
+    splitter.addEventListener('lostpointercapture', endDrag);
+  }
+
+  // Initialize if we're on mobile
+  if (document.body.classList.contains('mobile')) {
+    initDocViewSplitter();
+  }
 
 
   function askForSplitTimeWhole(seg, opts = {}) {
@@ -4004,11 +4097,15 @@ Valid range: ${secondsToTimecodeWhole(minInt)} — ${secondsToTimecodeWhole(maxI
       topicsView.topics = meta.topics;
       topicsView.render();
       if (topicsView.container) topicsView.container.classList.remove('hidden');
+      const _sp1 = document.getElementById('docViewSplitter');
+      if (_sp1) _sp1.classList.remove('hidden');
     } else {
       // Clear topics if none found in this file
       topicsView.topics = [];
       topicsView.render();
       if (topicsView.container) topicsView.container.classList.add('hidden');
+      const _sp2 = document.getElementById('docViewSplitter');
+      if (_sp2) _sp2.classList.add('hidden');
     }
 
     // After loading a transcript from disk/network, default the active highlight to the first segment
@@ -4918,12 +5015,16 @@ Valid range: ${secondsToTimecodeWhole(minInt)} — ${secondsToTimecodeWhole(maxI
           topicsView.topics = meta.topics;
           topicsView.render();
           if (topicsView.container) topicsView.container.classList.remove('hidden');
+          const _sp3 = document.getElementById('docViewSplitter');
+          if (_sp3) _sp3.classList.remove('hidden');
         } else {
           // Try legacy separate load if embedded missing (optional fallback, likely unneeded now)
           // For now, assume server injection keeps it simple.
           topicsView.topics = [];
           topicsView.render();
           if (topicsView.container) topicsView.container.classList.add('hidden');
+          const _sp4 = document.getElementById('docViewSplitter');
+          if (_sp4) _sp4.classList.add('hidden');
         }
       }
     } catch (e) {

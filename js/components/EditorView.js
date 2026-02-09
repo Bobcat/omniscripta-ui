@@ -69,6 +69,9 @@ export class EditorView {
     <div id="segments" tabindex="-1"></div>
     <div id="docViewContainer" class="hidden">
       <div aria-label="Text view" id="textView" tabindex="-1"></div>
+      <div id="docViewSplitter" class="doc-view-splitter mobile-only hidden" aria-label="Resize panels" role="separator">
+        <div class="doc-view-splitter-grip"></div>
+      </div>
       <div aria-label="Topics view" class="hidden" id="topicsView"></div>
     </div>
 
