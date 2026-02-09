@@ -18,26 +18,8 @@ export function mountEditor(options = {}) {
   let chosenTranscriptName = null;
   let chosenAudioName = null;
 
-  // Mobile Detection
-  function detectDeviceType() {
-    const isTouch = (navigator.maxTouchPoints > 0) || ("ontouchstart" in window);
-    // Simple heuristic: if it has touch AND is smallish screen OR user agent says Mobile/Android/iPhone
-    // But user wants "Robust JS detection (User Agent + Touch + Pointer)"
-    const ua = navigator.userAgent;
-    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile/i.test(ua);
-
-    // Specific check for iPad on iOS 13+ (macintosh UA but touch points)
-    const isIPad = /Macintosh/i.test(ua) && isTouch;
-
-    if (isMobileUA || isIPad) {
-      document.body.classList.add('mobile');
-      document.body.classList.remove('desktop');
-    } else {
-      document.body.classList.add('desktop');
-      document.body.classList.remove('mobile');
-    }
-  }
-  detectDeviceType();
+  // Mobile Detection moved to App.js
+  // We rely on document.body.classList having 'mobile' or 'desktop' set by App.detectDeviceType()
 
   function updateFileSummaryLabel() {
     if (!fileSummaryEl) return;

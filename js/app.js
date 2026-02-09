@@ -27,6 +27,7 @@ class App {
 
     init() {
         this.bindEvents();
+        this.detectDeviceType(); // Set global mobile/desktop class
         this.checkDevice();
         this.renderProjects(); // Initial render
         this.render();
@@ -72,6 +73,7 @@ class App {
 
         // Window resize
         window.addEventListener('resize', () => {
+            this.detectDeviceType();
             this.checkDevice();
         });
     }
@@ -95,7 +97,23 @@ class App {
     isMobile() {
         const params = new URLSearchParams(window.location.search);
         if (params.get('mobile')) return true;
-        return window.innerWidth <= 768;
+        // Check if we are in "mobile mode" via class (UA/Touch) OR if screen is small
+        return document.body.classList.contains('mobile') || window.innerWidth <= 768;
+    }
+
+    detectDeviceType() {
+        const isTouch = (navigator.maxTouchPoints > 0) || ("ontouchstart" in window);
+        const ua = navigator.userAgent;
+        const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile/i.test(ua);
+        const isIPad = /Macintosh/i.test(ua) && isTouch;
+
+        if (isMobileUA || isIPad) {
+            document.body.classList.add('mobile');
+            document.body.classList.remove('desktop');
+        } else {
+            document.body.classList.add('desktop');
+            document.body.classList.remove('mobile');
+        }
     }
 
     toggleSidebar(forceState) {
