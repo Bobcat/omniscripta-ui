@@ -17,6 +17,16 @@ import {
   getTranscriptSelectionText as _getTranscriptSelectionText,
   escapeRegExp, getFieldValue, setFieldValue
 } from "./editorFind.js";
+import {
+  joinTextsForJoin as _joinTextsForJoin,
+  getRowBySegId as _getRowBySegId, reindexAllRows as _reindexAllRows,
+  insertRowAtIndex as _insertRowAtIndex, removeRowBySegId as _removeRowBySegId,
+  moveRowBySegIdToIndex as _moveRowBySegIdToIndex, applySegStartNoHistory as _applySegStartNoHistory,
+  canJoinAtIndex as _canJoinAtIndex, applyJoinNoHistory as _applyJoinNoHistory,
+  undoJoinNoHistory as _undoJoinNoHistory, joinWithPrevious as _joinWithPrevious,
+  askForSplitTimeWhole as _askForSplitTimeWhole, applySplitNoHistory as _applySplitNoHistory,
+  undoSplitNoHistory as _undoSplitNoHistory, splitSegment as _splitSegment
+} from "./editorSegments.js";
 // ... imports ...
 export function mountEditor(options = {}) {
   // Capture options if needed
@@ -1945,6 +1955,22 @@ export function mountEditor(options = {}) {
   ctx.pruneForcedVisibleIds = function () { return pruneForcedVisibleIds(); };
   ctx.resetFindDrag = function () { return resetFindDrag(); };
   ctx.onFindDragUp = function () { return onFindDragUp(); };
+  // Phase 3: Segment operations dependencies
+  Object.defineProperties(ctx, {
+    globalSeq: { get() { return globalSeq; }, set(v) { globalSeq = v; } },
+    editingTextSegId: { get() { return editingTextSegId; }, set(v) { editingTextSegId = v; } },
+    autoAssignSplitTs: { get() { return autoAssignSplitTs; }, set(v) { autoAssignSplitTs = v; } },
+  });
+  ctx.rowById = rowById;
+  ctx.undoStack = undoStack;
+  ctx.redoStack = redoStack;
+  ctx.createSegmentRow = function (seg, idx) { return createSegmentRow(seg, idx); };
+  ctx.enforceTiming = function (opts) { return enforceTiming(opts); };
+  ctx.findIndexById = function (id) { return findIndexById(id); };
+  ctx.getActiveSegId = function () { return getActiveSegId(); };
+  ctx.allocUniqueStartWithinSecond = function (b, ig, p) { return allocUniqueStartWithinSecond(b, ig, p); };
+  ctx.timecodeToSeconds = function (tc) { return timecodeToSeconds(tc); };
+  ctx.queueTextareaSizing = function (el) { return queueTextareaSizing(el); };
 
   function timecodeToSeconds(tc) {
     const parts = String(tc).trim().split(':');
@@ -2551,98 +2577,14 @@ export function mountEditor(options = {}) {
     } catch { }
   }
 
-  function getRowBySegId(segId) {
-    return rowById.get(segId) || segmentsDiv.querySelector(`.segment[data-id="${segId}"]`);
-  }
-
-  function reindexAllRows() {
-    for (let i = 0; i < segments.length; i++) {
-      const id = segments[i].id;
-      const row = getRowBySegId(id);
-      if (row) {
-        row.dataset.index = String(i);
-        if (!rowById.has(id)) rowById.set(id, row);
-      }
-    }
-  }
-
-  function insertRowAtIndex(row, index) {
-    if (!row) return;
-    if (index <= 0) {
-      segmentsDiv.insertBefore(row, segmentsDiv.firstChild);
-      return;
-    }
-    const prevId = segments[index - 1]?.id;
-    const prevRow = prevId ? getRowBySegId(prevId) : null;
-    if (prevRow) {
-      segmentsDiv.insertBefore(row, prevRow.nextSibling);
-    } else {
-      segmentsDiv.appendChild(row);
-    }
-  }
-
-  function removeRowBySegId(segId) {
-    const row = getRowBySegId(segId);
-    if (row && row.parentNode) row.remove();
-    rowById.delete(segId);
-  }
-
-  function moveRowBySegIdToIndex(segId, index) {
-    const row = getRowBySegId(segId);
-    if (!row) return;
-    const childAt = segmentsDiv.children[index];
-    if (childAt === row) return;
-    insertRowAtIndex(row, index);
-  }
-
-  function applySegStartNoHistory(segId, newStart, opts = {}) {
-    const preserveScroll = (opts.preserveScroll !== false);
-    const focus = (opts.focus !== false);
-    const scrollBehavior = (opts.scrollBehavior === undefined) ? 'auto' : opts.scrollBehavior;
-    const block = opts.block || 'nearest';
-
-    const prevScroll = preserveScroll ? segmentsDiv.scrollTop : null;
-
-    const oldIndex = findIndexById(segId);
-    const seg = segments.find(s => s.id === segId);
-    if (!seg) return -1;
-
-    seg.start = newStart;
-
-    segments.sort((a, b) => (a.start - b.start) || (a.seq - b.seq));
-    enforceTiming({ sort: false });
-
-    const newIndex = findIndexById(segId);
-
-    if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-      moveRowBySegIdToIndex(segId, newIndex);
-    }
-
-    reindexAllRows();
-    updateRowBySegId(segId);
-
-    if (preserveScroll && prevScroll !== null) segmentsDiv.scrollTop = prevScroll;
-
-    if (focus && newIndex !== -1) {
-      setActiveSegment(newIndex, scrollBehavior, block);
-    }
-
-    // filtering: keep edits visible even if they fall outside the active filter
-    try { scheduleDirtyCheck(); } catch { }
-    try { forceVisibleIfFilteredOut([segId], 'Edited timestamp moved segment outside the current filter.'); } catch { }
-    try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
-
-    return newIndex;
-  }
-
-  function canJoinAtIndex(idx) {
-    if (idx <= 0 || idx >= segments.length) return false;
-    if (!filterIsActive()) return true;
-    const prev = segments[idx - 1];
-    if (!prev) return false;
-    const prow = getRowBySegId(prev.id);
-    return !!(prow && !prow.classList.contains('filtered-out'));
-  }
+  /* Segment row management — delegated to editorSegments.js */
+  function getRowBySegId(segId) { return _getRowBySegId(ctx, segId); }
+  function reindexAllRows() { return _reindexAllRows(ctx); }
+  function insertRowAtIndex(row, index) { return _insertRowAtIndex(ctx, row, index); }
+  function removeRowBySegId(segId) { return _removeRowBySegId(ctx, segId); }
+  function moveRowBySegIdToIndex(segId, index) { return _moveRowBySegIdToIndex(ctx, segId, index); }
+  function applySegStartNoHistory(segId, newStart, opts) { return _applySegStartNoHistory(ctx, segId, newStart, opts); }
+  function canJoinAtIndex(idx) { return _canJoinAtIndex(ctx, idx); }
 
 
   function createSegmentRow(seg, idx) {
@@ -3176,486 +3118,15 @@ export function mountEditor(options = {}) {
   }
 
 
-  function askForSplitTimeWhole(seg, opts = {}) {
-    const forceAuto = !!opts.forceAuto;
-
-    const t = (typeof player.currentTime === 'number' && !Number.isNaN(player.currentTime))
-      ? player.currentTime
-      : (seg.start + (seg.end - seg.start) / 2);
-
-    const defaultSecRaw = Math.round(t);
-
-    const minInt = Math.ceil(seg.start + 0.001);
-    const maxInt = Math.floor(seg.end - 0.001);
-
-    const autoAllocWithinSecond = () => {
-      // No valid whole-second slot exists (or forced auto): allocate a unique ms-slot
-      // within the current rounded second so the display time stays the same.
-      const baseSec = Math.round(seg.start);
-      const curMs = Math.round((seg.start - baseSec) * 1000);
-
-      // Prefer after the current ms so the new segment naturally sorts after.
-      let candidate = allocUniqueStartWithinSecond(baseSec, null, curMs + 1);
-
-      // As a safety net, ensure we stay inside the segment boundaries.
-      if (!(candidate > seg.start && candidate < seg.end)) {
-        // Try a couple more steps forward.
-        candidate = allocUniqueStartWithinSecond(baseSec, null, curMs + 2);
-      }
-      if (!(candidate > seg.start && candidate < seg.end)) {
-        // Extreme edge case: fall back to a tiny epsilon after start.
-        const eps = Math.min(seg.end - 0.001, seg.start + 0.001);
-        return (Number.isFinite(eps) ? eps : seg.start);
-      }
-      return candidate;
-    };
-
-    if (forceAuto) return autoAllocWithinSecond();
-
-    // If there is no valid whole-second slot inside this segment, auto-allocate within the same display second.
-    if (minInt > maxInt) return autoAllocWithinSecond();
-
-    let defaultSec = defaultSecRaw;
-    if (defaultSec < minInt) defaultSec = minInt;
-    if (defaultSec > maxInt) defaultSec = maxInt;
-    const defaultTc = secondsToTimecodeWhole(defaultSec);
-
-    const msg =
-      `New segment start time (whole second, within this segment):
-- Format: HH:MM:SS (or seconds, e.g. 83)
-- Leave empty = ${defaultTc}
-
-Valid range: ${secondsToTimecodeWhole(minInt)} — ${secondsToTimecodeWhole(maxInt)}`;
-
-    const input = prompt(msg, defaultTc);
-    if (input === null) return null;
-
-    const trimmed = String(input).trim();
-    let sec = defaultSec;
-    if (trimmed !== '') {
-      let raw;
-      try { raw = trimmed.includes(':') ? timecodeToSeconds(trimmed) : parseFloat(trimmed); }
-      catch { raw = NaN; }
-      if (!Number.isFinite(raw)) {
-        alert('Invalid time. Use HH:MM:SS or seconds (e.g. 83).');
-        return null;
-      }
-      sec = Math.round(raw);
-    }
-
-    if (sec < minInt) sec = minInt;
-    if (sec > maxInt) sec = maxInt;
-    return sec;
-  }
-
-  function applySplitNoHistory(seg1Id, seg1TextAfter, seg2Snapshot, opts = {}) {
-    const preserveScroll = (opts.preserveScroll !== false);
-    const focusNew = !!opts.focusNew;
-
-    const prevScroll = preserveScroll ? segmentsDiv.scrollTop : null;
-
-    const seg1 = segments.find(s => s.id === seg1Id);
-    if (!seg1) return;
-
-    // Apply
-    seg1.text = seg1TextAfter;
-
-    // Ensure seg2 exists (use a fresh object so history snapshot can't be mutated later)
-    let seg2 = segments.find(s => s.id === seg2Snapshot.id);
-    if (!seg2) {
-      seg2 = {
-        id: seg2Snapshot.id,
-        seq: seg2Snapshot.seq,
-        blockId: seg2Snapshot.blockId,
-        speaker: seg2Snapshot.speaker,
-        text: seg2Snapshot.text,
-        start: seg2Snapshot.start,
-        end: seg2Snapshot.end
-      };
-      segments.push(seg2);
-    } else {
-      // If it already exists (rare), sync it
-      seg2.blockId = seg2Snapshot.blockId;
-      seg2.speaker = seg2Snapshot.speaker;
-      seg2.text = seg2Snapshot.text;
-      seg2.start = seg2Snapshot.start;
-      seg2.end = seg2Snapshot.end;
-    }
-
-    segments.sort((a, b) => (a.start - b.start) || (a.seq - b.seq));
-    enforceTiming({ sort: false });
-
-    // DOM: update seg1 row (text), insert/move seg2 row
-    updateRowBySegId(seg1Id);
-
-    const seg2Index = findIndexById(seg2Snapshot.id);
-    if (seg2Index !== -1) {
-      let row2 = getRowBySegId(seg2Snapshot.id);
-      if (!row2) {
-        row2 = createSegmentRow(segments[seg2Index], seg2Index);
-      }
-      insertRowAtIndex(row2, seg2Index);
-      rowById.set(seg2Snapshot.id, row2);
-
-      // Size the new textarea soon (chunked)
-      try {
-        const ta = row2.querySelector('.text-input');
-        if (ta) queueTextareaSizing(ta);
-      } catch { }
-    }
-
-    reindexAllRows();
-    scheduleDirtyCheck();
-
-    // filtering: keep split results visible even if they fall outside the active filter
-    try { forceVisibleIfFilteredOut([seg1Id, seg2Snapshot.id], 'Split created segments outside the current filter.'); } catch { }
-    try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
-
-    if (preserveScroll && prevScroll !== null) segmentsDiv.scrollTop = prevScroll;
-
-    if (focusNew && seg2Index !== -1) {
-      setActiveSegment(seg2Index, 'auto', 'nearest');
-      player.pause();
-      player.currentTime = segments[seg2Index].start;
-
-      const focusNewTa = () => {
-        const rowEl = getRowBySegId(seg2Snapshot.id);
-        const ta = rowEl ? rowEl.querySelector('.text-input') : null;
-        if (ta) {
-          ta.focus({ preventScroll: true });
-          try { ta.setSelectionRange(0, 0); } catch { }
-        }
-      };
-      // Two rAFs to ensure we win against click-focus and DOM insertion timing.
-      requestAnimationFrame(() => requestAnimationFrame(focusNewTa));
-    }
-  }
-
-  function undoSplitNoHistory(seg1Id, seg1TextBefore, seg2Id, seg1EndBefore, opts = {}) {
-    const preserveScroll = (opts.preserveScroll !== false);
-    const prevScroll = preserveScroll ? segmentsDiv.scrollTop : null;
-
-    // Remove seg2
-    const idx2 = findIndexById(seg2Id);
-    if (idx2 !== -1) segments.splice(idx2, 1);
-
-    // Restore seg1 text
-    const seg1 = segments.find(s => s.id === seg1Id);
-    if (seg1) {
-      seg1.text = seg1TextBefore;
-      // Restore seg1 end (pre-split)
-      if (typeof seg1EndBefore === 'number' && Number.isFinite(seg1EndBefore)) seg1.end = seg1EndBefore;
-    }
-
-    segments.sort((a, b) => (a.start - b.start) || (a.seq - b.seq));
-    enforceTiming({ sort: false });
-
-    // DOM updates
-    removeRowBySegId(seg2Id);
-    updateRowBySegId(seg1Id);
-    reindexAllRows();
-    scheduleDirtyCheck();
-    try { forceVisibleIfFilteredOut([seg1Id], 'Undo created a segment outside the current filter.'); } catch { }
-
-    try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
-
-    if (preserveScroll && prevScroll !== null) segmentsDiv.scrollTop = prevScroll;
-  }
-
-  function joinTextsForJoin(aText, bText) {
-    const aRaw = (aText ?? '');
-    const bRaw = (bText ?? '');
-    const a = String(aRaw).replace(/[ \t\r]+$/g, '');
-    const b = String(bRaw).replace(/^[ \t\r\n]+/g, '');
-    if (!a) return { text: b, cursorPos: 0 };
-    if (!b) return { text: a, cursorPos: a.length };
-
-    let sep = ' ';
-    if (/\n$/.test(a)) sep = '';
-    if (/[-–—]$/.test(a)) sep = '';
-    if (/^[,.;:!?)}\]]/.test(b)) sep = '';
-
-    const text = a + sep + b;
-    const cursorPos = a.length + sep.length;
-    return { text, cursorPos };
-  }
-
-  function applyJoinNoHistory(prevId, currId, prevTextAfter, opts = {}) {
-    const preserveScroll = (opts.preserveScroll !== false);
-    const activatePrev = (opts.activatePrev !== false);
-    const focusTextarea = !!opts.focusTextarea;
-    const cursorPos = (typeof opts.cursorPos === 'number') ? opts.cursorPos : null;
-    const prevScroll = preserveScroll ? segmentsDiv.scrollTop : null;
-
-    const prevIdx = findIndexById(prevId);
-    const currIdx = findIndexById(currId);
-    if (prevIdx === -1 || currIdx === -1) return;
-    if (currIdx !== prevIdx + 1) return;
-
-    const prevSeg = segments[prevIdx];
-    if (!prevSeg) return;
-
-    prevSeg.text = prevTextAfter ?? '';
-
-    // Timing: preserve the joined range by extending prevSeg.end to currSeg.end.
-    const currSeg = segments[currIdx];
-    if (currSeg && typeof currSeg.end === 'number' && Number.isFinite(currSeg.end)) {
-      prevSeg.end = currSeg.end;
-    }
-
-    segments.splice(currIdx, 1);
-
-    enforceTiming({ sort: false });
-
-    // DOM updates
-    removeRowBySegId(currId);
-    updateRowBySegId(prevId);
-    reindexAllRows();
-    // Refresh Join button state for neighbors (indices may have changed)
-    try { updateRowBySegId(prevId); } catch { }
-    const _nextAfterJoin = segments[prevIdx + 1];
-    if (_nextAfterJoin) { try { updateRowBySegId(_nextAfterJoin.id); } catch { } }
-    scheduleDirtyCheck();
-
-    // Keep join result visible even if it no longer matches the active filter
-    try { recomputeChangedSegIds(); } catch { }
-    try { forceVisibleIfFilteredOut([prevId], 'Join moved segment outside the current filter.'); } catch { }
-    try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
-
-    if (preserveScroll && prevScroll !== null) segmentsDiv.scrollTop = prevScroll;
-
-    if (activatePrev) {
-      setActiveSegment(prevIdx, 'auto', 'center');
-      player.pause();
-
-      if (focusTextarea) {
-        setTimeout(() => {
-          const rowEl = getRowBySegId(prevId);
-          const ta = rowEl ? rowEl.querySelector('.text-input') : null;
-          if (ta) {
-            ta.focus({ preventScroll: true });
-            if (cursorPos !== null) {
-              const pos = Math.max(0, Math.min(cursorPos, ta.value.length));
-              try { ta.setSelectionRange(pos, pos); } catch { }
-            }
-          }
-        }, 0);
-      } else {
-        // Ensure we don't accidentally leave focus in a textarea after DOM surgery
-        try {
-          const ae = document.activeElement;
-          if (ae && ae.classList && ae.classList.contains('text-input')) ae.blur();
-        } catch { }
-      }
-    }
-  }
-
-  function undoJoinNoHistory(prevId, prevTextBefore, prevEndBefore, currSnapshot, opts = {}) {
-    const preserveScroll = (opts.preserveScroll !== false);
-    const activateCurr = (opts.activateCurr !== false);
-    const focusTextarea = !!opts.focusTextarea;
-    const prevScroll = preserveScroll ? segmentsDiv.scrollTop : null;
-
-    const prevIdx = findIndexById(prevId);
-    if (prevIdx === -1) return;
-
-    const prevSeg = segments[prevIdx];
-    if (!prevSeg) return;
-
-    prevSeg.text = prevTextBefore ?? '';
-    if (typeof prevEndBefore === 'number' && Number.isFinite(prevEndBefore)) prevSeg.end = prevEndBefore;
-
-    const snap = Object.assign({}, currSnapshot);
-    segments.splice(prevIdx + 1, 0, snap);
-
-    enforceTiming({ sort: false });
-
-    // DOM updates
-    updateRowBySegId(prevId);
-
-    const currIdx = prevIdx + 1;
-    let row2 = getRowBySegId(snap.id);
-    if (!row2) row2 = createSegmentRow(segments[currIdx], currIdx);
-    insertRowAtIndex(row2, currIdx);
-    rowById.set(snap.id, row2);
-
-    try {
-      const ta2 = row2.querySelector('.text-input');
-      if (ta2) queueTextareaSizing(ta2);
-    } catch { }
-
-    reindexAllRows();
-    // Refresh Join button state for neighbors after restoring a row
-    try { updateRowBySegId(prevId); } catch { }
-    try { updateRowBySegId(snap.id); } catch { }
-    const _nextAfterUndoJoin = segments[currIdx + 1];
-    if (_nextAfterUndoJoin) { try { updateRowBySegId(_nextAfterUndoJoin.id); } catch { } }
-    scheduleDirtyCheck();
-
-    try { recomputeChangedSegIds(); } catch { }
-    try { forceVisibleIfFilteredOut([prevId, snap.id], 'Undo restored a segment outside the current filter.'); } catch { }
-    try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
-
-    if (preserveScroll && prevScroll !== null) segmentsDiv.scrollTop = prevScroll;
-
-    if (activateCurr) {
-      setActiveSegment(currIdx, 'auto', 'center');
-      player.pause();
-
-      if (focusTextarea) {
-        setTimeout(() => {
-          const rowEl = getRowBySegId(snap.id);
-          const ta = rowEl ? rowEl.querySelector('.text-input') : null;
-          if (ta) {
-            ta.focus({ preventScroll: true });
-            try { ta.setSelectionRange(0, 0); } catch { }
-          }
-        }, 0);
-      } else {
-        // Never leave focus in a textarea after undo unless explicitly requested
-        try {
-          const ae = document.activeElement;
-          if (ae && ae.classList && ae.classList.contains('text-input')) ae.blur();
-        } catch { }
-      }
-    }
-  }
-
-  function joinWithPrevious(idx) {
-    const hadTextFocus = (() => {
-      try {
-        const ae = document.activeElement;
-        return !!(ae && ae.classList && ae.classList.contains('text-input'));
-      } catch { return false; }
-    })();
-
-    beginHistoryMutation();
-
-    if (idx <= 0 || idx >= segments.length) return;
-
-    // In filter mode: only allow when the true previous segment is visible in the UI.
-    if (filterIsActive()) {
-      const prev = segments[idx - 1];
-      const prow = prev ? getRowBySegId(prev.id) : null;
-      if (!prow || prow.classList.contains('filtered-out')) return;
-    }
-
-    const prevSeg = segments[idx - 1];
-    const currSeg = segments[idx];
-    if (!prevSeg || !currSeg) return;
-
-    const prevId = prevSeg.id;
-    const currId = currSeg.id;
-
-    // Commit pending debounced edits on both rows before joining
-    try { flushPendingText(prevId); } catch { }
-    try { flushPendingText(currId); } catch { }
-
-    const prevTextBefore = prevSeg.text || '';
-    const prevEndBefore = prevSeg.end;
-    const currSnapshot = Object.assign({}, currSeg);
-
-    const res = joinTextsForJoin(prevTextBefore, currSnapshot.text || '');
-    const prevTextAfter = res.text;
-    const cursorPos = res.cursorPos;
-
-    const beforeTime = player.currentTime;
-
-    pushHistory({
-      label: 'Join',
-      summary: `${secondsToTimecodeWhole(currSeg.start)} (seg=${currId})`,
-      meta: { segId: prevId, ids: [prevId, currId], prevId, currId },
-      do: () => {
-        applyJoinNoHistory(prevId, currId, prevTextAfter, { preserveScroll: true, activatePrev: true, focusTextarea: true, cursorPos });
-        if (typeof beforeTime === 'number' && Number.isFinite(beforeTime)) player.currentTime = beforeTime;
-      },
-      undo: () => {
-        undoJoinNoHistory(prevId, prevTextBefore, prevEndBefore, currSnapshot, { preserveScroll: true, activateCurr: true, focusTextarea: false });
-        if (typeof beforeTime === 'number' && Number.isFinite(beforeTime)) player.currentTime = beforeTime;
-      }
-    });
-
-    // Apply immediately (pushHistory does not auto-run action.do()).
-    applyJoinNoHistory(prevId, currId, prevTextAfter, { preserveScroll: true, activatePrev: true, focusTextarea: true, cursorPos });
-    if (typeof beforeTime === 'number' && Number.isFinite(beforeTime)) player.currentTime = beforeTime;
-  }
-
-
-  function splitSegment(idx, textAreaEl) {
-    beginHistoryMutation();
-
-    if (idx < 0 || idx >= segments.length) return;
-    const seg = segments[idx];
-    const seg1Id = seg.id;
-
-    // Commit any pending debounced edits on this row before splitting
-    try { flushPendingText(seg1Id); } catch { }
-
-    const hasFocus = (textAreaEl && document.activeElement === textAreaEl);
-
-    const isCursorSplit = (hasFocus && textAreaEl && typeof textAreaEl.selectionStart === 'number');
-
-    // Split behavior:
-    // - If we are splitting at a text cursor (focused textarea), we move text after the cursor to a new segment.
-    // - Timestamp choice:
-
-    // - If Auto-assign is enabled: always allocate x+ms (no prompt).
-    // - Otherwise: prompt for a whole-second timestamp within the current segment,
-    //   except when no whole-second slot exists (then we auto-allocate x+ms).
-    const splitT = (autoAssignSplitTs)
-      ? askForSplitTimeWhole(seg, { forceAuto: true })
-      : askForSplitTimeWhole(seg);
-    if (splitT === null) return;
-
-    const beforeActiveId = getActiveSegId();
-    const beforeTime = player.currentTime;
-
-    const beforeText = seg.text || '';
-    let t1 = beforeText;
-    let t2 = '';
-
-    if (isCursorSplit) {
-      const pos = textAreaEl.selectionStart;
-      t1 = beforeText.slice(0, pos).trimEnd();
-      t2 = beforeText.slice(pos).trimStart();
-    }
-
-    const newId = `seg_${globalSeq++}`;
-    const seg2Snapshot = {
-      id: newId,
-      seq: globalSeq,
-      blockId: seg.blockId,
-      speaker: seg.speaker || '',
-      text: t2,
-      start: splitT,
-      end: seg.end
-    };
-
-    // Apply split now (fast, incremental DOM)
-    applySplitNoHistory(seg1Id, t1, seg2Snapshot, { preserveScroll: true, focusNew: true });
-
-    const afterActiveId = getActiveSegId();
-    const afterTime = player.currentTime;
-
-    pushHistory({
-      label: 'Split',
-      summary: `${secondsToTimecodeWhole(splitT)} (seg=${seg1Id})`,
-      meta: {
-        segId: seg1Id,
-        newSegId: seg2Snapshot.id,
-        splitAt: secondsToTimecodeWhole(splitT),
-        splitSec: Math.round(splitT),
-      },
-      do: () => {
-        applySplitNoHistory(seg1Id, t1, seg2Snapshot, { preserveScroll: true, focusNew: false });
-        if (typeof afterTime === 'number' && Number.isFinite(afterTime)) player.currentTime = afterTime;
-      },
-      undo: () => {
-        undoSplitNoHistory(seg1Id, beforeText, seg2Snapshot.id, seg2Snapshot.end, { preserveScroll: true });
-        if (typeof beforeTime === 'number' && Number.isFinite(beforeTime)) player.currentTime = beforeTime;
-      }
-    });
-  }
+  /* Split/Join operations — delegated to editorSegments.js */
+  function askForSplitTimeWhole(seg, opts) { return _askForSplitTimeWhole(ctx, seg, opts); }
+  function applySplitNoHistory(seg1Id, seg1TextAfter, seg2Snapshot, opts) { return _applySplitNoHistory(ctx, seg1Id, seg1TextAfter, seg2Snapshot, opts); }
+  function undoSplitNoHistory(seg1Id, seg1TextBefore, seg2Id, seg1EndBefore, opts) { return _undoSplitNoHistory(ctx, seg1Id, seg1TextBefore, seg2Id, seg1EndBefore, opts); }
+  function joinTextsForJoin(aText, bText) { return _joinTextsForJoin(aText, bText); }
+  function applyJoinNoHistory(prevId, currId, prevTextAfter, opts) { return _applyJoinNoHistory(ctx, prevId, currId, prevTextAfter, opts); }
+  function undoJoinNoHistory(prevId, prevTextBefore, prevEndBefore, currSnapshot, opts) { return _undoJoinNoHistory(ctx, prevId, prevTextBefore, prevEndBefore, currSnapshot, opts); }
+  function joinWithPrevious(idx) { return _joinWithPrevious(ctx, idx); }
+  function splitSegment(idx, textAreaEl) { return _splitSegment(ctx, idx, textAreaEl); }
 
   // Active highlight while playing
 
