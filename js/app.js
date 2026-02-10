@@ -27,6 +27,7 @@ class App {
 
     init() {
         this.bindEvents();
+        this.createMobileToggle(); // Floating hamburger for mobile
         this.detectDeviceType(); // Set global mobile/desktop class
         this.checkDevice();
         this.renderProjects(); // Initial render
@@ -114,6 +115,17 @@ class App {
             document.body.classList.add('desktop');
             document.body.classList.remove('mobile');
         }
+    }
+
+    createMobileToggle() {
+        const btn = document.createElement('button');
+        btn.id = 'mobile-menu-toggle';
+        btn.className = 'icon-btn';
+        btn.title = 'Menu';
+        btn.innerHTML = '<span class="material-symbols-outlined">menu</span>';
+        btn.addEventListener('click', () => this.toggleSidebar());
+
+        document.body.appendChild(btn);
     }
 
     toggleSidebar(forceState) {
