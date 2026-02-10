@@ -3,6 +3,20 @@ import { safePreview, normSpeaker, secondsToTimecodeWhole, hashString, _srtTcToS
 import { TextView } from "./components/TextView.js";
 import { TopicsView } from "./components/TopicsView.js";
 import { AudioPlayer } from "./components/AudioPlayer.js";
+import {
+  secondsToSrtTimecode, buildSrtFromSegments as _buildSrt,
+  suggestSrtName as _suggestSrtName, sanitizeSrtFileName as _sanitizeSrtFileName,
+  downloadTextBlob, downloadSrt as _downloadSrt, saveSrtLocally as _saveSrtLocally,
+  doExport as _doExport
+} from "./editorSave.js";
+import {
+  isFindOpen as _isFindOpen, findNext as _findNext,
+  replaceCurrent as _replaceCurrent, openReplaceAllConfirm as _openReplaceAllConfirm,
+  closeReplaceAllConfirm as _closeReplaceAllConfirm, doReplaceAllConfirmed as _doReplaceAllConfirmed,
+  openFindModal as _openFindModal, closeFindModal as _closeFindModal,
+  getTranscriptSelectionText as _getTranscriptSelectionText,
+  escapeRegExp, getFieldValue, setFieldValue
+} from "./editorFind.js";
 // ... imports ...
 export function mountEditor(options = {}) {
   // Capture options if needed
@@ -1415,495 +1429,24 @@ export function mountEditor(options = {}) {
   let lastFindQuery = null;
   let lastFindIndex = -1;
 
-  function isFindOpen() { return findModal && !findModal.classList.contains('hidden'); }
+  /* Find/Replace — delegated to editorFind.js */
+  // escapeRegExp, getFieldValue, setFieldValue imported directly from editorFind.js
 
-  function setFindStatus(msg, isError = false) {
-    if (!findStatus) return;
-    findStatus.textContent = msg || '';
-    findStatus.classList.toggle('error', !!isError);
-  }
+  function isFindOpen() { return _isFindOpen(ctx); }
+  function setFindStatus(msg, isError) { /* delegated; used only within extracted module now */ }
 
-  function escapeRegExp(s) {
-    return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
 
-  function getScope() {
-    const r = document.querySelector('input[name="findScope"]:checked');
-    return r ? r.value : 'text';
-  }
 
-  function getFindSig() {
-    return JSON.stringify({
-      f: findInput?.value ?? '',
-      r: replaceInput?.value ?? '',
-      re: !!optRegex?.checked,
-      cs: !!optCase?.checked,
-      ww: !!optWords?.checked,
-      wr: !!optWrap?.checked,
-      sc: getScope()
-    });
-  }
+  function findNext(fromReplace) { return _findNext(ctx, fromReplace); }
+  function replaceCurrent() { return _replaceCurrent(ctx); }
+  function getTranscriptSelectionText() { return _getTranscriptSelectionText(ctx); }
+  function openFindModal() { return _openFindModal(ctx); }
+  function closeFindModal() { return _closeFindModal(ctx); }
 
-  function compileFindRegex() {
-    const raw = (findInput?.value ?? '').trim();
-    if (!raw) return { ok: false, err: 'Enter text to find.' };
-
-    let pat = raw;
-    const useRegex = !!optRegex?.checked;
-
-    if (!useRegex) pat = escapeRegExp(pat);
-    if (!!optWords?.checked) pat = `\\b(?:${pat})\\b`;
-
-    const flags = `g${(optCase?.checked ? '' : 'i')}u`;
-
-    try {
-      const re = new RegExp(pat, flags);
-      return { ok: true, re, pat, useRegex };
-    } catch (e) {
-      return { ok: false, err: `Invalid regex: ${e.message}` };
-    }
-  }
-
-  function getFieldValue(seg, field) {
-    if (field === 'speaker') return (seg.speaker || '');
-    return (seg.text || '');
-  }
-
-  function setFieldValue(seg, field, value) {
-    if (field === 'speaker') seg.speaker = value;
-    else seg.text = value;
-  }
-
-  // Find/Replace scope: only segments that are currently shown (respect active filter)
-  function getVisibleSegmentIndices() {
-    if (!segments || !segments.length) return [];
-    if (typeof filterIsActive !== 'function' || !filterIsActive()) {
-      const out = new Array(segments.length);
-      for (let i = 0; i < segments.length; i++) out[i] = i;
-      return out;
-    }
-    // Keep change-tracking up-to-date when filtering on changed/unchanged
-    try {
-      const usesChanged = (filterState && (filterState.changedMode !== 'all')) || (typeof forcedVisibleIds !== 'undefined' && forcedVisibleIds.size);
-      if (usesChanged) recomputeChangedSegIds();
-    } catch { }
-    try { pruneForcedVisibleIds(); } catch { }
-
-    const out = [];
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      if (!seg) continue;
-      if (matchesFilter(seg) || forcedVisibleIds.has(seg.id)) out.push(i);
-    }
-    return out;
-  }
-
-  function focusAndSelectMatch(segIndex, field, start, end) {
-    if (segIndex < 0 || segIndex >= segments.length) return;
-
-    setActiveSegment(segIndex, 'auto', 'nearest');
-
-    const row = segmentsDiv.querySelector(`.segment[data-index="${segIndex}"]`);
-    if (!row) return;
-
-    const el = (field === 'speaker') ? row.querySelector('.speaker-input') : row.querySelector('.text-input');
-    if (!el) return;
-
-    el.focus({ preventScroll: true });
-    try { el.setSelectionRange(start, end); } catch { }
-  }
-
-  function countAllMatches(reObj, scope) {
-    let count = 0;
-    const fields = (scope === 'both') ? ['text', 'speaker'] : (scope === 'speaker' ? ['speaker'] : ['text']);
-
-    const visIdxs = getVisibleSegmentIndices();
-
-    for (const si of visIdxs) {
-      const seg = segments[si];
-      if (!seg) continue;
-      for (const f of fields) {
-        const s = getFieldValue(seg, f);
-        if (!s) continue;
-        reObj.lastIndex = 0;
-        let m;
-        while ((m = reObj.exec(s)) !== null) {
-          // avoid infinite loops on empty matches
-          if (m[0].length === 0) { reObj.lastIndex += 1; continue; }
-          count++;
-        }
-      }
-    }
-    reObj.lastIndex = 0;
-    return count;
-  }
-
-  function findNext(fromReplace = false) {
-    flushPendingText(); // commit any debounced edits
-
-    const compiled = compileFindRegex();
-    if (!compiled.ok) { setFindStatus(compiled.err, true); currentFind = null; return false; }
-    const { re } = compiled;
-    const scope = getScope();
-    const wrap = !!optWrap?.checked;
-
-    const fields = (scope === 'both') ? ['text', 'speaker'] : (scope === 'speaker' ? ['speaker'] : ['text']);
-    const sig = getFindSig();
-
-    const visIdxs = getVisibleSegmentIndices();
-    if (!visIdxs.length) {
-      currentFind = null;
-      setFindStatus('No visible segments.');
-      return false;
-    }
-
-    // Map: segmentIndex -> position in visIdxs
-    const posByIndex = new Map();
-    for (let p = 0; p < visIdxs.length; p++) posByIndex.set(visIdxs[p], p);
-
-    // Starting point
-    let startSeg = (currentSegmentIndex >= 0) ? currentSegmentIndex : 0;
-    let startPos = 0;
-    let startFieldIdx = 0;
-
-    // If we have a current match with same signature, continue after it
-    if (currentFind && currentFind.sig === sig) {
-      startSeg = currentFind.segIndex;
-      startFieldIdx = fields.indexOf(currentFind.field);
-      if (startFieldIdx < 0) startFieldIdx = 0;
-      startPos = currentFind.end;
-    } else {
-      // If focused in an input, use its cursor pos
-      const ae = document.activeElement;
-      if (ae && (ae.classList?.contains('text-input') || ae.classList?.contains('speaker-input'))) {
-        const row = ae.closest('.segment');
-        if (row) {
-          const idx = parseInt(row.dataset.index, 10);
-          if (!Number.isNaN(idx)) startSeg = idx;
-          startPos = (typeof ae.selectionEnd === 'number') ? ae.selectionEnd : 0;
-          startFieldIdx = ae.classList.contains('speaker-input') ? fields.indexOf('speaker') : fields.indexOf('text');
-          if (startFieldIdx < 0) startFieldIdx = 0;
-        }
-      }
-    }
-
-    const total = countAllMatches(re, scope);
-
-    // If the starting segment is not visible, start from the next visible segment
-    let startPosInVis = posByIndex.get(startSeg);
-    if (startPosInVis === undefined) {
-      startPosInVis = visIdxs.findIndex((si) => si >= startSeg);
-      if (startPosInVis === -1) startPosInVis = visIdxs.length; // none after; will wrap if enabled
-      startPos = 0;
-      startFieldIdx = 0;
-    }
-
-    const scan = (posFrom) => {
-      for (let p = posFrom; p < visIdxs.length; p++) {
-        const si = visIdxs[p];
-        const seg = segments[si];
-        if (!seg) continue;
-
-        for (let fi = 0; fi < fields.length; fi++) {
-          const field = fields[fi];
-          const text = getFieldValue(seg, field);
-          if (!text) continue;
-
-          re.lastIndex = 0;
-          const fromPos = (si === startSeg && fi === startFieldIdx) ? startPos : 0;
-          re.lastIndex = fromPos;
-
-          let m;
-          while ((m = re.exec(text)) !== null) {
-            if (m[0].length === 0) { re.lastIndex += 1; continue; }
-            const start = m.index;
-            const end = m.index + m[0].length;
-            if (start < fromPos) continue;
-
-            currentFind = { sig, segId: seg.id, field, start, end, match: m, segIndex: si };
-            focusAndSelectMatch(si, field, start, end);
-
-            setFindStatus(total ? `Match found (${total} total)` : 'Match found');
-            return true;
-          }
-        }
-      }
-      return false;
-    };
-
-    if (scan(startPosInVis)) return true;
-    if (wrap) {
-      // wrap around to the start of the visible selection
-      startSeg = visIdxs[0];
-      startPos = 0;
-      startFieldIdx = 0;
-      currentFind = null;
-      if (scan(0)) return true;
-    }
-
-    currentFind = null;
-    setFindStatus('No matches.');
-    return false;
-  }
-
-
-  function applyReplacementString(matchObj, replaceStr, allowDollarExpansion) {
-    if (!allowDollarExpansion) return replaceStr;
-
-    const whole = matchObj[0] ?? '';
-    const groups = matchObj;
-    const named = matchObj.groups || {};
-
-    return String(replaceStr).replace(/\$(\$|&|<[^>]+>|\d{1,2})/g, (full, token) => {
-      if (token === '$') return '$';
-      if (token === '&') return whole;
-      if (token.startsWith('<')) {
-        const name = token.slice(1, -1);
-        return (named && Object.prototype.hasOwnProperty.call(named, name)) ? (named[name] ?? '') : '';
-      }
-      const n = parseInt(token, 10);
-      if (!Number.isNaN(n) && n >= 0) return groups[n] ?? '';
-      return full;
-    });
-  }
-
-  function replaceCurrent() {
-    beginHistoryMutation();
-
-    flushPendingText();
-
-    const compiled = compileFindRegex();
-    if (!compiled.ok) { setFindStatus(compiled.err, true); return; }
-    const scope = getScope();
-    const sig = getFindSig();
-
-    if (!currentFind || currentFind.sig !== sig) {
-      if (!findNext(true)) return;
-    }
-
-    const seg = segments.find(s => s.id === currentFind.segId);
-    const si = currentFind.segIndex;
-    if (!seg) { currentFind = null; return; }
-
-    const field = currentFind.field;
-    const before = getFieldValue(seg, field);
-    const start = currentFind.start;
-    const end = currentFind.end;
-
-    const replRaw = (replaceInput?.value ?? '');
-    const allowExpansion = !!optRegex?.checked;
-    const replacement = applyReplacementString(currentFind.match, replRaw, allowExpansion);
-
-    const after = before.slice(0, start) + replacement + before.slice(end);
-
-    if (after === before) {
-      setFindStatus('No change.');
-      findNext(true);
-      return;
-    }
-
-    const id = seg.id;
-
-    const apply = (val) => {
-      const s = segments.find(x => x.id === id);
-      if (!s) return;
-      setFieldValue(s, field, val);
-      // clear pending text edit for this segment (if any)
-      if (field === 'text') {
-        const p = pendingTextEdits.get(id);
-        if (p && p.timer) clearTimeout(p.timer);
-        pendingTextEdits.delete(id);
-      }
-      updateRowBySegId(id);
-      try { scheduleDirtyCheck(); } catch { }
-      try { forceVisibleIfFilteredOut([id], 'Edit moved segment outside the current filter.'); } catch { }
-      try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
-    };
-
-    apply(after);
-    scheduleDirtyCheck();
-
-    pushHistory({
-      label: 'Replace',
-      summary: `${safePreview((findInput?.value ?? ''), 18)}→${safePreview(replRaw, 18)} (seg=${id})`,
-      meta: { segId: id, field, find: (findInput?.value ?? ''), replace: replRaw, regex: !!optRegex?.checked, caseSensitive: !!optCase?.checked, wholeWords: !!optWords?.checked },
-      do: () => apply(after),
-      undo: () => apply(before)
-    });
-
-    // update current match position to after replacement, then find next
-    currentFind = null;
-    setFindStatus('Replaced.');
-    findNext(true);
-  }
-
-  let pendingReplaceAll = null; // {compiled, scope, total, findText, replaceText}
-
-  function openReplaceAllConfirm() {
-    flushPendingText();
-
-    const compiled = compileFindRegex();
-    if (!compiled.ok) { setFindStatus(compiled.err, true); return; }
-
-    const scope = getScope();
-    const total = countAllMatches(compiled.re, scope);
-
-    if (total === 0) { setFindStatus('No matches.'); return; }
-
-    const findText = (findInput?.value ?? '').trim();
-    const replaceText = (replaceInput?.value ?? '');
-
-    pendingReplaceAll = { compiled, scope, total, findText, replaceText };
-
-    if (raSummary) {
-      const scopeLabel = (scope === 'text') ? 'Text' : (scope === 'speaker' ? 'Speakers' : 'Text + speakers');
-      raSummary.textContent = `Replace ${total} matches in ${scopeLabel}: “${findText}” → “${replaceText}”`;
-    }
-
-    if (replaceAllModal) replaceAllModal.classList.remove('hidden');
-  }
-
-  function closeReplaceAllConfirm() {
-    pendingReplaceAll = null;
-    if (replaceAllModal) replaceAllModal.classList.add('hidden');
-  }
-
-  function doReplaceAllConfirmed() {
-    beginHistoryMutation();
-
-    flushPendingText();
-    if (!pendingReplaceAll) { closeReplaceAllConfirm(); return; }
-
-    const { compiled, scope, total, replaceText } = pendingReplaceAll;
-    const re = compiled.re;
-    const useRegex = !!optRegex?.checked;
-
-    const fields = (scope === 'both') ? ['text', 'speaker'] : (scope === 'speaker' ? ['speaker'] : ['text']);
-
-    const changes = []; // {segId, field, before, after}
-
-    const visIdxs = getVisibleSegmentIndices();
-
-    for (const si of visIdxs) {
-      const seg = segments[si];
-      for (const field of fields) {
-        const before = getFieldValue(seg, field);
-        if (!before) continue;
-
-        re.lastIndex = 0;
-        const after = before.replace(re, useRegex ? replaceText : () => replaceText);
-
-        if (after !== before) {
-          changes.push({ segId: seg.id, field, before, after });
-          setFieldValue(seg, field, after);
-
-          if (field === 'text') {
-            const p = pendingTextEdits.get(seg.id);
-            if (p && p.timer) clearTimeout(p.timer);
-            pendingTextEdits.delete(seg.id);
-          }
-        }
-      }
-    }
-    re.lastIndex = 0;
-
-    // Update UI for changed segs
-    for (const c of changes) updateRowBySegId(c.segId);
-    scheduleDirtyCheck();
-
-    try {
-      const ids = Array.from(new Set(changes.map(c => c.segId)));
-      forceVisibleIfFilteredOut(ids, 'Replace all created changes outside the current filter.');
-    } catch { }
-    try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
-
-    const applyAll = (toAfter) => {
-      for (const c of changes) {
-        const seg = segments.find(s => s.id === c.segId);
-        if (!seg) continue;
-        setFieldValue(seg, c.field, toAfter ? c.after : c.before);
-
-        if (c.field === 'text') {
-          const p = pendingTextEdits.get(c.segId);
-          if (p && p.timer) clearTimeout(p.timer);
-          pendingTextEdits.delete(c.segId);
-        }
-
-        updateRowBySegId(c.segId);
-      }
-      scheduleDirtyCheck();
-      try {
-        const ids = Array.from(new Set(changes.map(c => c.segId)));
-        forceVisibleIfFilteredOut(ids, 'Replace all created changes outside the current filter.');
-      } catch { }
-      try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
-    };
-
-    pushHistory({
-      label: 'Replace all',
-      summary: `${changes.length} segments (${total} matches)`,
-      meta: { firstSegId: (changes[0] ? changes[0].segId : null), find: pendingReplaceAll.findText, replace: pendingReplaceAll.replaceText, scope, matches: total, segmentsChanged: changes.length, regex: !!optRegex?.checked, caseSensitive: !!optCase?.checked, wholeWords: !!optWords?.checked },
-      do: () => applyAll(true),
-      undo: () => applyAll(false)
-    });
-
-    closeReplaceAllConfirm();
-    currentFind = null;
-    setFindStatus(`Replaced ${total} matches.`);
-  }
-
-
-  function getTranscriptSelectionText() {
-    try {
-      // If focus is in a transcript textarea, prefer its selection (window.getSelection() won't capture it)
-      const ae = document.activeElement;
-      if (ae && ae.classList && ae.classList.contains('text-input') &&
-        typeof ae.selectionStart === 'number' && typeof ae.selectionEnd === 'number' &&
-        ae.selectionEnd > ae.selectionStart) {
-        const txt = String(ae.value || '').slice(ae.selectionStart, ae.selectionEnd).trim();
-        if (txt) return txt;
-      }
-
-      const sel = window.getSelection ? window.getSelection() : null;
-      if (!sel || sel.isCollapsed) return '';
-      const txt = String(sel.toString() || '').trim();
-      if (!txt) return '';
-      const a = sel.anchorNode;
-      const f = sel.focusNode;
-      if (segmentsDiv && a && f && segmentsDiv.contains(a) && segmentsDiv.contains(f)) return txt;
-      return '';
-    } catch { return ''; }
-  }
-
-  function openFindModal() {
-    // Capture selection first (flush/blur may clear selection)
-    const selText = getTranscriptSelectionText();
-    flushPendingText();
-    if (player) player.pause();
-    resetFindDrag();
-
-    // Start fresh: empty fields, or use currently selected transcript text
-    if (findInput) findInput.value = selText || '';
-    if (replaceInput) replaceInput.value = '';
-    if (findStatus) findStatus.textContent = '';
-    lastFindQuery = null;
-    lastFindIndex = -1;
-    currentFind = null;
-    setFindStatus('');
-    if (findModal) {
-      findModal.classList.remove('hidden');
-    }
-    setTimeout(() => findInput?.focus(), 0);
-  }
-
-  function closeFindModal() {
-    onFindDragUp();
-
-    currentFind = null;
-    setFindStatus('');
-    if (findModal) findModal.classList.add('hidden');
-    if (replaceAllModal) replaceAllModal.classList.add('hidden');
-  }
+  let pendingReplaceAll = null;
+  function openReplaceAllConfirm() { return _openReplaceAllConfirm(ctx); }
+  function closeReplaceAllConfirm() { return _closeReplaceAllConfirm(ctx); }
+  function doReplaceAllConfirmed() { return _doReplaceAllConfirmed(ctx); }
 
   if (findBtn) findBtn.addEventListener('click', openFindModal);
   if (closeFindBtn) closeFindBtn.addEventListener('click', closeFindModal);
@@ -1922,7 +1465,6 @@ export function mountEditor(options = {}) {
   if (raCancelBtn) raCancelBtn.addEventListener('click', closeReplaceAllConfirm);
   if (raConfirmBtn) raConfirmBtn.addEventListener('click', doReplaceAllConfirmed);
 
-  // Keyboard: Enter in Find input -> Find next; Enter in Replace input -> Replace; Esc closes modal.
   if (findInput) findInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); findNext(false); }
   });
@@ -2347,6 +1889,62 @@ export function mountEditor(options = {}) {
   // dirty tracking via hash comparison (undo -> clean again)
   let cleanHash = null;
   let dirtyDebounce = null;
+
+  // === Shared context for extracted modules ===
+  // Getter/setter proxies keep ctx in sync with closure variables.
+  // Functions (hoisted declarations) are assigned directly.
+  const ctx = {};
+  Object.defineProperties(ctx, {
+    // Mutable state (let variables — need getter/setter to stay in sync)
+    segments: { get() { return segments; }, set(v) { segments = v; } },
+    currentSegmentIndex: { get() { return currentSegmentIndex; }, set(v) { currentSegmentIndex = v; } },
+    exportFileName: { get() { return exportFileName; }, set(v) { exportFileName = v; } },
+    loadedJsonFileName: { get() { return loadedJsonFileName; }, set(v) { loadedJsonFileName = v; } },
+    lastSavedAt: { get() { return lastSavedAt; }, set(v) { lastSavedAt = v; } },
+    srtSaveHandle: { get() { return srtSaveHandle; }, set(v) { srtSaveHandle = v; } },
+    transcriptLoadKind: { get() { return transcriptLoadKind; }, set(v) { transcriptLoadKind = v; } },
+    // Find/replace mutable state
+    currentFind: { get() { return currentFind; }, set(v) { currentFind = v; } },
+    lastFindQuery: { get() { return lastFindQuery; }, set(v) { lastFindQuery = v; } },
+    lastFindIndex: { get() { return lastFindIndex; }, set(v) { lastFindIndex = v; } },
+    pendingReplaceAll: { get() { return pendingReplaceAll; }, set(v) { pendingReplaceAll = v; } },
+  });
+  // Const refs (DOM elements, component instances)
+  ctx.topicsView = topicsView;
+  ctx.player = player;
+  ctx.segmentsDiv = segmentsDiv;
+  ctx.findModal = findModal;
+  ctx.findInput = findInput;
+  ctx.replaceInput = replaceInput;
+  ctx.findStatus = findStatus;
+  ctx.optRegex = optRegex;
+  ctx.optCase = optCase;
+  ctx.optWords = optWords;
+  ctx.optWrap = optWrap;
+  ctx.replaceAllModal = replaceAllModal;
+  ctx.raSummary = raSummary;
+  ctx.filterState = filterState;
+  ctx.forcedVisibleIds = forcedVisibleIds;
+  ctx.pendingTextEdits = pendingTextEdits;
+  // Hoisted function refs (wrapped to capture closure at call time)
+  ctx.showToast = showToast;
+  ctx.setCleanNow = function () { return setCleanNow(); };
+  ctx.nowHHMMSS = function () { return nowHHMMSS(); };
+  ctx.buildJsonFromSegments = function () { return buildJsonFromSegments(); };
+  ctx.setActiveSegment = function (i, sb, bl, fs) { return setActiveSegment(i, sb, bl, fs); };
+  ctx.pushHistory = function (a) { return pushHistory(a); };
+  ctx.beginHistoryMutation = function () { return beginHistoryMutation(); };
+  ctx.flushPendingText = function (sid, opts) { return flushPendingText(sid, opts); };
+  ctx.updateRowBySegId = function (id) { return updateRowBySegId(id); };
+  ctx.scheduleDirtyCheck = function (opts) { return scheduleDirtyCheck(opts); };
+  ctx.forceVisibleIfFilteredOut = function (ids, reason, opts) { return forceVisibleIfFilteredOut(ids, reason, opts); };
+  ctx.scheduleApplyFilters = function () { return scheduleApplyFilters(); };
+  ctx.filterIsActive = function () { return filterIsActive(); };
+  ctx.matchesFilter = function (seg) { return matchesFilter(seg); };
+  ctx.recomputeChangedSegIds = function () { return recomputeChangedSegIds(); };
+  ctx.pruneForcedVisibleIds = function () { return pruneForcedVisibleIds(); };
+  ctx.resetFindDrag = function () { return resetFindDrag(); };
+  ctx.onFindDragUp = function () { return onFindDragUp(); };
 
   function timecodeToSeconds(tc) {
     const parts = String(tc).trim().split(':');
@@ -4173,176 +3771,18 @@ Valid range: ${secondsToTimecodeWhole(minInt)} — ${secondsToTimecodeWhole(maxI
     player.src = url;
   });
 
+  /* SAVE_AS_SRT_V1 — delegated to editorSave.js */
+  // secondsToSrtTimecode is imported directly from editorSave.js
 
-  /* SAVE_AS_SRT_V1 */
-  function secondsToSrtTimecode(sec) {
-    const msTotal = Math.max(0, Math.round((Number(sec) || 0) * 1000));
-    const hh = Math.floor(msTotal / 3600000);
-    const mm = Math.floor((msTotal % 3600000) / 60000);
-    const ss = Math.floor((msTotal % 60000) / 1000);
-    const ms = msTotal % 1000;
-    return String(hh).padStart(2, '0') + ":" + String(mm).padStart(2, '0') + ":" + String(ss).padStart(2, '0') + "," + String(ms).padStart(3, '0');
-  }
-
-  function buildSrtFromSegments() {
-    const segs = [...segments].sort((a, b) => (a.start - b.start) || (a.seq - b.seq));
-    const out = [];
-    for (let i = 0; i < segs.length; i++) {
-      const s = segs[i];
-      const start = secondsToSrtTimecode(s.start);
-      let endSec = Number(s.end);
-      if (!Number.isFinite(endSec) || endSec <= Number(s.start)) endSec = Number(s.start) + 0.5;
-      const end = secondsToSrtTimecode(endSec);
-
-      const speaker = (s.speaker || "").trim();
-      const text = String(s.text || "").trim();
-      const line = speaker ? (speaker + ": " + text) : text;
-
-      out.push(String(i + 1));
-      out.push(start + " --> " + end);
-      out.push(line);
-      out.push(""); // blank line
-    }
-    return out.join("\n");
-  }
-
-  function suggestSrtName() {
-    const norm = (name) => {
-      if (!name) return null;
-      let n = String(name).trim();
-      if (!n) return null;
-      // Fix common legacy / accidental combos
-      n = n.replace(/\.srt\.json$/i, ".srt");
-      if (n.toLowerCase().endsWith(".json")) n = n.replace(/\.json$/i, ".srt");
-      if (!n.toLowerCase().endsWith(".srt")) n = n + ".srt";
-      return n;
-    };
-
-    // Prefer the most recent save name (so subsequent saves keep using it)
-    const fromExport = norm(exportFileName);
-    if (fromExport) return fromExport;
-
-    // Prefer current loaded transcript name if it ends with .srt
-    const fromLoaded = norm(loadedJsonFileName);
-    if (fromLoaded) return fromLoaded;
-
-    return "transcript.srt";
-  }
-
-
-  function sanitizeSrtFileName(name) {
-    name = String(name || '').trim();
-    if (!name) name = suggestSrtName();
-    // Normalize to .srt and fix accidental .srt.json
-    name = name.replace(/\.srt\.json$/i, ".srt");
-    if (name.toLowerCase().endsWith(".json")) name = name.replace(/\.json$/i, ".srt");
-    if (!name.toLowerCase().endsWith(".srt")) name += ".srt";
-    // Replace invalid filename chars (cross-platform safe)
-    name = name.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_');
-    return name;
-  }
-
-  function _downloadText(text, filename, mime) {
-    const blob = new Blob([text], { type: mime || "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename || "transcript.srt";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  async function saveSrtLocally(forceSaveAs = false) {
-    if (!segments.length) return;
-
-    const sourceKind = (typeof transcriptLoadKind !== 'undefined' ? transcriptLoadKind : null);
-    const isDiskSource = (sourceKind === 'disk');
-
-    const finalName = sanitizeSrtFileName(suggestSrtName());
-    const srtText = buildSrtFromSegments();
-
-    const canPicker = (typeof window.showSaveFilePicker === "function" && window.isSecureContext);
-
-    try {
-      if (canPicker) {
-        // ... existing picker logic ...
-        let handle = srtSaveHandle;
-        if (forceSaveAs) {
-          handle = await window.showSaveFilePicker({ suggestedName: finalName, types: [{ description: "SubRip (.srt)", accept: { "text/plain": [".srt"] } }] });
-          srtSaveHandle = handle;
-        } else if (!handle) {
-          // No handle? Ask for one.
-          handle = await window.showSaveFilePicker({ suggestedName: finalName, types: [{ description: "SubRip (.srt)", accept: { "text/plain": [".srt"] } }] });
-          srtSaveHandle = handle;
-        }
-
-        // B2 behavior: request write permission on first *Save* (not on Open).
-        try {
-          if (!forceSaveAs && typeof handle.queryPermission === "function" && typeof handle.requestPermission === "function") {
-            const qp = await handle.queryPermission({ mode: "readwrite" });
-            if (qp !== "granted") {
-              const rp = await handle.requestPermission({ mode: "readwrite" });
-              if (rp !== "granted") {
-                if (typeof showToast === "function") showToast("No write permission for this file.");
-                return;
-              }
-            }
-          }
-        } catch { }
-
-        const writable = await handle.createWritable();
-
-        // Embed topics if available
-        let contentToWrite = srtText;
-        if (topicsView.topics && topicsView.topics.length > 0) {
-          contentToWrite = embedMetadata(srtText, { topics: topicsView.topics });
-        }
-
-        await writable.write(contentToWrite);
-        await writable.close();
-
-        lastSavedAt = nowHHMMSS();
-        setCleanNow();
-        showToast(`Saved: ${handle.name}`);
-
-      } else {
-        // Fallback: Download
-        downloadSrt(finalName, srtText);
-      }
-    } catch (e) {
-      console.error(e);
-      if (e.name !== 'AbortError') {
-        if (typeof showToast === 'function') showToast(`Save failed: ${e.message}`);
-      }
-    }
-  }
-
-  function downloadSrt(filename, text) {
-    // Embed topics if available
-    let content = text;
-    if (topicsView.topics && topicsView.topics.length > 0) {
-      content = embedMetadata(text, { topics: topicsView.topics });
-    }
-
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    lastSavedAt = nowHHMMSS();
-    setCleanNow();
-  }
-
-
+  function buildSrtFromSegments() { return _buildSrt(ctx); }
+  function suggestSrtName() { return _suggestSrtName(ctx); }
+  function sanitizeSrtFileName(name) { return _sanitizeSrtFileName(name, ctx); }
+  function _downloadText(text, filename, mime) { return downloadTextBlob(text, filename, mime); }
+  async function saveSrtLocally(forceSaveAs = false) { return _saveSrtLocally(forceSaveAs, ctx); }
+  function downloadSrt(filename, text) { return _downloadSrt(filename, text, ctx); }
+  function doExport(finalName) { return _doExport(finalName, ctx); }
 
   function updateSaveLocalHint() {
-    // Hint removed by design (too noisy); keep function as no-op for backwards compatibility.
     const el = document.getElementById("saveLocalHint");
     if (!el) return;
     el.textContent = "";
@@ -4363,26 +3803,7 @@ Valid range: ${secondsToTimecodeWhole(minInt)} — ${secondsToTimecodeWhole(maxI
 
   function closeSaveModal() { saveModal.classList.add('hidden'); }
 
-  function doExport(finalName) {
 
-    const outObj = buildJsonFromSegments();
-    const blob = new Blob([JSON.stringify(outObj, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = finalName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-
-    exportFileName = finalName;
-    lastSavedAt = nowHHMMSS();
-
-    setCleanNow();
-  }
-
-  // Save button opens modal
   saveBtn.addEventListener('click', () => saveSrtLocally(false));
   if (saveAsBtn) saveAsBtn.addEventListener('click', () => saveSrtLocally(true));
   exportDocBtn && exportDocBtn.addEventListener('click', () => showToast('Not yet implemented'));
