@@ -113,7 +113,7 @@ export async function saveSrtLocally(forceSaveAs, ctx) {
     const finalName = sanitizeSrtFileName(suggestSrtName(ctx), ctx);
     const srtText = buildSrtFromSegments(ctx);
 
-    const canPicker = (typeof window.showSaveFilePicker === "function" && window.isSecureContext);
+    const canPicker = ctx.canUseFileSystem;
 
     try {
         if (canPicker) {

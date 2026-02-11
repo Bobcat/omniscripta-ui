@@ -30,7 +30,7 @@ import {
 // ... imports ...
 export function mountEditor(options = {}) {
   // Capture options if needed
-  const { jobId, audioUrl, srtUrlPreview, startTime, srtContent } = options;
+  const { jobId, audioUrl, srtUrlPreview, startTime, srtContent, canUseFileSystem, app } = options;
 
   const transcriptInput = document.getElementById('transcriptInput');
 
@@ -96,6 +96,11 @@ export function mountEditor(options = {}) {
     onSeek: (time, segId) => {
       // When clicking text view, jump player and activate segment
       if (segId) {
+        // Mobile UX: Close sidebar if open when clicking a segment
+        if (app && typeof app.isMobile === 'function' && app.isMobile()) {
+          if (typeof app.toggleSidebar === 'function') app.toggleSidebar(false);
+        }
+
         const idx = findIndexById(segId);
         if (idx >= 0) {
           // preserveScroll=false (default?) or true? We want to jump segments view too?
@@ -1913,6 +1918,7 @@ export function mountEditor(options = {}) {
     lastSavedAt: { get() { return lastSavedAt; }, set(v) { lastSavedAt = v; } },
     srtSaveHandle: { get() { return srtSaveHandle; }, set(v) { srtSaveHandle = v; } },
     transcriptLoadKind: { get() { return transcriptLoadKind; }, set(v) { transcriptLoadKind = v; } },
+    canUseFileSystem: { get() { return (typeof canUseFileSystem !== 'undefined') ? canUseFileSystem : false; } },
     // Find/replace mutable state
     currentFind: { get() { return currentFind; }, set(v) { currentFind = v; } },
     lastFindQuery: { get() { return lastFindQuery; }, set(v) { lastFindQuery = v; } },
@@ -2446,7 +2452,7 @@ export function mountEditor(options = {}) {
 
     saveBtn.disabled = false;
 
-    const canPicker = (typeof window.showSaveFilePicker === "function" && window.isSecureContext);
+    const canPicker = ctx.canUseFileSystem;
     if (canPicker) {
       saveBtn.textContent = dirty ? "Save*" : "Save";
       saveBtn.title = dirty
@@ -3195,7 +3201,7 @@ export function mountEditor(options = {}) {
   // Prefer File System Access API for disk loads so "Save" can overwrite without a chooser.
   if (transcriptBtnLabelEl) {
     transcriptBtnLabelEl.addEventListener('click', async (e) => {
-      const canOpen = (window.isSecureContext && typeof window.showOpenFilePicker === "function");
+      const canOpen = ctx.canUseFileSystem;
       if (!canOpen) { try { transcriptInput && transcriptInput.click(); } catch { } return; }
       e.preventDefault();
       e.stopPropagation();
@@ -3947,9 +3953,11 @@ export function mountEditor(options = {}) {
 
   // Set up UI state based on security context
   setTimeout(() => {
-    const canPicker = (typeof window.showSaveFilePicker === "function" && window.isSecureContext);
+    const canPicker = ctx.canUseFileSystem;
     if (!canPicker) {
-      if (document.getElementById('saveAsBtn')) document.getElementById('saveAsBtn').style.display = 'none';
+      if (document.getElementById('saveAsBtn')) {
+        document.getElementById('saveAsBtn').style.display = ctx.canUseFileSystem ? '' : 'none';
+      }
       const sb = document.getElementById('saveBtn');
       if (sb) {
         sb.textContent = "Download";

@@ -24,7 +24,42 @@ class App {
         };
 
         this.projectService = new ProjectService();
+        this.initAlertModal();
         this.init();
+    }
+
+    initAlertModal() {
+        this.alertModal = document.getElementById('alertModal');
+        this.alertTitle = document.getElementById('alertTitle');
+        this.alertMessage = document.getElementById('alertMessage');
+        const okBtn = document.getElementById('alertOkBtn');
+
+        if (okBtn) {
+            okBtn.addEventListener('click', () => this.hideAlert());
+        }
+
+        // Close on Enter
+        this.alertModal.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                this.hideAlert();
+            }
+        });
+    }
+
+    showAlert(title, message) {
+        if (!this.alertModal) return;
+        this.alertTitle.textContent = title;
+        this.alertMessage.innerText = message;
+        this.alertModal.classList.remove('hidden');
+        // Focus the OK button
+        const okBtn = document.getElementById('alertOkBtn');
+        if (okBtn) okBtn.focus();
+    }
+
+    hideAlert() {
+        if (this.alertModal) {
+            this.alertModal.classList.add('hidden');
+        }
     }
 
     init() {
@@ -55,7 +90,7 @@ class App {
 
                 if (action === 'open-local') {
                     // Try File System Access API first
-                    if ('showOpenFilePicker' in window) {
+                    if (this.canUseFileSystem()) {
                         try {
                             const [fileHandle] = await window.showOpenFilePicker({
                                 types: [{
@@ -85,7 +120,7 @@ class App {
                         } catch (err) {
                             if (err.name !== 'AbortError') {
                                 console.error("Error opening file:", err);
-                                alert("Failed to open file. Please try again.");
+                                this.showAlert("Error", "Failed to open file. Please try again.");
                             }
                         }
                     } else {
@@ -147,6 +182,19 @@ class App {
             this.detectDeviceType();
             this.checkDevice();
         });
+
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', (e) => {
+            if (this.state.isMobile && this.state.sidebarOpen) {
+                const inSidebar = this.sidebar.contains(e.target);
+                const isToggle = e.target.closest('#mobile-menu-toggle') ||
+                    e.target.closest('#mobileMenuBtn'); // Also check the internal toggle
+
+                if (!inSidebar && !isToggle) {
+                    this.toggleSidebar(false);
+                }
+            }
+        });
     }
 
     checkDevice() {
@@ -170,6 +218,19 @@ class App {
         if (params.get('mobile')) return true;
         // Check if we are in "mobile mode" via class (UA/Touch) OR if screen is small
         return document.body.classList.contains('mobile') || window.innerWidth <= 768;
+    }
+
+    /**
+     * Checks if the File System Access API is supported and allowed.
+     * ALWAYS use this method instead of checking window.showOpenFilePicker directly
+     * to support Safari emulation testing via ?emulate_safari=1.
+     */
+    canUseFileSystem() {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('emulate_safari') === '1') {
+            return false;
+        }
+        return 'showOpenFilePicker' in window;
     }
 
     detectDeviceType() {
@@ -353,7 +414,8 @@ class App {
                 }
 
                 if (p.type === 'local') {
-                    if (p.hasHandle) {
+                    // Start with capabilities check to support emulation/safari
+                    if (this.canUseFileSystem() && p.hasHandle) {
                         try {
                             const handle = await FileHandleService.getHandle(p.id);
                             if (!handle) throw new Error("Handle missing");
@@ -362,7 +424,7 @@ class App {
                             const opts = { mode: 'read' };
                             if ((await handle.queryPermission(opts)) !== 'granted') {
                                 if ((await handle.requestPermission(opts)) !== 'granted') {
-                                    alert("Permission denied. Cannot open file.");
+                                    this.showAlert("Permission Denied", "Permission denied. Cannot open file.");
                                     return;
                                 }
                             }
@@ -377,14 +439,14 @@ class App {
                             });
                         } catch (err) {
                             console.warn("Failed to re-open local file:", err);
-                            alert("Cannot re-open file (moved or deleted). Please open it again.");
+                            this.showAlert("File Missing", "Cannot re-open file (moved or deleted). Please open it again.");
                             // Optional: remove handle from DB?
                         }
                     } else {
-                        if (!('showOpenFilePicker' in window)) {
-                            alert("Cannot re-open local project automatically because this site is not running in a Secure Context (HTTPS or localhost). Please open the file again via the menu.");
+                        if (!this.canUseFileSystem()) {
+                            this.showAlert("Browser limitation", "Cannot re-open this file automatically in your current browser. Please open it again via 'Open local project'.\n\nTip: Use a Chromium-based browser (such as Chrome or Edge) to enable automatic re-opening from this list.");
                         } else {
-                            alert("Cannot re-open local project from history. The file handle is missing or expired. Please open it again via the menu.");
+                            this.showAlert("Local project history", "Cannot re-open local project from history. The file handle is missing or expired. Please open it again via the menu.");
                         }
                     }
                     return;
@@ -395,7 +457,7 @@ class App {
                     await fetchJobStatus(p.id);
                 } catch (err) {
                     console.warn("Job not found on server:", err);
-                    alert('Project no longer available on server');
+                    this.showAlert("Not Available", 'Project no longer available on server');
                     return;
                 }
 

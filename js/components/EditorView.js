@@ -307,6 +307,8 @@ export class EditorView {
     container.innerHTML = this.getHtml();
     mountEditor({
       ...data,
+      app: this.app,
+      canUseFileSystem: this.app.canUseFileSystem(),
       updateProject: (id, payload) => this.app.projectService.updateProject(id, payload)
     });
   }

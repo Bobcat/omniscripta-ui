@@ -59,6 +59,17 @@
     </main>
   </div>
 
+  <!-- Alert modal -->
+  <div aria-labelledby="alertTitle" aria-modal="true" class="modal hidden" id="alertModal" role="dialog">
+    <div class="modal-card">
+      <h3 id="alertTitle">Notification</h3>
+      <p id="alertMessage" style="margin-top: 10px; line-height: 1.5; color: var(--muted);"></p>
+      <div class="modal-actions">
+        <button class="primary" id="alertOkBtn">OK</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="js/app.js?v=36"></script>
 </body>
 
