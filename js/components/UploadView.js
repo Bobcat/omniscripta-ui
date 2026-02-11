@@ -1,73 +1,129 @@
 import { getApiUrl } from "../api.js";
 import { ProjectService } from "../services/ProjectService.js";
 
+const LANGUAGES = [
+  { code: 'en', flag: '🇬🇧', name: 'English' },
+  { code: 'nl', flag: '🇳🇱', name: 'Dutch' },
+  { code: 'de', flag: '🇩🇪', name: 'German' },
+  { code: 'fr', flag: '🇫🇷', name: 'French' },
+  { code: 'es', flag: '🇪🇸', name: 'Spanish' },
+  { code: 'it', flag: '🇮🇹', name: 'Italian' },
+  { code: 'pt', flag: '🇵🇹', name: 'Portuguese' },
+  { code: 'ru', flag: '🇷🇺', name: 'Russian' },
+  { code: 'zh', flag: '🇨🇳', name: 'Chinese' },
+  { code: 'ja', flag: '🇯🇵', name: 'Japanese' },
+  { code: 'ko', flag: '🇰🇷', name: 'Korean' },
+  { code: 'pl', flag: '🇵🇱', name: 'Polish' },
+  { code: 'uk', flag: '🇺🇦', name: 'Ukrainian' },
+  { code: 'tr', flag: '🇹🇷', name: 'Turkish' },
+  { code: 'ar', flag: '🇸🇦', name: 'Arabic' },
+  { code: 'hi', flag: '🇮🇳', name: 'Hindi' },
+  { code: 'el', flag: '🇬🇷', name: 'Greek' },
+  { code: 'cs', flag: '🇨🇿', name: 'Czech' },
+  { code: 'da', flag: '🇩🇰', name: 'Danish' },
+  { code: 'fi', flag: '🇫🇮', name: 'Finnish' },
+  { code: 'hu', flag: '🇭🇺', name: 'Hungarian' },
+  { code: 'no', flag: '🇳🇴', name: 'Norwegian' },
+  { code: 'ro', flag: '🇷🇴', name: 'Romanian' },
+  { code: 'sk', flag: '🇸🇰', name: 'Slovak' },
+  { code: 'sv', flag: '🇸🇪', name: 'Swedish' },
+  { code: 'th', flag: '🇹🇭', name: 'Thai' },
+  { code: 'vi', flag: '🇻🇳', name: 'Vietnamese' },
+  { code: 'id', flag: '🇮🇩', name: 'Indonesian' },
+  { code: 'ms', flag: '🇲🇾', name: 'Malay' },
+  { code: 'he', flag: '🇮🇱', name: 'Hebrew' },
+  { code: 'fa', flag: '🇮🇷', name: 'Persian' },
+  { code: 'bg', flag: '🇧🇬', name: 'Bulgarian' },
+  { code: 'ca', flag: '🇪🇸', name: 'Catalan' },
+  { code: 'hr', flag: '🇭🇷', name: 'Croatian' },
+  { code: 'lt', flag: '🇱🇹', name: 'Lithuanian' },
+  { code: 'lv', flag: '🇱🇻', name: 'Latvian' },
+  { code: 'sl', flag: '🇸🇮', name: 'Slovenian' },
+  { code: 'sr', flag: '🇷🇸', name: 'Serbian' },
+  { code: 'et', flag: '🇪🇪', name: 'Estonian' }
+];
+
 export class UploadView {
   constructor(app) {
     this.app = app;
     this.projectService = new ProjectService();
+    // Temporary state for the selected file before upload
+    this.selectedFile = null;
   }
 
   getHtml() {
+    const langOptions = LANGUAGES.map(l =>
+      `<option value="${l.code}">${l.flag} ${l.name}</option>`
+    ).join('');
+
     return `
       <div class="upload-wrap">
         <div class="wrap">
         <div class="top">
           <div class="dot" aria-hidden="true"></div>
-          <div class="brand">123transcribe</div>
+          <div class="brand">Omniscripta</div>
         </div>
 
-        <h1>1-2-3: Upload → Transcribe → Edit &amp; Export</h1>
+        <h1 class="subtle-header">Upload → Transcribe → Edit &amp; Export</h1>
         <p class="sub">
           Upload an audio file. When transcription is ready, the editor opens automatically.
         </p>
 
-        <div class="steps">
-          <div class="card">
-            <span class="badgeNum">1</span><span class="cardTitle">Upload</span>
-            <p class="cardText">Choose an audio file (MP3, WAV, M4A).</p>
-          </div>
-          <div class="card">
-            <span class="badgeNum">2</span><span class="cardTitle">Transcribe</span>
-            <p class="cardText">Automatic transcription with timestamps.</p>
-          </div>
-          <div class="card">
-            <span class="badgeNum">3</span><span class="cardTitle">Edit &amp; Export</span>
-            <p class="cardText">Fix text & speaker labels, then export.</p>
-          </div>
-        </div>
 
         <div class="panel">
-          <h2>Get started</h2>
-
-          <button class="btn" id="chooseBtn">Choose audio file</button>
-
-          <div class="row">
-            <div>
-              <label for="lang">Language</label>
-              <select id="lang">
-                <option value="en" selected>English</option>
-                <option value="nl">Dutch</option>
-                <option value="de">German</option>
-                <option value="fr">French</option>
-              </select>
-            </div>
-            <div>
-              <label for="spk">Speakers</label>
-              <select id="spk">
-                <option value="auto" selected>Auto</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-                <option value="6">6</option>
-                <option value="7">7</option>
-                <option value="8">8</option>
-                <option value="9">9</option>
-                <option value="10">10</option>
-              </select>
+          
+          <!-- Step 1: Choose File -->
+          <div id="step1" class="upload-zone" onclick="document.getElementById('fileInput').click()">
+            <div class="upload-zone-content">
+              <svg class="upload-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <button class="btn primary" id="chooseBtn">Choose audio file</button>
+              <p class="upload-hint">Click to browse <span class="desktop-only">(or drag and drop)</span></p>
             </div>
           </div>
 
+          <!-- Step 2: Configure & Upload (Initially Hidden) -->
+          <div id="step2" class="hidden" style="margin-top: 24px;">
+            <div class="file-confirm-box">
+              <div class="file-icon-styled">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+              </div>
+              <div class="file-info">
+                 <div class="file-name-label" id="selectedFileName">filename.mp3</div>
+                 <button class="change-file-link" id="changeFileBtn">Change file</button>
+              </div>
+            </div>
+
+            <div class="row">
+              <div>
+                <label for="lang">Language</label>
+                <select id="lang">
+                  ${langOptions}
+                </select>
+              </div>
+              <div>
+                <label for="spk">Speakers</label>
+                <select id="spk">
+                  <option value="auto" selected>Auto (Detect)</option>
+                  <option value="1">1 Speaker</option>
+                  <option value="2">2 Speakers</option>
+                  <option value="3">3 Speakers</option>
+                  <option value="4">4 Speakers</option>
+                  <option value="5">5 Speakers</option>
+                  <option value="6">6 Speakers</option>
+                  <option value="7">7 Speakers</option>
+                  <option value="8">8 Speakers</option>
+                  <option value="9">9 Speakers</option>
+                  <option value="10">10 Speakers</option>
+                </select>
+              </div>
+            </div>
+
+            <button class="btn primary" id="startUploadBtn" style="margin-top: 24px; width: 100%;">
+              Start Transcription
+            </button>
+          </div>
+
+          <!-- Progress Section (Initially Hidden) -->
           <div class="progressWrap" id="progressWrap">
             <div class="bar">
               <div class="fill" id="fill"></div>
@@ -90,16 +146,19 @@ export class UploadView {
   }
 
   initLogic() {
-    // We need to define restoreState and other functions before calling them, 
-    // but they are defined inside this method in the current structure.
-    // So we will call restoreState() at the END of this method.
-
     const fileEl = document.createElement('input');
     fileEl.type = 'file';
     fileEl.accept = 'audio/*,.mp3,.wav,.m4a,.flac,.ogg,.opus';
     fileEl.style.display = 'none';
-    document.body.appendChild(fileEl); // Append to body or keep in memory is fine usually, but some browsers require it in DOM for some events. valid to just keep it in memory mostly, but let's append hidden to be safe.
+    document.body.appendChild(fileEl);
+
+    // UI Elements
+    const step1 = document.getElementById('step1');
+    const step2 = document.getElementById('step2');
     const chooseBtn = document.getElementById('chooseBtn');
+    const changeFileBtn = document.getElementById('changeFileBtn');
+    const startUploadBtn = document.getElementById('startUploadBtn');
+    const selectedFileNameEl = document.getElementById('selectedFileName');
     const langEl = document.getElementById('lang');
     const spkEl = document.getElementById('spk');
 
@@ -109,28 +168,105 @@ export class UploadView {
     const statelineEl = document.getElementById('stateline');
     const filelineEl = document.getElementById('fileline');
 
-    // Clear any existing poller from previous mounts
+    // Polling state
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
-
     let lastProgress = 0;
 
-    // --- State Persistence Logic ---
+
+    // --- Logic ---
+
+    // 1. File Selection
+    const triggerFileSelect = () => fileEl.click();
+
+    if (chooseBtn) chooseBtn.addEventListener('click', triggerFileSelect);
+    if (changeFileBtn) changeFileBtn.addEventListener('click', triggerFileSelect);
+
+    fileEl.addEventListener('change', () => {
+      const f = fileEl.files && fileEl.files[0];
+      if (!f) return;
+
+      this.selectedFile = f;
+      this.currentFilename = f.name;
+
+      // Update UI to Step 2
+      step1.classList.add('hidden');
+      step2.classList.remove('hidden');
+      selectedFileNameEl.textContent = f.name;
+
+
+      // Reset any previous progress/errors
+      progressWrapEl.style.display = 'none';
+    });
+
+    // 2. Start Upload
+    if (startUploadBtn) {
+      startUploadBtn.addEventListener('click', async () => {
+        if (!this.selectedFile) return;
+
+        // Lock UI
+        startUploadBtn.disabled = true;
+        startUploadBtn.textContent = "Starting...";
+        changeFileBtn.style.display = 'none'; // Prevent changing file during upload
+        if (langEl) langEl.disabled = true;
+        if (spkEl) spkEl.disabled = true;
+
+
+        // Show progress
+        showProgress();
+        setFilename(this.selectedFile.name);
+        lastProgress = 0;
+        setProgress(0);
+        setLine("queued", "upload", "Uploading…");
+
+        const fields = {};
+        fields.language = (langEl && langEl.value) ? langEl.value : "en";
+        fields.speakers = (spkEl && spkEl.value) ? spkEl.value : "auto";
+
+        try {
+          const res = await uploadWithProgress(this.selectedFile, fields);
+          const jobId = res.job_id;
+
+          startUploadBtn.textContent = "Transcribing…";
+          setLine("queued", "start", "Starting transcription…");
+
+          // Save project
+          this.projectService.addProject(jobId, this.currentFilename || "Audio Upload");
+          this.app.refreshProjects();
+
+          poll(jobId);
+        } catch (e) {
+          setProgress(0);
+          setLine("error", "upload", e && e.message ? e.message : String(e));
+
+          // Reset UI to allow retry
+          startUploadBtn.disabled = false;
+          startUploadBtn.textContent = "Start Transcription";
+          changeFileBtn.style.display = 'inline-block';
+          if (langEl) langEl.disabled = false;
+          if (spkEl) spkEl.disabled = false;
+        }
+      });
+    }
+
+    // --- Helpers (Same as before, simplified) ---
+
+    // State Persistence
     const restoreState = () => {
       const job = this.app.state.activeJob;
       if (job && job.status !== 'done' && job.status !== 'error') {
-        // Restore UI
+        // If a job is running, we skip step 1 & 2 and go straight to progress
+        step1.classList.add('hidden');
+        step2.classList.add('hidden'); // Or keep it visible but disabled? Better to hide config once started.
+
         showProgress();
         setFilename(job.filename);
-        chooseBtn.disabled = true;
-        chooseBtn.textContent = (job.status === 'queued' || job.status === 'upload') ? "Uploading..." : "Transcribing...";
 
         lastProgress = job.progress || 0;
         setProgress(lastProgress);
 
-        // Resume polling if not already
         if (!this.pollTimer) {
           poll(job.id);
         }
@@ -168,17 +304,13 @@ export class UploadView {
       if (this.pollTimer) { clearTimeout(this.pollTimer); this.pollTimer = null; }
     };
 
-    // NOTE: Instead of redirect, we signal the app to switch views
     const onJobReady = (jobId) => {
       stopPolling();
-      chooseBtn.disabled = true;
-      chooseBtn.textContent = "Opening editor…";
+      // startUploadBtn.textContent = "Opening editor…"; // Button might be hidden if we restored state?
+      // Just rely on the redirect
+      setLine("done", "ready", "Opening editor...");
 
-      // Use App's navigation
       setTimeout(() => {
-        // Save project to history/sidebar
-        // We use a generic name first, or the file name if we have it in scope. 
-        // Ideally we pass the file name to onJobReady or store it in class
         this.app.navigateTo('editor', { jobId });
       }, 250);
     };
@@ -196,7 +328,6 @@ export class UploadView {
         p = Math.max(lastProgress, clamp01(p));
         lastProgress = p;
         setProgress(p);
-
         setLine(st.state, st.phase, st.message);
 
         // Update Global State
@@ -206,7 +337,7 @@ export class UploadView {
           progress: p,
           status: st.state
         };
-        this.app.refreshProjects(); // Trigger sidebar update to gray out item
+        this.app.refreshProjects();
 
         if (st.state === "done") {
           onJobReady(jobId);
@@ -215,8 +346,9 @@ export class UploadView {
 
         if (st.state === "error") {
           stopPolling();
-          chooseBtn.disabled = false;
-          chooseBtn.textContent = "Choose audio file";
+          startUploadBtn.disabled = false;
+          startUploadBtn.textContent = "Start Transcription";
+          changeFileBtn.style.display = 'inline-block';
           return;
         }
       } catch (e) {
@@ -230,7 +362,6 @@ export class UploadView {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", getApiUrl("/api/demo/jobs"), true);
-        // xhr.responseType = "json"; // Remove to allow reading responseText on errors
 
         xhr.upload.onprogress = (evt) => {
           if (!evt.lengthComputable) return;
@@ -264,49 +395,6 @@ export class UploadView {
       });
     };
 
-    chooseBtn.addEventListener('click', () => fileEl.click());
-
-    fileEl.addEventListener('change', async () => {
-      const f = fileEl.files && fileEl.files[0];
-      if (!f) return;
-
-      stopPolling();
-      showProgress();
-      setFilename(f.name);
-      this.currentFilename = f.name; // Store for later usage
-
-      chooseBtn.disabled = true;
-      chooseBtn.textContent = "Uploading…";
-
-      lastProgress = 0;
-      setProgress(0);
-      setLine("queued", "upload", "Uploading…");
-
-      const fields = {};
-      fields.language = (langEl && langEl.value) ? langEl.value : "en";
-      fields.speakers = (spkEl && spkEl.value) ? spkEl.value : "auto";
-
-      try {
-        const res = await uploadWithProgress(f, fields);
-        const jobId = res.job_id;
-        chooseBtn.textContent = "Transcribing…";
-        setLine("queued", "start", "Starting transcription…");
-
-        // Save project immediately so it appears in sidebar
-        this.projectService.addProject(jobId, this.currentFilename || "Audio Upload");
-        this.app.refreshProjects(); // Notify app to update sidebar
-
-        poll(jobId);
-      } catch (e) {
-        setProgress(0);
-        setLine("error", "upload", e && e.message ? e.message : String(e));
-        chooseBtn.disabled = false;
-        chooseBtn.textContent = "Choose audio file";
-      } finally {
-        fileEl.value = "";
-      }
-    });
-
-    restoreState(); // Restore state if returning to view
+    restoreState();
   }
 }
