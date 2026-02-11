@@ -249,6 +249,30 @@ body {
     /* Optional: add some padding if needed, but views might handle their own */
 }
 
+/* Floating hamburger button (created by JS, lives outside sidebar) */
+#mobile-menu-toggle {
+    display: none;
+    position: fixed;
+    top: 4px;
+    left: 16px;
+    z-index: 10001;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid var(--border);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    line-height: 1;
+}
+
+#mobile-menu-toggle .material-symbols-outlined {
+    font-size: 20px;
+}
+
 @media (max-width: 768px) {
     .main-content {
         margin-left: 0;
@@ -303,33 +327,14 @@ body {
         display: block;
     }
 
-    /* Floating hamburger button (created by JS, lives outside sidebar) */
+    /* Show floating toggle on mobile when sidebar is NOT open */
     #mobile-menu-toggle {
-        position: fixed;
-        top: 4px;
-        left: 16px;
-        z-index: 10001;
-        width: 40px;
-        height: 40px;
-        padding: 0;
         display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.95);
-        border: 1px solid var(--border);
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        cursor: pointer;
-        line-height: 1;
     }
 
     /* Hide floating toggle when sidebar is expanded (sidebar's own toggle takes over) */
     body.sidebar-open #mobile-menu-toggle {
         display: none;
-    }
-
-    #mobile-menu-toggle .material-symbols-outlined {
-        font-size: 20px;
     }
 }
 
