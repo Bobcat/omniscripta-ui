@@ -346,6 +346,10 @@ body {
 }
 
 /* --- Projects List Customization --- */
+.projects-list li.local .link-text {
+    color: var(--meta);
+}
+
 .projects-list li {
     display: flex;
     /* Use flexbox for the list item itself */

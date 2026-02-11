@@ -30,7 +30,7 @@ import {
 // ... imports ...
 export function mountEditor(options = {}) {
   // Capture options if needed
-  const { jobId, audioUrl, srtUrlPreview, startTime } = options;
+  const { jobId, audioUrl, srtUrlPreview, startTime, srtContent } = options;
 
   const transcriptInput = document.getElementById('transcriptInput');
 
@@ -3862,8 +3862,28 @@ export function mountEditor(options = {}) {
         } catch { }
       }
 
-      // Transcript autoload (.srt)
-      if (srtUrl) {
+      if (srtContent) {
+        // Local file content provided directly
+        const tName = options.transcriptName || 'Local Project';
+        try {
+          setChosenFileLabel(transcriptBtnLabelEl, tName, "Choose transcript", "transcript");
+          chosenTranscriptName = tName;
+          loadedJsonFileName = tName;
+          srtSaveHandle = null;
+          exportFileName = null;
+          transcriptLoadKind = 'local';
+          updateFileSummaryLabel();
+        } catch { }
+
+        rawJson = null;
+        buildSegmentsFromSrtText(srtContent);
+        loadDoneFromStorage(); // Works if based on content hash
+        renderSegments();
+        updateDonePill();
+        setCleanNow();
+      }
+      // Transcript autoload (.srt) from URL
+      else if (srtUrl) {
         const srtText = await apiFetchSrt(srtUrl);
 
         const tail = (() => {

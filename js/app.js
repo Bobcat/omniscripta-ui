@@ -1,6 +1,8 @@
 import { UploadView } from "./components/UploadView.js";
 import { EditorView } from "./components/EditorView.js";
 import { ProjectService } from "./services/ProjectService.js";
+import { FileHandleService } from "./services/FileHandleService.js";
+import { fetchJobStatus } from "./api.js";
 
 class App {
     constructor() {
@@ -47,12 +49,57 @@ class App {
 
         // Nav Links
         this.navLinks.forEach(link => {
-            link.addEventListener('click', (e) => {
+            link.addEventListener('click', async (e) => {
                 const action = link.dataset.action;
                 if (!action || link.classList.contains('disabled')) return;
 
-                // For history, etc.
-                if (action === 'upload') {
+                if (action === 'open-local') {
+                    // Try File System Access API first
+                    if ('showOpenFilePicker' in window) {
+                        try {
+                            const [fileHandle] = await window.showOpenFilePicker({
+                                types: [{
+                                    description: 'Subtitle Files',
+                                    accept: { 'text/plain': ['.srt'] }
+                                }],
+                                multiple: false
+                            });
+
+                            const file = await fileHandle.getFile();
+                            const text = await file.text();
+                            const id = 'local-' + Date.now();
+
+                            // Save handle for later
+                            await FileHandleService.saveHandle(id, fileHandle);
+
+                            this.projectService.addProject(id, file.name, 'local', { hasHandle: true });
+                            this.navigateTo('editor', {
+                                jobId: id,
+                                srtContent: text,
+                                transcriptName: file.name
+                            });
+
+                            if (this.isMobile()) {
+                                this.toggleSidebar(false);
+                            }
+                        } catch (err) {
+                            if (err.name !== 'AbortError') {
+                                console.error("Error opening file:", err);
+                                alert("Failed to open file. Please try again.");
+                            }
+                        }
+                    } else {
+                        // Fallback to hidden input
+                        const input = document.getElementById('localProjectInput');
+                        if (input) {
+                            input.value = '';
+                            input.click();
+                        }
+                        if (this.isMobile()) {
+                            this.toggleSidebar(false);
+                        }
+                    }
+                } else if (action === 'upload') {
                     this.navigateTo('upload');
 
                     // On mobile, close sidebar after selection
@@ -62,6 +109,29 @@ class App {
                 }
             });
         });
+
+        // Local Project Input Change
+        const localInput = document.getElementById('localProjectInput');
+        if (localInput) {
+            localInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const text = ev.target.result;
+                    // Use a pseudo-ID for local files, e.g. "local-<timestamp>"
+                    const id = 'local-' + Date.now();
+                    this.projectService.addProject(id, file.name, 'local');
+                    this.navigateTo('editor', {
+                        jobId: id,
+                        srtContent: text,
+                        transcriptName: file.name
+                    });
+                };
+                reader.readAsText(file);
+            });
+        }
 
         // Listen for mobile menu buttons from views being clicked
         // We use event delegation or a custom event since views are dynamic
@@ -255,6 +325,10 @@ class App {
                 li.style.color = 'var(--active-text)';
             }
 
+            if (p.type === 'local') {
+                li.classList.add('local');
+            }
+
             // Content wrapper
             const content = document.createElement('div');
             content.className = 'project-content';
@@ -273,10 +347,58 @@ class App {
             li.appendChild(deleteBtn);
 
             // Event: Click Project (Navigate)
-            content.addEventListener('click', () => {
+            content.addEventListener('click', async () => {
                 if (this.state.activeJob && this.state.activeJob.id === p.id && this.state.activeJob.status !== 'done') {
                     return; // Prevent navigation if active
                 }
+
+                if (p.type === 'local') {
+                    if (p.hasHandle) {
+                        try {
+                            const handle = await FileHandleService.getHandle(p.id);
+                            if (!handle) throw new Error("Handle missing");
+
+                            // Check permission
+                            const opts = { mode: 'read' };
+                            if ((await handle.queryPermission(opts)) !== 'granted') {
+                                if ((await handle.requestPermission(opts)) !== 'granted') {
+                                    alert("Permission denied. Cannot open file.");
+                                    return;
+                                }
+                            }
+
+                            const file = await handle.getFile();
+                            const text = await file.text();
+
+                            this.navigateTo('editor', {
+                                jobId: p.id,
+                                srtContent: text,
+                                transcriptName: file.name
+                            });
+                        } catch (err) {
+                            console.warn("Failed to re-open local file:", err);
+                            alert("Cannot re-open file (moved or deleted). Please open it again.");
+                            // Optional: remove handle from DB?
+                        }
+                    } else {
+                        if (!('showOpenFilePicker' in window)) {
+                            alert("Cannot re-open local project automatically because this site is not running in a Secure Context (HTTPS or localhost). Please open the file again via the menu.");
+                        } else {
+                            alert("Cannot re-open local project from history. The file handle is missing or expired. Please open it again via the menu.");
+                        }
+                    }
+                    return;
+                }
+
+                // Check server if job still exists
+                try {
+                    await fetchJobStatus(p.id);
+                } catch (err) {
+                    console.warn("Job not found on server:", err);
+                    alert('Project no longer available on server');
+                    return;
+                }
+
                 this.navigateTo('editor', { jobId: p.id });
                 if (this.isMobile()) {
                     this.toggleSidebar(false);

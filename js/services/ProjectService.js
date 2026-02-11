@@ -13,7 +13,7 @@ export class ProjectService {
         }
     }
 
-    addProject(jobId, filename) {
+    addProject(jobId, filename, type = 'server', options = {}) {
         const projects = this.getProjects();
 
         // Remove if already exists (move to top)
@@ -25,7 +25,9 @@ export class ProjectService {
         const newProject = {
             id: jobId,
             name: filename,
-            createdAt: new Date().toISOString()
+            type: type,
+            createdAt: new Date().toISOString(),
+            ...options
         };
 
         // Add to top
