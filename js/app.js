@@ -217,7 +217,7 @@ class App {
         const params = new URLSearchParams(window.location.search);
         if (params.get('mobile')) return true;
         // Check if we are in "mobile mode" via class (UA/Touch) OR if screen is small
-        return document.body.classList.contains('mobile') || window.innerWidth <= 768;
+        return document.body.classList.contains('mobile') || window.innerWidth <= 600;
     }
 
     /**

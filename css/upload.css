@@ -28,7 +28,7 @@
     /* Increased bottom padding/gap */
 }
 
-@media (max-width: 900px) {
+@media (max-width: 600px) {
     .upload-wrap .top {
         justify-content: flex-end;
         padding-bottom: 16px;
@@ -75,7 +75,7 @@
     margin: 10px 0 12px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 600px) {
     .upload-wrap .steps {
         grid-template-columns: 1fr;
     }
@@ -168,7 +168,7 @@
 
 /* Removed stacking on mobile to keep items side-by-side */
 /*
-@media (max-width: 900px) {
+@media (max-width: 600px) {
     .upload-wrap .row {
         grid-template-columns: 1fr;
     }
@@ -256,7 +256,7 @@
     display: none;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 600px) {
 
     .desktop-only,
     .upload-wrap .dot {

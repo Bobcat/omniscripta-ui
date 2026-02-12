@@ -2004,6 +2004,12 @@
       transform: translateY(-2px);
     }
 
+    .upload-zone.drag-over {
+      border-color: var(--primary);
+      background: #eff6ff;
+      transform: scale(1.02);
+    }
+
     .upload-hint {
       font-size: 14px;
       color: #64748b;

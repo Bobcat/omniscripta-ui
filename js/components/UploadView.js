@@ -181,11 +181,39 @@ export class UploadView {
     // 1. File Selection
     const triggerFileSelect = () => fileEl.click();
 
-    if (chooseBtn) chooseBtn.addEventListener('click', triggerFileSelect);
+    if (chooseBtn) chooseBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // prevent bubbling to zone
+      triggerFileSelect();
+    });
     if (changeFileBtn) changeFileBtn.addEventListener('click', triggerFileSelect);
 
-    fileEl.addEventListener('change', () => {
-      const f = fileEl.files && fileEl.files[0];
+    // 1b. Drag and Drop
+    if (step1) { // The upload zone
+      step1.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        step1.classList.add('drag-over');
+      });
+
+      step1.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        step1.classList.remove('drag-over');
+      });
+
+      step1.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        step1.classList.remove('drag-over');
+
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+          handleFile(files[0]);
+        }
+      });
+    }
+
+    const handleFile = (f) => {
       if (!f) return;
 
       this.selectedFile = f;
@@ -199,6 +227,13 @@ export class UploadView {
 
       // Reset any previous progress/errors
       progressWrapEl.style.display = 'none';
+      if (pctEl) pctEl.textContent = '0%';
+      if (fillEl) fillEl.style.width = '0%';
+    };
+
+    fileEl.addEventListener('change', () => {
+      const f = fileEl.files && fileEl.files[0];
+      handleFile(f);
     });
 
     // 2. Start Upload

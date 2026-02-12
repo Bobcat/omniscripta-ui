@@ -273,7 +273,7 @@ body {
     font-size: 20px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 600px) {
     .main-content {
         margin-left: 0;
     }
@@ -281,7 +281,7 @@ body {
 
 
 /* --- Mobile Responsiveness --- */
-@media (max-width: 768px) {
+@media (max-width: 600px) {
     .sidebar {
         position: fixed;
         /* When expanded, it covers content. When collapsed, it sits on left? 
