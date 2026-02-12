@@ -19,18 +19,6 @@ export function secondsToSrtTimecode(sec) {
     return String(hh).padStart(2, '0') + ":" + String(mm).padStart(2, '0') + ":" + String(ss).padStart(2, '0') + "," + String(ms).padStart(3, '0');
 }
 
-export function downloadTextBlob(text, filename, mime) {
-    const blob = new Blob([text], { type: mime || "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename || "transcript.srt";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 // ========================
 // Functions using ctx
 // ========================
@@ -46,8 +34,16 @@ export function buildSrtFromSegments(ctx) {
         const end = secondsToSrtTimecode(endSec);
 
         const speaker = (s.speaker || "").trim();
-        const text = String(s.text || "").trim();
-        const line = speaker ? (speaker + ": " + text) : text;
+        const rawText = String(s.text || "").replace(/\r\n?/g, "\n").trim();
+        let line = rawText;
+        if (speaker) {
+            const textLines = rawText.split("\n");
+            const first = textLines[0] || "";
+            line = `${speaker}: ${first}`;
+            if (textLines.length > 1) {
+                line += `\n${textLines.slice(1).join("\n")}`;
+            }
+        }
 
         out.push(String(i + 1));
         out.push(start + " --> " + end);
@@ -109,7 +105,6 @@ export function downloadSrt(filename, text, ctx) {
 export async function saveSrtLocally(forceSaveAs, ctx) {
     if (!ctx.segments.length) return;
 
-    const sourceKind = ctx.transcriptLoadKind;
     const finalName = sanitizeSrtFileName(suggestSrtName(ctx), ctx);
     const srtText = buildSrtFromSegments(ctx);
 
@@ -157,26 +152,8 @@ export async function saveSrtLocally(forceSaveAs, ctx) {
             downloadSrt(finalName, srtText, ctx);
         }
     } catch (e) {
+        if (e && e.name === 'AbortError') return;
         console.error(e);
-        if (e.name !== 'AbortError') {
-            ctx.showToast(`Save failed: ${e.message}`);
-        }
+        ctx.showToast(`Save failed: ${e.message}`);
     }
-}
-
-export function doExport(finalName, ctx) {
-    const outObj = ctx.buildJsonFromSegments();
-    const blob = new Blob([JSON.stringify(outObj, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = finalName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-    ctx.exportFileName = finalName;
-    ctx.lastSavedAt = ctx.nowHHMMSS();
-    ctx.setCleanNow();
 }

@@ -1,21 +1,19 @@
 import { loadSettings as apiLoadSettings, saveSettings as apiSaveSettings, fetchJobStatus as apiFetchJobStatus, fetchSrt as apiFetchSrt, getApiUrl } from "./api.js";
-import { safePreview, normSpeaker, secondsToTimecodeWhole, hashString, _srtTcToSeconds, _parseSrt, extractMetadata, embedMetadata } from "./utils.js";
+import { safePreview, normSpeaker, secondsToTimecodeWhole, hashString, _parseSrt, extractMetadata } from "./utils.js";
 import { TextView } from "./components/TextView.js";
 import { TopicsView } from "./components/TopicsView.js";
 import { AudioPlayer } from "./components/AudioPlayer.js";
 import {
-  secondsToSrtTimecode, buildSrtFromSegments as _buildSrt,
-  suggestSrtName as _suggestSrtName, sanitizeSrtFileName as _sanitizeSrtFileName,
-  downloadTextBlob, downloadSrt as _downloadSrt, saveSrtLocally as _saveSrtLocally,
-  doExport as _doExport
+  secondsToSrtTimecode,
+  suggestSrtName as _suggestSrtName,
+  saveSrtLocally as _saveSrtLocally
 } from "./editorSave.js";
 import {
-  isFindOpen as _isFindOpen, findNext as _findNext,
+  findNext as _findNext,
   replaceCurrent as _replaceCurrent, openReplaceAllConfirm as _openReplaceAllConfirm,
   closeReplaceAllConfirm as _closeReplaceAllConfirm, doReplaceAllConfirmed as _doReplaceAllConfirmed,
   openFindModal as _openFindModal, closeFindModal as _closeFindModal,
   getTranscriptSelectionText as _getTranscriptSelectionText,
-  escapeRegExp, getFieldValue, setFieldValue
 } from "./editorFind.js";
 import {
   joinTextsForJoin as _joinTextsForJoin,
@@ -27,18 +25,69 @@ import {
   askForSplitTimeWhole as _askForSplitTimeWhole, applySplitNoHistory as _applySplitNoHistory,
   undoSplitNoHistory as _undoSplitNoHistory, splitSegment as _splitSegment
 } from "./editorSegments.js";
+import { actionToDebugJson, timecodeToSeconds, nowHHMMSS } from "./editorHelpers.js";
+import { getEditorBootDom } from "./editorDom.js";
+import { createMouseDragController } from "./editorDrag.js";
+import { setupHistoryModal, setupHelpModal, setupSettingsModal } from "./editorModals.js";
+import { createSpeakerDropdownController } from "./editorSpeakerDropdown.js";
+import {
+  wireEditorHotkeys as shortcutsWireEditorHotkeys,
+} from "./editorShortcuts.js";
+import {
+  seekRelative as playbackSeekRelative,
+  findSegmentIndexAtTime as playbackFindSegmentIndexAtTime,
+  snapToVisibleIfNeeded as playbackSnapToVisibleIfNeeded,
+  enforceFilteredPlayback as playbackEnforceFilteredPlayback,
+  wirePlaybackLoopEvents as playbackWirePlaybackLoopEvents,
+} from "./editorPlayback.js";
+import {
+  isFilterActive as filtersIsFilterActive,
+  matchesFilter as filtersMatchesFilter,
+  isVisibleNow as filtersIsVisibleNow,
+  clearFilterState as filtersClearFilterState,
+  showFilterNotice as filtersShowFilterNotice,
+  hideFilterNotice as filtersHideFilterNotice,
+  pruneForcedVisibleIds as filtersPruneForcedVisibleIds,
+  forceVisibleIfFilteredOut as filtersForceVisibleIfFilteredOut,
+  updateFilterBarUI as filtersUpdateFilterBarUI,
+  rebuildFilterSpeakerOptions as filtersRebuildFilterSpeakerOptions,
+  syncFilterUIFromState as filtersSyncFilterUIFromState,
+  openFilterModal as filtersOpenFilterModal,
+  closeFilterModal as filtersCloseFilterModal,
+  applyFilterFromModalControls as filtersApplyFilterFromModalControls,
+  wireFilterControlEvents as filtersWireFilterControlEvents,
+  createFilterApplyScheduler as filtersCreateFilterApplyScheduler,
+} from "./editorFilters.js";
 // ... imports ...
 export function mountEditor(options = {}) {
   // Capture options if needed
   const { jobId, audioUrl, srtUrlPreview, startTime, srtContent, canUseFileSystem, app } = options;
 
-  const transcriptInput = document.getElementById('transcriptInput');
+  const {
+    transcriptInput,
+    audioInput,
+    transcriptBtnLabelEl,
+    audioBtnLabelEl,
+    fileSummaryEl,
+    segmentsDiv,
+    player,
+    customPlayerContainer,
+    textViewDiv,
+    modeSegmentsBtn,
+    modeTextBtn,
+    saveBtn,
+    saveAsBtn,
+    exportDocBtn,
+    historyBtn,
+    historyModal,
+    closeHistoryBtn,
+    undoListEl,
+    redoListEl,
+    undoCountEl,
+    redoCountEl,
+    detailsEl,
+  } = getEditorBootDom();
 
-  const audioInput = document.getElementById('audioInput');
-  const transcriptBtnLabelEl = document.getElementById('transcriptBtnLabel');
-  const audioBtnLabelEl = document.getElementById('audioBtnLabel');
-
-  const fileSummaryEl = document.getElementById('fileSummaryLabel');
   let chosenTranscriptName = null;
   let chosenAudioName = null;
 
@@ -77,14 +126,6 @@ export function mountEditor(options = {}) {
     }
   }
 
-
-  const segmentsDiv = document.getElementById('segments');
-  const player = document.getElementById('player');
-
-
-  const textViewDiv = document.getElementById('textView');
-  const modeSegmentsBtn = document.getElementById('modeSegmentsBtn');
-  const modeTextBtn = document.getElementById('modeTextBtn');
 
   let editorMode = (options.lastViewMode === 'text' || options.lastViewMode === 'segments')
     ? options.lastViewMode
@@ -140,7 +181,7 @@ export function mountEditor(options = {}) {
 
   const customPlayer = new AudioPlayer({
     audioElement: player,
-    container: document.getElementById('customPlayer')
+    container: customPlayerContainer
   });
 
   if (startTime && typeof startTime === 'number') {
@@ -154,42 +195,9 @@ export function mountEditor(options = {}) {
     }
   });
 
-  // Removed: let tvSpanById = new Map();
-  // Removed: let tvActiveSegId = null;
-
-
-  const saveBtn = document.getElementById('saveBtn');
-  const saveAsBtn = document.getElementById('saveAsBtn');
-  const exportDocBtn = document.getElementById('exportDocBtn');
-
-  const saveModal = document.getElementById('saveModal');
-  const saveNameIn = document.getElementById('saveName');
-  const cancelSaveBtn = document.getElementById('cancelSaveBtn');
-  const confirmSaveBtn = document.getElementById('confirmSaveBtn');
-
-  const historyBtn = document.getElementById('historyBtn');
-  const historyModal = document.getElementById('historyModal');
-  const closeHistoryBtn = document.getElementById('closeHistoryBtn');
-  const undoListEl = document.getElementById('undoList');
-  const redoListEl = document.getElementById('redoList');
-  const undoCountEl = document.getElementById('undoCount');
-  const redoCountEl = document.getElementById('redoCount');
-  const detailsEl = document.getElementById('historyDetails');
-
   let historySelected = null; // {stack:'undo'|'redo', hid:number}
   let historyNextId = 1;
 
-
-  function actionToDebugJson(a) {
-    const meta = a.meta || {};
-    // avoid dumping big snapshots
-    const out = {
-      id: a.hid,
-      label: a.label,
-      meta,
-    };
-    return JSON.stringify(out, null, 2);
-  }
 
   function renderHistory() {
     if (!historyModal || historyModal.classList.contains('hidden')) return;
@@ -239,19 +247,15 @@ export function mountEditor(options = {}) {
     if (detailsEl && (!historySelected)) detailsEl.textContent = '(click an item)';
   }
 
-  function openHistoryModal() {
-    if (!historyModal) return;
-    player.pause();
-    historySelected = null;
-    detailsEl.textContent = '(click an item)';
-    historyModal.classList.remove('hidden');
-    renderHistory();
-  }
-
-  function closeHistoryModal() {
-    if (!historyModal) return;
-    historyModal.classList.add('hidden');
-  }
+  const { openHistoryModal, closeHistoryModal } = setupHistoryModal({
+    historyBtn,
+    closeHistoryBtn,
+    historyModal,
+    player,
+    clearSelection: () => { historySelected = null; },
+    detailsEl,
+    renderHistory,
+  });
 
 
   // -------------------------
@@ -274,52 +278,17 @@ export function mountEditor(options = {}) {
   const findCard = findModal ? findModal.querySelector('.find-card') : null;
   const findDragHandle = document.getElementById('findDragHandle');
 
-  let findDragX = 0;
-  let findDragY = 0;
-  let findDragging = false;
-  let findDragStartX = 0;
-  let findDragStartY = 0;
-  let findDragOriginX = 0;
-  let findDragOriginY = 0;
-
-  function setFindDrag(x, y) {
-    findDragX = x;
-    findDragY = y;
+  const findDrag = createMouseDragController((x, y) => {
     if (findCard) {
-      findCard.style.setProperty('--drag-x', `${findDragX}px`);
-      findCard.style.setProperty('--drag-y', `${findDragY}px`);
+      findCard.style.setProperty('--drag-x', `${x}px`);
+      findCard.style.setProperty('--drag-y', `${y}px`);
     }
-  }
-
-  function resetFindDrag() { setFindDrag(0, 0); }
-
-  function onFindDragMove(e) {
-    if (!findDragging) return;
-    const dx = e.clientX - findDragStartX;
-    const dy = e.clientY - findDragStartY;
-    setFindDrag(findDragOriginX + dx, findDragOriginY + dy);
-  }
-
-  function onFindDragUp() {
-    if (!findDragging) return;
-    findDragging = false;
-    document.removeEventListener('mousemove', onFindDragMove);
-    document.removeEventListener('mouseup', onFindDragUp);
-  }
+  });
+  function resetFindDrag() { findDrag.reset(); }
+  function onFindDragUp() { findDrag.onUp(); }
 
   if (findDragHandle) {
-    findDragHandle.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      // only drag if clicking the handle itself (not interacting with inputs)
-      findDragging = true;
-      findDragStartX = e.clientX;
-      findDragStartY = e.clientY;
-      findDragOriginX = findDragX;
-      findDragOriginY = findDragY;
-      document.addEventListener('mousemove', onFindDragMove);
-      document.addEventListener('mouseup', onFindDragUp);
-      e.preventDefault();
-    });
+    findDragHandle.addEventListener('mousedown', findDrag.onMouseDown);
   }
 
 
@@ -330,66 +299,23 @@ export function mountEditor(options = {}) {
   const helpCard = helpModal ? helpModal.querySelector('.help-card') : null;
   const helpDragHandle = document.getElementById('helpDragHandle');
 
-  let helpDragX = 0;
-  let helpDragY = 0;
-  let helpDragging = false;
-  let helpDragStartX = 0;
-  let helpDragStartY = 0;
-  let helpDragOriginX = 0;
-  let helpDragOriginY = 0;
-
-  function setHelpDrag(x, y) {
-    helpDragX = x;
-    helpDragY = y;
+  const helpDrag = createMouseDragController((x, y) => {
     if (helpCard) {
-      helpCard.style.setProperty('--drag-x', `${helpDragX}px`);
-      helpCard.style.setProperty('--drag-y', `${helpDragY}px`);
+      helpCard.style.setProperty('--drag-x', `${x}px`);
+      helpCard.style.setProperty('--drag-y', `${y}px`);
     }
-  }
-
-  function onHelpDragMove(e) {
-    if (!helpDragging) return;
-    const dx = e.clientX - helpDragStartX;
-    const dy = e.clientY - helpDragStartY;
-    setHelpDrag(helpDragOriginX + dx, helpDragOriginY + dy);
-  }
-
-  function onHelpDragUp() {
-    if (!helpDragging) return;
-    helpDragging = false;
-    document.removeEventListener('mousemove', onHelpDragMove);
-    document.removeEventListener('mouseup', onHelpDragUp);
-  }
+  });
 
   if (helpDragHandle) {
-    helpDragHandle.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      helpDragging = true;
-      helpDragStartX = e.clientX;
-      helpDragStartY = e.clientY;
-      helpDragOriginX = helpDragX;
-      helpDragOriginY = helpDragY;
-      document.addEventListener('mousemove', onHelpDragMove);
-      document.addEventListener('mouseup', onHelpDragUp);
-      e.preventDefault();
-    });
+    helpDragHandle.addEventListener('mousedown', helpDrag.onMouseDown);
   }
 
-  function isHelpOpen() { return helpModal && !helpModal.classList.contains('hidden'); }
-
-  function openHelpModal() {
-    if (!helpModal) return;
-    player.pause();
-    helpModal.classList.remove('hidden');
-    setTimeout(() => { closeHelpBtn?.focus?.(); }, 0);
-  }
-
-  function closeHelpModal() {
-    if (!helpModal) return;
-    helpModal.classList.add('hidden');
-  }
-
-  if (helpBtn) helpBtn.addEventListener('click', openHelpModal);
+  const { openHelpModal, closeHelpModal } = setupHelpModal({
+    helpBtn,
+    closeHelpBtn,
+    helpModal,
+    player,
+  });
 
 
   // -------------------------
@@ -401,49 +327,15 @@ export function mountEditor(options = {}) {
   const filterCard = filterModal ? filterModal.querySelector('.filter-card') : null;
   const filterDragHandle = document.getElementById('filterDragHandle');
 
-  let filterDragX = 0;
-  let filterDragY = 0;
-  let filterDragging = false;
-  let filterDragStartX = 0;
-  let filterDragStartY = 0;
-  let filterDragOriginX = 0;
-  let filterDragOriginY = 0;
-
-  function setFilterDrag(x, y) {
-    filterDragX = x;
-    filterDragY = y;
+  const filterDrag = createMouseDragController((x, y) => {
     if (filterCard) {
-      filterCard.style.setProperty('--drag-x', `${filterDragX}px`);
-      filterCard.style.setProperty('--drag-y', `${filterDragY}px`);
+      filterCard.style.setProperty('--drag-x', `${x}px`);
+      filterCard.style.setProperty('--drag-y', `${y}px`);
     }
-  }
-
-  function onFilterDragMove(e) {
-    if (!filterDragging) return;
-    const dx = e.clientX - filterDragStartX;
-    const dy = e.clientY - filterDragStartY;
-    setFilterDrag(filterDragOriginX + dx, filterDragOriginY + dy);
-  }
-
-  function onFilterDragUp() {
-    if (!filterDragging) return;
-    filterDragging = false;
-    document.removeEventListener('mousemove', onFilterDragMove);
-    document.removeEventListener('mouseup', onFilterDragUp);
-  }
+  });
 
   if (filterDragHandle) {
-    filterDragHandle.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      filterDragging = true;
-      filterDragStartX = e.clientX;
-      filterDragStartY = e.clientY;
-      filterDragOriginX = filterDragX;
-      filterDragOriginY = filterDragY;
-      document.addEventListener('mousemove', onFilterDragMove);
-      document.addEventListener('mouseup', onFilterDragUp);
-      e.preventDefault();
-    });
+    filterDragHandle.addEventListener('mousedown', filterDrag.onMouseDown);
   }
 
   const filterClearBtn3 = document.getElementById('filterClearBtn3');
@@ -810,57 +702,6 @@ export function mountEditor(options = {}) {
     try { segmentStarts = segments.map(s => s.start); } catch { segmentStarts = []; }
   }
 
-  function filterIsActive() {
-    return (filterState.speakers.size > 0) || (filterState.changedMode !== 'all') || (filterState.doneMode !== 'all');
-  }
-
-
-  function matchesFilter(seg) {
-    if (!seg) return false;
-    if (filterState.speakers.size) {
-      const sp = normSpeaker(seg.speaker);
-      if (!filterState.speakers.has(sp)) return false;
-    }
-    if (filterState.changedMode !== 'all') {
-      const isChanged = changedSegIds.has(seg.id);
-      if (filterState.changedMode === 'changed' && !isChanged) return false;
-      if (filterState.changedMode === 'unchanged' && isChanged) return false;
-    }
-    if (filterState.doneMode !== 'all') {
-      const isDone = doneSegIds.has(seg.id);
-      if (filterState.doneMode === 'done' && !isDone) return false;
-      if (filterState.doneMode === 'undone' && isDone) return false;
-    }
-    return true;
-  }
-
-  function isVisibleNow(seg) {
-    if (!filterIsActive()) return true;
-    return matchesFilter(seg) || forcedVisibleIds.has(seg.id);
-  }
-
-  function clearFilterState() {
-    filterState.speakers.clear();
-    filterState.changedMode = 'all';
-    filterState.doneMode = 'all';
-    // keep playbackFiltered preference
-    forcedVisibleIds.clear();
-    hideFilterNotice();
-    syncFilterUIFromState();
-
-    try { syncModeButtons(); } catch { }
-    scheduleApplyFilters();
-  }
-
-  function setChangedMode(mode) {
-    filterState.changedMode = (mode === 'changed' || mode === 'unchanged') ? mode : 'all';
-  }
-
-  function setDoneMode(mode) {
-    filterState.doneMode = (mode === 'done' || mode === 'undone') ? mode : 'all';
-  }
-
-
   // --- Tiny toast ---
   let __toastTimer = null;
   function showToast(message) {
@@ -893,536 +734,192 @@ export function mountEditor(options = {}) {
   }
 
 
-  function showFilterNotice(msg) {
-    if (!filterNotice || !filterNoticeText) return;
-    filterNoticeText.textContent = msg || '';
-    filterNotice.classList.remove('hidden');
-  }
+  const showFilterNotice = (message) => filtersShowFilterNotice({
+    filterNotice,
+    filterNoticeText,
+    message,
+  });
+  const hideFilterNotice = () => filtersHideFilterNotice({
+    filterNotice,
+    filterNoticeText,
+  });
 
-  function hideFilterNotice() {
-    if (!filterNotice) return;
-    filterNotice.classList.add('hidden');
-    if (filterNoticeText) filterNoticeText.textContent = '';
-  }
-
-  function pruneForcedVisibleIds() {
-    if (!forcedVisibleIds.size) { hideFilterNotice(); return; }
-
-    // If many forced-visible ids exist, avoid O(n^2) (findIndexById is linear).
-    if (forcedVisibleIds.size > 24) {
-      const keep = new Set();
-      for (const seg of segments) {
-        if (!seg) continue;
-        if (forcedVisibleIds.has(seg.id) && !matchesFilter(seg)) keep.add(seg.id);
-      }
-      forcedVisibleIds.clear();
-      for (const id of keep) forcedVisibleIds.add(id);
-    } else {
-      for (const id of Array.from(forcedVisibleIds)) {
-        const idx = findIndexById(id);
-        if (idx === -1) { forcedVisibleIds.delete(id); continue; }
-        const seg = segments[idx];
-        if (matchesFilter(seg)) forcedVisibleIds.delete(id);
-      }
-    }
-
-    if (!forcedVisibleIds.size) hideFilterNotice();
-  }
-
-  function forceVisibleIfFilteredOut(ids, reason, opts = {}) {
-    if (!filterIsActive()) return;
-
-    const silent = !!(opts && opts.silent);
-    const arr = (ids || []).filter(Boolean);
-    if (!arr.length) return;
-
-    let added = false;
-    let needsNotice = false;
-
-    // If many ids, avoid O(n^2) lookups.
-    if (arr.length > 24) {
-      const wanted = new Set(arr);
-      for (const seg of segments) {
-        if (!seg) continue;
-        if (!wanted.has(seg.id)) continue;
-        if (!matchesFilter(seg)) {
-          needsNotice = true;
-          if (!forcedVisibleIds.has(seg.id)) {
-            forcedVisibleIds.add(seg.id);
-            added = true;
-          }
-        }
-      }
-    } else {
-      for (const id of arr) {
-        const idx = findIndexById(id);
-        if (idx === -1) continue;
-        const seg = segments[idx];
-        if (!matchesFilter(seg)) {
-          needsNotice = true;
-          if (!forcedVisibleIds.has(id)) {
-            forcedVisibleIds.add(id);
-            added = true;
-          }
-        }
-      }
-    }
-
-    // We intentionally show the notice on user-initiated actions (e.g. blur),
-    // but stay silent during typing/debounced commits.
-    if (needsNotice && !silent) {
-      showFilterNotice(reason || 'Some changes are outside the current filter.');
-    }
-  }
-
-  function makeChip(label, onClose) {
-    const chip = document.createElement('span');
-    chip.className = 'filter-chip';
-
-    const t = document.createElement('span');
-    t.textContent = label;
-
-    const x = document.createElement('button');
-    x.type = 'button';
-    x.className = 'x';
-    x.textContent = '×';
-    x.title = 'Remove filter';
-    x.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      try { onClose && onClose(); } catch { }
-    });
-
-    chip.appendChild(t);
-    chip.appendChild(x);
-    return chip;
-  }
+  const isFilterActiveNow = () => filtersIsFilterActive(filterState);
+  const matchesFilterNow = (segment) => filtersMatchesFilter({ segment, filterState, changedSegIds, doneSegIds });
+  const isVisibleNow = (segment) => filtersIsVisibleNow({
+    segment,
+    filterState,
+    changedSegIds,
+    doneSegIds,
+    forcedVisibleIds,
+  });
+  const pruneForcedVisibleNow = () => filtersPruneForcedVisibleIds({
+    forcedVisibleIds,
+    hideFilterNotice,
+    segments,
+    matchesFilter: matchesFilterNow,
+    findIndexById,
+  });
+  const forceVisibleIfFilteredOut = (ids, reason, opts) => filtersForceVisibleIfFilteredOut({
+    ids,
+    reason,
+    options: opts,
+    filterIsActive: isFilterActiveNow,
+    forcedVisibleIds,
+    segments,
+    matchesFilter: matchesFilterNow,
+    findIndexById,
+    showFilterNotice,
+  });
 
   function updateFilterBarUI(visibleCount, total) {
-    if (!filterBar) return;
-    const active = filterIsActive();
-    filterBar.classList.toggle('hidden', !active);
-
-    if (filterBtn) {
-      filterBtn.textContent = active ? 'Filter*' : 'Filter';
-    }
-
-    if (filterChipsEl) {
-      filterChipsEl.innerHTML = '';
-
-      // Speakers
-      const speakers = Array.from(filterState.speakers.values());
-      const MAX = 4;
-      for (let i = 0; i < Math.min(MAX, speakers.length); i++) {
-        const sp = speakers[i];
-        const lab = `Speaker: ${sp || '(empty)'}`;
-        filterChipsEl.appendChild(makeChip(lab, () => {
-          filterState.speakers.delete(sp);
-          syncFilterUIFromState();
-          scheduleApplyFilters();
-        }));
-      }
-      if (speakers.length > MAX) {
-        const extra = speakers.length - MAX;
-        const chip = document.createElement('span');
-        chip.className = 'filter-chip';
-        chip.textContent = `+${extra} more`;
-        chip.title = 'Open Filter to edit';
-        chip.addEventListener('click', () => openFilterModal());
-        filterChipsEl.appendChild(chip);
-      }
-
-      // Changed
-      if (filterState.changedMode !== 'all') {
-        const lab = (filterState.changedMode === 'changed') ? 'Changed only' : 'Unchanged only';
-        filterChipsEl.appendChild(makeChip(lab, () => {
-          setChangedMode('all');
-          syncFilterUIFromState();
-          scheduleApplyFilters();
-        }));
-      }
-      // Done
-      if (filterState.doneMode !== 'all') {
-        const lab = (filterState.doneMode === 'done') ? 'Done only' : 'Undone only';
-        filterChipsEl.appendChild(makeChip(lab, () => {
-          setDoneMode('all');
-          syncFilterUIFromState();
-          scheduleApplyFilters();
-        }));
-      }
-
-      // Play mode chip (only show when filter active)
-      if (active) {
-        const lab = filterState.playbackFiltered ? 'Play: visible only' : 'Play: all';
-        const chip = document.createElement('span');
-        chip.className = 'filter-chip';
-        chip.textContent = lab;
-        chip.title = 'Toggle in Filter…';
-        chip.addEventListener('click', () => openFilterModal());
-        filterChipsEl.appendChild(chip);
-      }
-    }
-
-    if (filterCountEl) {
-      if (!filterIsActive()) filterCountEl.textContent = '';
-      else filterCountEl.textContent = `Showing ${visibleCount} / ${total}`;
-    }
+    return filtersUpdateFilterBarUI({
+      filterBar,
+      filterBtn,
+      filterChipsEl,
+      filterCountEl,
+      filterState,
+      visibleCount,
+      total,
+      openFilterModal,
+      syncFilterUIFromState,
+      scheduleApplyFilters,
+    });
   }
 
   function rebuildFilterSpeakerOptions() {
-    if (!filterSpeakersList) return;
-    const counts = new Map();
-    for (const s of segments) {
-      const k = normSpeaker(s.speaker);
-      counts.set(k, (counts.get(k) || 0) + 1);
-    }
-    const keys = Array.from(counts.keys());
-    keys.sort((a, b) => {
-      // empty last
-      if (!a && b) return 1;
-      if (a && !b) return -1;
-      return a.localeCompare(b);
+    return filtersRebuildFilterSpeakerOptions({
+      filterSpeakersList,
+      segments,
+      filterState,
+      scheduleApplyFilters,
     });
-
-    filterSpeakersList.innerHTML = '';
-    for (const k of keys) {
-      const lab = document.createElement('label');
-      lab.className = 'chk';
-
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = k;
-      cb.checked = filterState.speakers.has(k);
-
-      cb.addEventListener('change', () => {
-        if (cb.checked) filterState.speakers.add(k);
-        else filterState.speakers.delete(k);
-        scheduleApplyFilters();
-      });
-
-      const txt = document.createElement('span');
-      const name = k || '(empty)';
-      txt.textContent = `${name} (${counts.get(k) || 0})`;
-
-      lab.appendChild(cb);
-      lab.appendChild(txt);
-      filterSpeakersList.appendChild(lab);
-    }
-
-    if (!keys.length) {
-      const div = document.createElement('div');
-      div.className = 'muted';
-      div.textContent = '(no speakers found)';
-      filterSpeakersList.appendChild(div);
-    }
   }
 
   function syncFilterUIFromState() {
-    // speakers list
-    rebuildFilterSpeakerOptions();
-
-    // changed radios
-    try {
-      const radios = document.querySelectorAll('input[name="changedMode"]');
-      radios.forEach(r => r.checked = (r.value === filterState.changedMode));
-    } catch { }
-
-    // done radios
-    try {
-      const dRadios = document.querySelectorAll('input[name="doneMode"]');
-      dRadios.forEach(r => r.checked = (r.value === filterState.doneMode));
-    } catch { }
-
-    // playback toggle
-    if (playFilteredToggle) playFilteredToggle.checked = !!filterState.playbackFiltered;
+    return filtersSyncFilterUIFromState({
+      rebuildFilterSpeakerOptions,
+      filterState,
+      playFilteredToggle,
+    });
   }
 
   function openFilterModal() {
-    if (!filterModal) return;
-    player.pause();
-    syncFilterUIFromState();
-    filterModal.classList.remove('hidden');
-    setTimeout(() => { try { closeFilterBtn.focus(); } catch { } }, 0);
+    return filtersOpenFilterModal({
+      filterModal,
+      player,
+      syncFilterUIFromState,
+      closeFilterBtn,
+    });
   }
 
   function closeFilterModal() {
-    if (!filterModal) return;
-    filterModal.classList.add('hidden');
+    return filtersCloseFilterModal({ filterModal });
   }
 
-  if (filterBtn) filterBtn.addEventListener('click', openFilterModal);
-  if (closeFilterBtn) closeFilterBtn.addEventListener('click', closeFilterModal);
-  if (filterModal) filterModal.addEventListener('click', (e) => { if (e.target === filterModal) closeFilterModal(); });
-
-  function applyFilterFromModalControls() {
-    try {
-      const r = document.querySelector('input[name="changedMode"]:checked');
-      setChangedMode(r ? r.value : 'all');
-    } catch { }
-    try {
-      const d = document.querySelector('input[name="doneMode"]:checked');
-      setDoneMode(d ? d.value : 'all');
-    } catch { }
-    if (playFilteredToggle) filterState.playbackFiltered = !!playFilteredToggle.checked;
-    scheduleApplyFilters();
-  }
-
-  if (filterModal) {
-    filterModal.addEventListener('change', (e) => {
-      // speaker checkboxes are already wired; just apply mode changes
-      if (e.target && (e.target.name === 'changedMode' || e.target.name === 'doneMode' || e.target.id === 'playFilteredToggle')) {
-        applyFilterFromModalControls();
-      }
-    });
-  }
-
-  if (filterClearBtn3) filterClearBtn3.addEventListener('click', () => { clearFilterState(); });
-  if (filterClearBtn) filterClearBtn.addEventListener('click', () => { clearFilterState(); });
-
-  if (filterStrictBtn) filterStrictBtn.addEventListener('click', () => {
-    forcedVisibleIds.clear();
-    hideFilterNotice();
-    scheduleApplyFilters();
+  const scheduleApplyFilters = filtersCreateFilterApplyScheduler({
+    segmentsDiv,
+    getSegments: () => segments,
+    setVisibleResults: (starts, ids) => {
+      visibleStarts = starts;
+      visibleSegIds = ids;
+    },
+    filterBar,
+    filterBtn,
+    hideFilterNotice,
+    rebuildSegmentStarts,
+    isFilterActive: () => filtersIsFilterActive(filterState),
+    getFilterState: () => filterState,
+    getForcedVisibleIds: () => forcedVisibleIds,
+    recomputeChangedSegIds,
+    pruneForcedVisibleNow,
+    getRowBySegId,
+    getEditingTextSegId: () => editingTextSegId,
+    matchesFilterNow,
+    canJoinAtIndex,
+    updateFilterBarUI,
+    getEditorMode: () => editorMode,
+    renderTextView,
   });
 
-
-  let _filterApplyRaf = 0;
-  let _filterApplying = false;
-  let _filterApplyPending = false;
-  let _filterApplyToken = 0;
-
-  function scheduleApplyFilters() {
-    _filterApplyPending = true;
-    if (_filterApplying) return;
-    if (_filterApplyRaf) return;
-    _filterApplyRaf = requestAnimationFrame(() => {
-      _filterApplyRaf = 0;
-      if (!_filterApplyPending) return;
-      _filterApplyPending = false;
-      applyFiltersToDOM();
+  function applyFilterFromModalControls() {
+    return filtersApplyFilterFromModalControls({
+      filterState,
+      playFilteredToggle,
+      scheduleApplyFilters,
     });
   }
-
-  function applyFiltersToDOM() {
-    if (!segmentsDiv) return;
-    _filterApplying = true;
-    const token = ++_filterApplyToken;
-    if (!segments.length) {
-      visibleStarts = [];
-      visibleSegIds = [];
-      if (filterBar) filterBar.classList.add('hidden');
-      if (filterBtn) filterBtn.textContent = 'Filter';
-      hideFilterNotice();
-      _filterApplying = false;
-      if (_filterApplyPending) scheduleApplyFilters();
-      return;
-    }
-
-    // Keep starts array synced
-    rebuildSegmentStarts();
-
-    const active = filterIsActive();
-    const usesChanged = (filterState.changedMode !== 'all') || forcedVisibleIds.size;
-    if (usesChanged) {
-      try { recomputeChangedSegIds(); } catch { }
-    }
-
-    pruneForcedVisibleIds();
-
-    const total = segments.length;
-    const newVisStarts = [];
-    const newVisIds = [];
-    let visibleCount = 0;
-
-    // chunked apply to avoid stalls on big transcripts
-    const BUDGET_MS = 10;
-    const MAX_PER_FRAME = 1200;
-
-    let i = 0;
-    function step() {
-      if (token !== _filterApplyToken) { _filterApplying = false; if (_filterApplyPending) scheduleApplyFilters(); return; }
-      const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      let n = 0;
-
-      while (i < total && n < MAX_PER_FRAME) {
-        const seg = segments[i];
-        const row = getRowBySegId(seg.id);
-        const show = (!active) ? true : (matchesFilter(seg) || forcedVisibleIds.has(seg.id) || (editingTextSegId && seg.id === editingTextSegId));
-
-        if (row) {
-          row.classList.toggle('filtered-out', !show);
-          const forced = active && forcedVisibleIds.has(seg.id) && !matchesFilter(seg);
-          row.classList.toggle('forced-visible', !!forced);
-
-          const jb = row.querySelector('.icon-btn.join');
-          if (jb) jb.disabled = !canJoinAtIndex(i);
-        }
-
-        if (show) {
-          newVisStarts.push(seg.start);
-          newVisIds.push(seg.id);
-          visibleCount++;
-        }
-
-        i++;
-        n++;
-
-        const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-        if ((t1 - t0) > BUDGET_MS) break;
-      }
-
-      if (i < total) {
-        requestAnimationFrame(step);
-        return;
-      }
-
-      visibleStarts = newVisStarts;
-      visibleSegIds = newVisIds;
-      updateFilterBarUI(visibleCount, total);
-
-      try { if (editorMode === 'text') renderTextView(); } catch { }
-      _filterApplying = false;
-      if (_filterApplyPending) scheduleApplyFilters();
-    }
-
-    step();
-  }
-
-  function upperBound(arr, x) {
-    let lo = 0, hi = arr.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (arr[mid] <= x) lo = mid + 1;
-      else hi = mid;
-    }
-    return lo;
-  }
+  filtersWireFilterControlEvents({
+    filterBtn,
+    openFilterModal,
+    closeFilterBtn,
+    closeFilterModal,
+    filterModal,
+    applyFilterFromModalControls,
+    filterClearBtn3,
+    filterClearBtn,
+    clearFilterState: () => filtersClearFilterState({
+      filterState,
+      forcedVisibleIds,
+      hideFilterNotice,
+      syncFilterUIFromState,
+      syncModeButtons,
+      scheduleApplyFilters,
+    }),
+    filterStrictBtn,
+    forcedVisibleIds,
+    hideFilterNotice,
+    scheduleApplyFilters,
+  });
 
   function findSegmentIndexAtTime(t) {
-    if (!segments.length) return -1;
-    if (!segmentStarts.length || segmentStarts.length !== segments.length) rebuildSegmentStarts();
-
-    const i = upperBound(segmentStarts, t) - 1;
-    if (i < 0) return 0;
-    if (i >= segments.length) return segments.length - 1;
-    // if exactly at end of a segment, bump to next
-    if (t >= segments[i].end && i + 1 < segments.length) return i + 1;
-    return i;
-  }
-
-  function nextVisibleStartAfter(t) {
-    if (!visibleStarts.length) return null;
-    const idx = upperBound(visibleStarts, t);
-    return (idx < visibleStarts.length) ? visibleStarts[idx] : null;
+    return playbackFindSegmentIndexAtTime({
+      time: t,
+      segments,
+      segmentStarts,
+      rebuildSegmentStarts,
+    });
   }
 
   function snapToVisibleIfNeeded() {
-    if (!filterIsActive() || !filterState.playbackFiltered) return;
-    if (!visibleStarts.length) {
-      // fallback compute (fast) if apply hasn't finished yet
-      const arr = [];
-      const ids = [];
-      for (const seg of segments) {
-        if (isVisibleNow(seg)) { arr.push(seg.start); ids.push(seg.id); }
-      }
-      visibleStarts = arr;
-      visibleSegIds = ids;
-    }
-    if (!visibleStarts.length) return;
-
-    const t = player.currentTime;
-    const idx = findSegmentIndexAtTime(t);
-    const seg = segments[idx];
-    if (seg && isVisibleNow(seg)) return;
-
-    const nxt = nextVisibleStartAfter(t - 0.001) ?? visibleStarts[0];
-    if (nxt == null) return;
-    player.currentTime = nxt;
+    const result = playbackSnapToVisibleIfNeeded({
+      filterActive: filtersIsFilterActive(filterState),
+      playbackFiltered: filterState.playbackFiltered,
+      visibleStarts,
+      visibleSegIds,
+      segments,
+      isVisibleNow,
+      player,
+      findSegmentIndexAtTime,
+    });
+    visibleStarts = result.visibleStarts;
+    visibleSegIds = result.visibleSegIds;
   }
 
   function enforceFilteredPlayback() {
-    if (!filterIsActive() || !filterState.playbackFiltered) return false;
-    if (!visibleStarts.length) {
-      // if nothing visible: pause
-      player.pause();
-      return true;
-    }
-
-    const t = player.currentTime;
-    const idx = findSegmentIndexAtTime(t);
-    const seg = segments[idx];
-    if (seg && isVisibleNow(seg)) return false;
-
-    const nxt = nextVisibleStartAfter(t - 0.001) ?? visibleStarts[0];
-    if (nxt == null) {
-      player.pause();
-      return true;
-    }
-    if (Math.abs((player.currentTime || 0) - nxt) < 1e-4) {
-      // avoid infinite loop
-      player.pause();
-      return true;
-    }
-
-    player.currentTime = nxt;
-    return true;
+    return playbackEnforceFilteredPlayback({
+      filterActive: filtersIsFilterActive(filterState),
+      playbackFiltered: filterState.playbackFiltered,
+      visibleStarts,
+      segments,
+      isVisibleNow,
+      player,
+      findSegmentIndexAtTime,
+    });
   }
 
-  // keep playback skipping and highlight in a rAF loop (smoother than timeupdate)
-  let _playRaf = 0;
-  function playbackLoop() {
-    _playRaf = 0;
-    if (player.paused) return;
-
-    // Repeat loop (if active): jump back to loop start once we pass the end.
-    try {
-      const b = getEffectiveLoopBounds();
-      if (b) {
-        const t = player.currentTime;
-        if (t >= b.end - 0.01 || t < b.start - 0.01) {
-          player.currentTime = b.start;
-        }
-      }
-    } catch { }
-
-    if (Date.now() >= suppressTimeSyncUntil) {
-      const jumped = enforceFilteredPlayback();
-      if (!jumped) {
-        const t = player.currentTime;
-        const idx = findSegmentIndexAtTime(t);
-        if (idx !== -1 && idx !== currentSegmentIndex) {
-          if (keepCenteredDuringPlayback) setActiveSegment(idx, 'auto', 'center', true);
-          else setActiveSegment(idx, 'smooth', 'nearest');
-        }
-      }
-    }
-
-    _playRaf = requestAnimationFrame(playbackLoop);
-  }
-
-  player.addEventListener('play', () => {
-    try { clampToLoopStartIfNeeded(); } catch { }
-    try { snapToVisibleIfNeeded(); } catch { }
-
-    // Ensure active segment is in view (e.g. if user scrolled away)
-    if (currentSegmentIndex >= 0) {
-      // Use 'auto' to snap instantly if out of view, avoiding slow scrolls
-      setActiveSegment(currentSegmentIndex, 'auto', 'center');
-    }
-
-    if (!_playRaf) _playRaf = requestAnimationFrame(playbackLoop);
+  playbackWirePlaybackLoopEvents({
+    player,
+    clampToLoopStartIfNeeded,
+    snapToVisibleIfNeeded,
+    getEffectiveLoopBounds,
+    getSuppressTimeSyncUntil: () => suppressTimeSyncUntil,
+    enforceFilteredPlayback,
+    findSegmentIndexAtTime,
+    getCurrentSegmentIndex: () => currentSegmentIndex,
+    getKeepCenteredDuringPlayback: () => keepCenteredDuringPlayback,
+    setActiveSegment,
   });
-  player.addEventListener('pause', () => {
-    if (_playRaf) { try { cancelAnimationFrame(_playRaf); } catch { } _playRaf = 0; }
-  });
-  player.addEventListener('seeked', () => {
-    try { clampToLoopStartIfNeeded(); } catch { }
-    try { snapToVisibleIfNeeded(); } catch { }
-  });
-
-
-  if (closeHelpBtn) closeHelpBtn.addEventListener('click', closeHelpModal);
-  if (helpModal) helpModal.addEventListener('click', (e) => { if (e.target === helpModal) closeHelpModal(); });
 
   // Floating Mobile Menu Button Logic
   const floatMenuBtn = document.getElementById('floatingMobileMenuBtn');
@@ -1445,13 +942,6 @@ export function mountEditor(options = {}) {
   let lastFindIndex = -1;
 
   /* Find/Replace — delegated to editorFind.js */
-  // escapeRegExp, getFieldValue, setFieldValue imported directly from editorFind.js
-
-  function isFindOpen() { return _isFindOpen(ctx); }
-  function setFindStatus(msg, isError) { /* delegated; used only within extracted module now */ }
-
-
-
   function findNext(fromReplace) { return _findNext(ctx, fromReplace); }
   function replaceCurrent() { return _replaceCurrent(ctx); }
   function getTranscriptSelectionText() { return _getTranscriptSelectionText(ctx); }
@@ -1495,97 +985,38 @@ export function mountEditor(options = {}) {
   const settingsCard = settingsModal ? settingsModal.querySelector('.settings-card') : null;
   const settingsDragHandle = document.getElementById('settingsDragHandle');
 
-  let settingsDragX = 0;
-  let settingsDragY = 0;
-  let settingsDragging = false;
-  let settingsDragStartX = 0;
-  let settingsDragStartY = 0;
-  let settingsDragOriginX = 0;
-  let settingsDragOriginY = 0;
-
-  function setSettingsDrag(x, y) {
-    settingsDragX = x;
-    settingsDragY = y;
+  const settingsDrag = createMouseDragController((x, y) => {
     if (settingsCard) {
-      settingsCard.style.setProperty('--drag-x', `${settingsDragX}px`);
-      settingsCard.style.setProperty('--drag-y', `${settingsDragY}px`);
+      settingsCard.style.setProperty('--drag-x', `${x}px`);
+      settingsCard.style.setProperty('--drag-y', `${y}px`);
     }
-  }
-  function resetSettingsDrag() { setSettingsDrag(0, 0); }
-
-  function onSettingsDragMove(e) {
-    if (!settingsDragging) return;
-    const dx = e.clientX - settingsDragStartX;
-    const dy = e.clientY - settingsDragStartY;
-    setSettingsDrag(settingsDragOriginX + dx, settingsDragOriginY + dy);
-  }
-  function onSettingsDragUp() {
-    if (!settingsDragging) return;
-    settingsDragging = false;
-    document.removeEventListener('mousemove', onSettingsDragMove);
-    document.removeEventListener('mouseup', onSettingsDragUp);
-  }
+  });
+  function resetSettingsDrag() { settingsDrag.reset(); }
+  function onSettingsDragUp() { settingsDrag.onUp(); }
 
   if (settingsDragHandle) {
-    settingsDragHandle.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      settingsDragging = true;
-      settingsDragStartX = e.clientX;
-      settingsDragStartY = e.clientY;
-      settingsDragOriginX = settingsDragX;
-      settingsDragOriginY = settingsDragY;
-      document.addEventListener('mousemove', onSettingsDragMove);
-      document.addEventListener('mouseup', onSettingsDragUp);
-      e.preventDefault();
-    });
+    settingsDragHandle.addEventListener('mousedown', settingsDrag.onMouseDown);
   }
 
-  function syncSettingsUI() {
-    if (optKeepCentered) optKeepCentered.checked = !!keepCenteredDuringPlayback;
-    if (optAutoSplitTs) optAutoSplitTs.checked = !!autoAssignSplitTs;
-  }
-
-  function openSettingsModal() {
-    flushPendingText();
-    try { player.pause(); } catch { }
-    resetSettingsDrag();
-    try { loadSettings(); } catch { }
-    syncSettingsUI();
-    settingsModal.classList.remove('hidden');
-  }
-  function closeSettingsModal() {
-    onSettingsDragUp();
-    settingsModal.classList.add('hidden');
-  }
-
-  if (settingsBtn) settingsBtn.addEventListener('click', openSettingsModal);
-  if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', closeSettingsModal);
-  if (settingsModal) settingsModal.addEventListener('mousedown', (e) => { if (e.target === settingsModal) closeSettingsModal(); });
-
-  if (optKeepCentered) {
-    optKeepCentered.addEventListener('change', (e) => {
-      keepCenteredDuringPlayback = !!e.target.checked;
-      saveSettings();
-    });
-  }
-
-  if (optAutoSplitTs) {
-    optAutoSplitTs.addEventListener('change', (e) => {
-      autoAssignSplitTs = !!e.target.checked;
-      saveSettings();
-    });
-  }
-  if (historyBtn) historyBtn.addEventListener('click', openHistoryModal);
-  if (closeHistoryBtn) closeHistoryBtn.addEventListener('click', closeHistoryModal);
-
-  if (historyModal) {
-    historyModal.addEventListener('mousedown', (e) => {
-      if (e.target === historyModal) closeHistoryModal();
-    });
-  }
+  const { syncSettingsUI, closeSettingsModal } = setupSettingsModal({
+    settingsBtn,
+    closeSettingsBtn,
+    settingsModal,
+    optKeepCentered,
+    optAutoSplitTs,
+    flushPendingText,
+    player,
+    resetSettingsDrag,
+    onSettingsDragUp,
+    loadSettings,
+    saveSettings,
+    getKeepCenteredDuringPlayback: () => keepCenteredDuringPlayback,
+    setKeepCenteredDuringPlayback: (value) => { keepCenteredDuringPlayback = value; },
+    getAutoAssignSplitTs: () => autoAssignSplitTs,
+    setAutoAssignSplitTs: (value) => { autoAssignSplitTs = value; },
+  });
 
 
-  let rawJson = {};
   let segments = [];
   let currentSegmentIndex = -1;
   let globalSeq = 0;
@@ -1661,14 +1092,6 @@ export function mountEditor(options = {}) {
   }
 
 
-  function cloneSegmentsState(segs) {
-    return segs.map(s => ({
-      id: s.id, seq: s.seq, blockId: s.blockId,
-      speaker: s.speaker, text: s.text,
-      start: s.start, end: s.end
-    }));
-  }
-
   function getActiveSegId() {
     if (currentSegmentIndex < 0 || currentSegmentIndex >= segments.length) return null;
     return segments[currentSegmentIndex]?.id ?? null;
@@ -1733,42 +1156,6 @@ export function mountEditor(options = {}) {
       jb.disabled = !canJoinAtIndex(idx);
     }
   }
-
-  function preserveScrollAndRender(activeId = null) {
-    const prev = segmentsDiv.scrollTop;
-    renderSegments();
-    segmentsDiv.scrollTop = prev;
-    if (activeId) {
-      const idx = findIndexById(activeId);
-      if (idx !== -1) setActiveSegment(idx, 'auto', 'nearest');
-    }
-  }
-
-
-  function restoreSegmentsState(state, activeSegId = null, playerTime = null) {
-    try { if (typeof closeSpeakerDropdown === 'function') closeSpeakerDropdown(); } catch { }
-
-    const prev = segmentsDiv.scrollTop;
-
-    segments = cloneSegmentsState(state);
-    seg1.end = seg2.start;
-
-    segments.sort((a, b) => (a.start - b.start) || (a.seq - b.seq));
-    enforceTiming({ sort: false });
-    renderSegments();
-
-    segmentsDiv.scrollTop = prev;
-
-    const idx = activeSegId ? findIndexById(activeSegId) : -1;
-    if (idx !== -1) setActiveSegment(idx, 'auto', 'nearest');
-
-    if (typeof playerTime === 'number' && Number.isFinite(playerTime)) {
-      player.currentTime = Math.max(0, playerTime);
-    }
-
-    scheduleDirtyCheck();
-  }
-
 
   function pushHistory(action) {
     if (!action) return;
@@ -1899,7 +1286,6 @@ export function mountEditor(options = {}) {
   let exportFileName = null;
   let lastSavedAt = null;
   let srtSaveHandle = null; // FileSystemFileHandle when available (enables true Save without re-prompt)
-  let transcriptLoadKind = null; // 'disk' | 'fetch' | null (controls Save behavior)
 
   // dirty tracking via hash comparison (undo -> clean again)
   let cleanHash = null;
@@ -1917,7 +1303,6 @@ export function mountEditor(options = {}) {
     loadedJsonFileName: { get() { return loadedJsonFileName; }, set(v) { loadedJsonFileName = v; } },
     lastSavedAt: { get() { return lastSavedAt; }, set(v) { lastSavedAt = v; } },
     srtSaveHandle: { get() { return srtSaveHandle; }, set(v) { srtSaveHandle = v; } },
-    transcriptLoadKind: { get() { return transcriptLoadKind; }, set(v) { transcriptLoadKind = v; } },
     canUseFileSystem: { get() { return (typeof canUseFileSystem !== 'undefined') ? canUseFileSystem : false; } },
     // Find/replace mutable state
     currentFind: { get() { return currentFind; }, set(v) { currentFind = v; } },
@@ -1946,19 +1331,24 @@ export function mountEditor(options = {}) {
   ctx.showToast = showToast;
   ctx.setCleanNow = function () { return setCleanNow(); };
   ctx.nowHHMMSS = function () { return nowHHMMSS(); };
-  ctx.buildJsonFromSegments = function () { return buildJsonFromSegments(); };
   ctx.setActiveSegment = function (i, sb, bl, fs) { return setActiveSegment(i, sb, bl, fs); };
   ctx.pushHistory = function (a) { return pushHistory(a); };
   ctx.beginHistoryMutation = function () { return beginHistoryMutation(); };
   ctx.flushPendingText = function (sid, opts) { return flushPendingText(sid, opts); };
   ctx.updateRowBySegId = function (id) { return updateRowBySegId(id); };
   ctx.scheduleDirtyCheck = function (opts) { return scheduleDirtyCheck(opts); };
-  ctx.forceVisibleIfFilteredOut = function (ids, reason, opts) { return forceVisibleIfFilteredOut(ids, reason, opts); };
+  ctx.forceVisibleIfFilteredOut = function (ids, reason, opts) {
+    return forceVisibleIfFilteredOut(ids, reason, opts);
+  };
   ctx.scheduleApplyFilters = function () { return scheduleApplyFilters(); };
-  ctx.filterIsActive = function () { return filterIsActive(); };
-  ctx.matchesFilter = function (seg) { return matchesFilter(seg); };
+  ctx.filterIsActive = function () { return filtersIsFilterActive(filterState); };
+  ctx.matchesFilter = function (seg) {
+    return matchesFilterNow(seg);
+  };
   ctx.recomputeChangedSegIds = function () { return recomputeChangedSegIds(); };
-  ctx.pruneForcedVisibleIds = function () { return pruneForcedVisibleIds(); };
+  ctx.pruneForcedVisibleIds = function () {
+    return pruneForcedVisibleNow();
+  };
   ctx.resetFindDrag = function () { return resetFindDrag(); };
   ctx.onFindDragUp = function () { return onFindDragUp(); };
   // Phase 3: Segment operations dependencies
@@ -1977,23 +1367,6 @@ export function mountEditor(options = {}) {
   ctx.allocUniqueStartWithinSecond = function (b, ig, p) { return allocUniqueStartWithinSecond(b, ig, p); };
   ctx.timecodeToSeconds = function (tc) { return timecodeToSeconds(tc); };
   ctx.queueTextareaSizing = function (el) { return queueTextareaSizing(el); };
-
-  function timecodeToSeconds(tc) {
-    const parts = String(tc).trim().split(':');
-    if (parts.length === 3) {
-      const h = Number(parts[0]) || 0;
-      const m = Number(parts[1]) || 0;
-      const s = parseFloat(parts[2]) || 0;
-      return h * 3600 + m * 60 + s;
-    }
-    if (parts.length === 2) {
-      const m = Number(parts[0]) || 0;
-      const s = parseFloat(parts[1]) || 0;
-      return m * 60 + s;
-    }
-    return parseFloat(tc) || 0;
-  }
-
 
   function allocUniqueStartWithinSecond(baseSec, ignoreSegId = null, preferAfterMs = 0) {
     // Allocate a start time within +/- 499ms around baseSec, so Math.round(start) == baseSec.
@@ -2017,11 +1390,6 @@ export function mountEditor(options = {}) {
     return baseSec;
   }
 
-
-  function nowHHMMSS() {
-    const d = new Date();
-    return String(d.getHours()).padStart(2, '0') + ":" + String(d.getMinutes()).padStart(2, '0') + ":" + String(d.getSeconds()).padStart(2, '0');
-  }
 
   function enforceTiming(opts = {}) {
     const doSort = (opts.sort !== false);
@@ -2079,87 +1447,6 @@ export function mountEditor(options = {}) {
     }
 
     try { if (typeof rebuildSegmentStarts === 'function') rebuildSegmentStarts(); } catch { }
-  }
-
-  // Preserve legacy call sites: recomputeEnds() no longer derives ends; it only clamps overlaps.
-  function recomputeEnds() {
-    enforceTiming({ sort: false });
-  }
-
-  function buildSegmentsFromJson() {
-    segments = [];
-    globalSeq = 0;
-
-    // Bij opnieuw inlezen kunnen meerdere regels exact dezelfde starttijd (HH:MM:SS) hebben.
-    // We alloceren dan interne milliseconde-slots binnen dezelfde afgeronde seconde,
-    // zodat sortering/segment-einden stabiel blijven.
-    const msAlloc = new Map(); // baseSec -> next slot counter
-
-    function allocStart(baseSec) {
-      const n = msAlloc.get(baseSec) ?? 0;
-      // verdeel over 0..499, daarna -1..-499 (totaal 999 unieke slots)
-      let ms;
-      if (n <= 499) ms = n;
-      else if (n <= 998) ms = -(n - 499);
-      else ms = (n % 999); // fallback (extreem zeldzaam)
-      msAlloc.set(baseSec, n + 1);
-      return baseSec + (ms / 1000);
-    }
-
-    for (const [blockId, lines] of Object.entries(rawJson)) {
-      lines.forEach((line) => {
-        const m = String(line).match(/^\(([^,]+),\s*([^)]+)\)\s*(.*)$/);
-        let speaker, tc, text;
-        if (m) { speaker = m[1].trim(); tc = m[2].trim(); text = m[3]; }
-        else { speaker = ''; tc = '00:00:00'; text = line; }
-
-        const baseSec = Math.round(timecodeToSeconds(tc));
-        const start = allocStart(baseSec);
-        segments.push({
-          id: `seg_${globalSeq++}`,
-          seq: globalSeq,
-          blockId,
-          speaker,
-          text,
-          start,
-          end: start + 5
-        });
-      });
-    }
-
-    segments.sort((a, b) => (a.start - b.start) || (a.seq - b.seq));
-    enforceTiming({ sort: false });
-  }
-
-  function buildJsonFromSegments() {
-    const grouped = {};
-    const byBlock = new Map();
-    for (const seg of segments) {
-      if (!byBlock.has(seg.blockId)) byBlock.set(seg.blockId, []);
-      byBlock.get(seg.blockId).push(seg);
-    }
-    for (const [blockId, segs] of byBlock.entries()) {
-      segs.sort((a, b) => (a.start - b.start) || (a.seq - b.seq));
-      grouped[blockId] = segs.map(s => `(${s.speaker}, ${secondsToTimecodeWhole(s.start)}) ${s.text}`);
-    }
-    return grouped;
-  }
-
-  function suggestExportName() {
-    if (exportFileName) return exportFileName;
-    if (loadedJsonFileName) {
-      if (loadedJsonFileName.toLowerCase().endsWith('.json')) return loadedJsonFileName.replace(/\.json$/i, '_edited.json');
-      return loadedJsonFileName + '_edited.json';
-    }
-    return 'transcript_edited.json';
-  }
-
-  function sanitizeFileName(name) {
-    name = String(name || '').trim();
-    if (!name) name = suggestExportName();
-    if (!name.toLowerCase().endsWith('.json')) name += '.json';
-    name = name.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_');
-    return name;
   }
 
   // --- Dirty tracking via hash ---
@@ -2234,206 +1521,28 @@ export function mountEditor(options = {}) {
   }
 
   // --- Speaker dropdown (editable combobox) ---
-  let speakerDropdownEl = null;
-  let speakerDropdownTargetInput = null;
-  let speakerDropdownTargetSeg = null;
-
-
-  let speakerDropdownIndex = -1;
-  let speakerDropdownOptions = [];
-  let speakerDropdownSpeakers = [];
-
-  function setSpeakerDropdownIndex(newIdx) {
-    if (!speakerDropdownEl || !speakerDropdownOptions.length) return;
-    const max = speakerDropdownOptions.length - 1;
-    if (newIdx < 0) newIdx = 0;
-    if (newIdx > max) newIdx = max;
-
-    speakerDropdownIndex = newIdx;
-    for (let i = 0; i < speakerDropdownOptions.length; i++) {
-      speakerDropdownOptions[i].classList.toggle('active', i === speakerDropdownIndex);
-    }
-    // keep selected in view
-    const el = speakerDropdownOptions[speakerDropdownIndex];
-    if (el) el.scrollIntoView({ block: 'nearest' });
-  }
-
-  function applySpeakerChoice(sp) {
-    beginHistoryMutation();
-
-    if (!speakerDropdownTargetInput || !speakerDropdownTargetSeg) return;
-
-    const input = speakerDropdownTargetInput;
-    const seg = speakerDropdownTargetSeg;
-
-    const before = (input.dataset.before ?? (seg.speaker || ''));
-    const after = sp;
-
-    // Apply immediately
-    input.value = after;
-    seg.speaker = after;
-    input.dataset.before = after;
-    scheduleDirtyCheck();
-    try { forceVisibleIfFilteredOut([seg.id], 'Edited speaker moved segment outside the current filter.'); } catch { }
-    try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
-
-    if (before !== after) {
-      const id = seg.id;
-
-      const apply = (val) => {
-        const s = segments.find(x => x.id === id);
-        if (!s) return;
-        s.speaker = val;
-        updateRowBySegId(id);
-        try { scheduleDirtyCheck(); } catch { }
-        try { forceVisibleIfFilteredOut([id], 'Edited speaker moved segment outside the current filter.'); } catch { }
-        try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
-      };
-
-      pushHistory({
-        label: 'Set speaker',
-        summary: `${safePreview(before, 20)}→${safePreview(after, 20)} (seg=${id})`,
-        meta: { segId: id, from: before, to: after },
-        do: () => apply(after),
-        undo: () => apply(before)
-      });
-    }
-
-    closeSpeakerDropdown();
-    input.focus({ preventScroll: true });
-  }
-
-  function applySpeakerSelected() {
-    if (!speakerDropdownSpeakers.length) return;
-    const idx = (speakerDropdownIndex >= 0) ? speakerDropdownIndex : 0;
-    const sp = speakerDropdownSpeakers[idx];
-    if (sp) applySpeakerChoice(sp);
-  }
-  let scrollFreezePrevOverflow = null;
-  let scrollFreezePrevScrollTop = 0;
-
-  function freezeSegmentsScroll() {
-    if (scrollFreezePrevOverflow !== null) return; // already frozen
-    scrollFreezePrevOverflow = segmentsDiv.style.overflowY || '';
-    scrollFreezePrevScrollTop = segmentsDiv.scrollTop;
-    segmentsDiv.style.overflowY = 'hidden';
-  }
-
-  function unfreezeSegmentsScroll() {
-    if (scrollFreezePrevOverflow === null) return;
-    segmentsDiv.style.overflowY = scrollFreezePrevOverflow;
-    segmentsDiv.scrollTop = scrollFreezePrevScrollTop;
-    scrollFreezePrevOverflow = null;
-  }
-
-  function getAllUniqueSpeakers() {
-    const set = new Set();
-    for (const s of segments) {
-      const sp = (s.speaker || '').trim();
-      if (sp) set.add(sp);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, 'nl'));
-  }
-
-  function closeSpeakerDropdown() {
-    if (speakerDropdownEl) {
-      speakerDropdownEl.remove();
-      speakerDropdownEl = null;
-      speakerDropdownTargetInput = null;
-      speakerDropdownTargetSeg = null;
-    }
-    unfreezeSegmentsScroll();
-  }
-
-  function openSpeakerDropdown(ev, inputEl, seg) {
-    // Stop playback & stop autoscroll ASAP
-    player.pause();
-    // Close existing dropdown first
-    closeSpeakerDropdown();
-    freezeSegmentsScroll();
-
-    speakerDropdownTargetInput = inputEl;
-    speakerDropdownTargetSeg = seg;
-
-    const dd = document.createElement('div');
-    dd.className = 'speaker-dropdown';
-
-    speakerDropdownOptions = [];
-    speakerDropdownSpeakers = [];
-    speakerDropdownIndex = -1;
-
-    const speakers = getAllUniqueSpeakers();
-    speakerDropdownSpeakers = speakers;
-
-    if (!speakers.length) {
-      const opt = document.createElement('div');
-      opt.className = 'speaker-option';
-      opt.textContent = '(geen speakers gevonden)';
-      opt.style.color = 'var(--muted)';
-      dd.appendChild(opt);
-    } else {
-      for (let i = 0; i < speakers.length; i++) {
-        const sp = speakers[i];
-        const opt = document.createElement('div');
-        opt.className = 'speaker-option';
-        opt.textContent = sp;
-
-        opt.addEventListener('mousedown', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          applySpeakerChoice(sp);
-        });
-
-        dd.appendChild(opt);
-        speakerDropdownOptions.push(opt);
-      }
-    }
-
-    document.body.appendChild(dd);
-    speakerDropdownEl = dd;
-
-    // Position: near mouse (as requested), but keep on-screen
-    const margin = 8;
-    let left = (typeof ev.clientX === 'number') ? ev.clientX : 0;
-    let top = (typeof ev.clientY === 'number') ? (ev.clientY + 8) : 0;
-
-    // measure after added to DOM
-    const rect = dd.getBoundingClientRect();
-    if (left + rect.width + margin > window.innerWidth) left = Math.max(margin, window.innerWidth - rect.width - margin);
-    if (top + rect.height + margin > window.innerHeight) top = Math.max(margin, window.innerHeight - rect.height - margin);
-
-    dd.style.left = left + 'px';
-    dd.style.top = top + 'px';
-
-    // initial selection: match current value, else first
-    if (speakerDropdownOptions.length) {
-      const cur = (inputEl.value || '').trim();
-      let idx = 0;
-      if (cur) {
-        const found = speakerDropdownSpeakers.findIndex(s => s === cur);
-        if (found >= 0) idx = found;
-      }
-      setSpeakerDropdownIndex(idx);
-    }
-
-    // Prevent wheel scroll from leaking (extra safety)
-    dd.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
-  }
-
-  // Close dropdown on outside click / Escape
-  document.addEventListener('mousedown', (e) => {
-    if (!speakerDropdownEl) return;
-    const t = e.target;
-    if (speakerDropdownEl.contains(t)) return;
-    if (speakerDropdownTargetInput && speakerDropdownTargetInput === t) return;
-    closeSpeakerDropdown();
-  }, true);
+  const speakerDropdown = createSpeakerDropdownController({
+    segmentsDiv,
+    player,
+    getSegments: () => segments,
+    beginHistoryMutation,
+    scheduleDirtyCheck,
+    forceVisibleIfFilteredOut,
+    scheduleApplyFilters,
+    updateRowBySegId,
+    pushHistory,
+    safePreview,
+  });
+  const setSpeakerDropdownIndex = (newIdx) => speakerDropdown.setSpeakerDropdownIndex(newIdx);
+  const applySpeakerSelected = () => speakerDropdown.applySpeakerSelected();
+  const closeSpeakerDropdown = () => speakerDropdown.closeSpeakerDropdown();
+  const openSpeakerDropdown = (ev, inputEl, seg) => speakerDropdown.openSpeakerDropdown(ev, inputEl, seg);
 
 
   // --- UI ---
   function updateHeaderUI(forceDirty = null) {
     const hasData = segments.length > 0;
-    const nameForTitle = (exportFileName || suggestExportName());
+    const nameForTitle = (exportFileName || _suggestSrtName(ctx));
 
     if (!hasData) {
       saveBtn.disabled = true;
@@ -2528,12 +1637,6 @@ export function mountEditor(options = {}) {
     el.style.overflowY = (needed > TEXTAREA_MAX_HEIGHT) ? 'auto' : 'hidden';
   }
 
-  function collapseTextarea(el) {
-    if (!el) return;
-    el.style.height = TEXTAREA_BASE_HEIGHT + 'px';
-    el.style.overflowY = 'hidden';
-  }
-
   // Chunked textarea sizing (avoids long stalls after split/undo/resize)
   function queueTextareaSizing(el) {
     if (!el) return;
@@ -2626,8 +1729,8 @@ export function mountEditor(options = {}) {
 
       // Soft filter behavior (consistent with other filters)
       try { forceVisibleIfFilteredOut([seg.id], 'Updated done status moved segment outside the current filter.'); } catch { }
-      try { if (matchesFilter(seg)) forcedVisibleIds.delete(seg.id); } catch { }
-      try { pruneForcedVisibleIds(); } catch { }
+      try { if (matchesFilterNow(seg)) forcedVisibleIds.delete(seg.id); } catch { }
+      try { pruneForcedVisibleNow(); } catch { }
 
       applyDoneUI();
       updateDonePill();
@@ -2822,7 +1925,7 @@ export function mountEditor(options = {}) {
       }, 700);
 
       // While typing under an 'Unchanged' filter, keep this segment visible to prevent focus loss.
-      if (filterIsActive() && filterState.changedMode === 'unchanged') {
+      if (filtersIsFilterActive(filterState) && filterState.changedMode === 'unchanged') {
         forcedVisibleIds.add(segId);
       }
       scheduleDirtyCheck({ skipFilterApply: true });
@@ -3149,19 +2252,15 @@ export function mountEditor(options = {}) {
 
   // Load transcript (SRT)
   async function _loadTranscriptSrtText(srtText, displayName, { handle = null, sourceKind = 'disk' } = {}) {
-    try { const b = document.getElementById("localSaveBanner"); if (b) b.classList.add("hidden"); } catch { }
     try { setChosenFileLabel(transcriptBtnLabelEl, displayName, 'Choose transcript', 'transcript'); } catch { }
     try { chosenTranscriptName = displayName || null; } catch { }
     try { updateFileSummaryLabel(); } catch { }
 
-    rawJson = null; // Option B: SRT-only disk load
     loadedJsonFileName = displayName || null;
     exportFileName = (sourceKind === 'disk') ? (displayName || null) : null;
     lastSavedAt = null;
 
     srtSaveHandle = handle || null; // if present, enables true Save without prompting
-    transcriptLoadKind = sourceKind;
-
     buildSegmentsFromSrtText(String(srtText || ''));
     loadDoneFromStorage();
     renderSegments();
@@ -3240,7 +2339,6 @@ export function mountEditor(options = {}) {
   audioInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    try { const b = document.getElementById("localSaveBanner"); if (b) b.classList.add("hidden"); } catch { }
     setChosenFileLabel(audioBtnLabelEl, file.name, 'Choose audio', 'audio');
     chosenAudioName = file.name || null;
     updateFileSummaryLabel();
@@ -3251,534 +2349,62 @@ export function mountEditor(options = {}) {
   /* SAVE_AS_SRT_V1 — delegated to editorSave.js */
   // secondsToSrtTimecode is imported directly from editorSave.js
 
-  function buildSrtFromSegments() { return _buildSrt(ctx); }
-  function suggestSrtName() { return _suggestSrtName(ctx); }
-  function sanitizeSrtFileName(name) { return _sanitizeSrtFileName(name, ctx); }
-  function _downloadText(text, filename, mime) { return downloadTextBlob(text, filename, mime); }
   async function saveSrtLocally(forceSaveAs = false) { return _saveSrtLocally(forceSaveAs, ctx); }
-  function downloadSrt(filename, text) { return _downloadSrt(filename, text, ctx); }
-  function doExport(finalName) { return _doExport(finalName, ctx); }
-
-  function updateSaveLocalHint() {
-    const el = document.getElementById("saveLocalHint");
-    if (!el) return;
-    el.textContent = "";
-  }
-
-  document.addEventListener("DOMContentLoaded", () => {
-    const btn = document.getElementById("saveLocalBtn");
-    if (btn) btn.addEventListener("click", () => saveSrtLocally());
-    updateSaveLocalHint();
-  });
-
-  function openSaveModal() {
-    if (!segments.length) return;
-    saveNameIn.value = suggestExportName();
-    saveModal.classList.remove('hidden');
-    setTimeout(() => { saveNameIn.focus(); saveNameIn.select(); }, 0);
-  }
-
-  function closeSaveModal() { saveModal.classList.add('hidden'); }
 
 
   saveBtn.addEventListener('click', () => saveSrtLocally(false));
   if (saveAsBtn) saveAsBtn.addEventListener('click', () => saveSrtLocally(true));
   exportDocBtn && exportDocBtn.addEventListener('click', () => showToast('Not yet implemented'));
 
-
-  cancelSaveBtn.addEventListener('click', () => closeSaveModal());
-  confirmSaveBtn.addEventListener('click', () => {
-    const finalName = sanitizeFileName(saveNameIn.value);
-    closeSaveModal();
-    doExport(finalName);
+  shortcutsWireEditorHotkeys({
+    flushPendingText,
+    doRedo,
+    doUndo,
+    saveSrtLocally,
+    openFindModal,
+    historyModal,
+    closeHistoryModal,
+    findModal,
+    closeFindModal,
+    replaceAllModal,
+    closeReplaceAllConfirm,
+    helpModal,
+    closeHelpModal,
+    settingsModal,
+    closeSettingsModal,
+    filterModal,
+    closeFilterModal,
+    getSpeakerDropdownEl: () => speakerDropdown.getSpeakerDropdownEl(),
+    closeSpeakerDropdown,
+    getSpeakerDropdownIndex: () => speakerDropdown.getSpeakerDropdownIndex(),
+    setSpeakerDropdownIndex,
+    applySpeakerSelected,
+    player,
+    ensureAudioLoadedForPlay,
+    segmentsDiv,
+    getSegments: () => segments,
+    getCurrentSegmentIndex: () => currentSegmentIndex,
+    findIndexById,
+    setActiveSegment,
+    snapToVisibleIfNeeded,
+    getDoneSegIds: () => doneSegIds,
+    forceVisibleIfFilteredOut,
+    matchesFilterNow,
+    forcedVisibleIds,
+    pruneForcedVisibleNow,
+    getRowById: () => rowById,
+    updateDonePill,
+    saveDoneToStorage,
+    scheduleApplyFilters,
+    getEditorMode: () => editorMode,
+    toggleRepeatSeg,
+    repeatSegState,
+    joinWithPrevious,
+    splitSegment,
+    handleLoopHotkey,
+    findSegmentIndexAtTime,
+    seekRelative: (delta) => playbackSeekRelative(player, delta),
   });
-
-  // Modal: click outside to close
-  saveModal.addEventListener('click', (e) => { if (e.target === saveModal) closeSaveModal(); });
-
-  // Modal: Enter to confirm, Esc to close
-  saveNameIn.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const finalName = sanitizeFileName(saveNameIn.value);
-      closeSaveModal();
-      doExport(finalName);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      closeSaveModal();
-    }
-  });
-
-  // Hotkeys
-  document.addEventListener('keydown', (e) => {
-    const tag = e.target.tagName;
-    const isEditing = tag === 'INPUT' || tag === 'TEXTAREA';
-
-    // App-level undo/redo (we vangen Ctrl+Z/Y altijd af; native undo/redo is uitgeschakeld)
-    if (e.ctrlKey && !e.altKey && !e.metaKey) {
-      // Allow native undo/redo inside the timestamp field while editing
-      // (otherwise Ctrl+Z has no effect until you commit the timestamp).
-      try {
-        if (isEditing && e.target && e.target.classList && e.target.classList.contains('time-input')) {
-          return;
-        }
-      } catch { }
-      const k = e.key.toLowerCase();
-      if (k === 'z') {
-        e.preventDefault();
-        // Commit lopende text-edits zodat undo zinvol is
-        if (isEditing) {
-          const row = e.target.closest?.('.segment');
-          const sid = row?.dataset?.id || null;
-          flushPendingText(sid);
-        } else {
-          flushPendingText();
-        }
-        if (e.shiftKey) doRedo(); else doUndo();
-        return;
-      }
-      if (k === 'y') {
-        e.preventDefault();
-        flushPendingText();
-        doRedo();
-        return;
-      }
-    }
-
-
-    if ((e.key === 's' || e.key === 'S') && e.ctrlKey) {
-      e.preventDefault();
-      saveSrtLocally(false);
-      return;
-    }
-    if ((e.key === 'f' || e.key === 'F') && e.ctrlKey) {
-      e.preventDefault();
-      openFindModal();
-      return;
-    }
-
-
-    if (!saveModal.classList.contains('hidden')) {
-      if (e.key === 'Escape') { e.preventDefault(); hideSaveModal(); }
-      if (e.key === 'Enter') { e.preventDefault(); doSaveWithCurrentName(); }
-      return;
-    }
-    if (historyModal && !historyModal.classList.contains('hidden')) {
-      if (e.key === 'Escape') { e.preventDefault(); closeHistoryModal(); }
-      return;
-    }// Als speaker-dropdown open is: pijlen navigeren, Enter selecteert, ESC sluit
-
-    if (findModal && !findModal.classList.contains('hidden')) {
-      if (e.key === 'Escape') { e.preventDefault(); closeFindModal(); }
-      return;
-    }
-    if (replaceAllModal && !replaceAllModal.classList.contains('hidden')) {
-      if (e.key === 'Escape') { e.preventDefault(); closeReplaceAllConfirm(); }
-      return;
-    }
-
-    if (helpModal && !helpModal.classList.contains('hidden')) {
-      if (e.key === 'Escape') { e.preventDefault(); closeHelpModal(); }
-      return;
-    }
-
-    if (filterModal && !filterModal.classList.contains('hidden')) {
-      if (e.key === 'Escape') { e.preventDefault(); closeFilterModal(); }
-      // while filter is open, don't run player hotkeys
-      return;
-    }
-    if (speakerDropdownEl) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeSpeakerDropdown();
-        return;
-      }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setSpeakerDropdownIndex((speakerDropdownIndex < 0 ? 0 : speakerDropdownIndex + 1));
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setSpeakerDropdownIndex((speakerDropdownIndex < 0 ? 0 : speakerDropdownIndex - 1));
-        return;
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        applySpeakerSelected();
-        return;
-      }
-      // Tab of andere keys: laat focus/typing met rust, maar voorkom player-hotkeys
-      return;
-    }
-    // F1 => play/pause (ook tijdens editen). We blurren inputs zodat pijltjes weer seek doen.
-    if (e.key === 'F1') {
-      e.preventDefault();
-      if (player && player.paused && !ensureAudioLoadedForPlay()) return;
-
-      const ae = document.activeElement;
-      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
-        ae.blur();
-        // focus een neutraal element zodat we niet terug in edit mode schieten
-        segmentsDiv.focus({ preventScroll: true });
-      }
-
-      // Als we gaan "playen": eerst huidige highlight weer in beeld (center) zetten
-      if (player.paused) {
-        let idx = currentSegmentIndex;
-        const t = player.currentTime;
-
-        // Als huidige index onbekend is of niet matcht met de huidige tijd, bepaal hem opnieuw
-        if (idx === -1 || !segments[idx] || !(t >= segments[idx].start && t < segments[idx].end)) {
-          idx = -1;
-          for (let i = 0; i < segments.length; i++) {
-            const s = segments[i];
-            if (t >= s.start && t < s.end) { idx = i; break; }
-          }
-        }
-
-        if (idx !== -1) {
-          setActiveSegment(idx, 'auto'); // zonder animatie, direct centreren
-        }
-
-        try { snapToVisibleIfNeeded(); } catch { }
-        try { snapToVisibleIfNeeded(); } catch { }
-        player.play();
-      } else {
-        player.pause();
-      }
-      return;
-    }
-
-    // F9 => Toggle Done for active segment. Works even while editing.
-    if (e.key === 'F9') {
-      e.preventDefault();
-      const ae = document.activeElement;
-      let idx = currentSegmentIndex;
-      try {
-        if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
-          const row = ae.closest && ae.closest('.segment');
-          if (row && row.dataset && row.dataset.id) {
-            const i2 = findIndexById(row.dataset.id);
-            if (i2 !== -1) idx = i2;
-          }
-        }
-      } catch { }
-      if (idx >= 0 && idx < segments.length) {
-        const seg = segments[idx];
-        if (doneSegIds.has(seg.id)) doneSegIds.delete(seg.id);
-        else doneSegIds.add(seg.id);
-
-        try { forceVisibleIfFilteredOut([seg.id], 'Updated done status moved segment outside the current filter.'); } catch { }
-        try { if (matchesFilter(seg)) forcedVisibleIds.delete(seg.id); } catch { }
-        try { pruneForcedVisibleIds(); } catch { }
-
-        try {
-          const row = rowById.get(seg.id) || segmentsDiv.querySelector(`.segment[data-id="${seg.id}"]`);
-          if (row) {
-            row.classList.toggle('done', doneSegIds.has(seg.id));
-            const btn = row.querySelector('.done-btn');
-            if (btn) {
-              btn.textContent = doneSegIds.has(seg.id) ? '☑' : '☐';
-              btn.setAttribute('aria-pressed', doneSegIds.has(seg.id) ? 'true' : 'false');
-            }
-          }
-        } catch { }
-
-        // Mirror Done styling into Text view (subtle)
-        try {
-          const tv = (tvSpanById && tvSpanById.get(seg.id)) ? tvSpanById.get(seg.id) : null;
-          if (tv) tv.classList.toggle('done', doneSegIds.has(seg.id));
-        } catch { }
-
-        updateDonePill();
-        saveDoneToStorage();
-        try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
-      }
-      return;
-    }
-
-    // F3 => Join with previous (A + B). Works even while editing.
-
-    // F2 => Repeat the active segment (nested over any active A→B loop). Works even while editing.
-    if (e.key === 'F2') {
-      e.preventDefault();
-      const wasPaused = (() => { try { return !!(player && player.paused); } catch { return true; } })();
-      // If not currently playing, ensure audio is loaded (shows toast if not).
-      if (wasPaused) {
-        try { if (!ensureAudioLoadedForPlay()) return; } catch { }
-      }
-
-      const ae = document.activeElement;
-
-      // If audio is currently playing, repeat the *currently playing* segment,
-      // even if focus is still in an older input/textarea.
-      const isPlaying = (() => {
-        try { return player && !player.paused && !player.ended; } catch { return false; }
-      })();
-
-      let idx = currentSegmentIndex;
-      if (!isPlaying) {
-        try {
-          if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
-            const row = ae.closest?.('.segment');
-            const di = row ? parseInt(row.dataset.index, 10) : NaN;
-            if (Number.isFinite(di)) idx = di;
-          }
-        } catch { }
-      }
-
-      if (idx >= 0 && idx < segments.length) {
-        try { setActiveSegment(idx, 'auto', 'center'); } catch { }
-        toggleRepeatSeg(idx);
-        // If we just enabled repeat while paused, start playback immediately.
-        try {
-          if (wasPaused && repeatSegState && repeatSegState.active) {
-            if (player && player.paused) player.play();
-          }
-        } catch { }
-      }
-      return;
-    }
-
-    // In Text view, editing operations (Join/Split) are disabled (read-only mode).
-    if (editorMode === 'text' && (e.key === 'F3' || e.key === 'F4')) {
-      e.preventDefault();
-      return;
-    }
-
-    if (e.key === 'F3') {
-      e.preventDefault();
-      const ae = document.activeElement;
-      let idx = currentSegmentIndex;
-      try {
-        if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
-          const row = ae.closest?.('.segment');
-          const sid = row?.dataset?.id || null;
-          flushPendingText(sid);
-          const di = row ? parseInt(row.dataset.index, 10) : NaN;
-          if (Number.isFinite(di)) idx = di;
-        } else {
-          flushPendingText();
-        }
-      } catch { }
-      if (idx >= 0) joinWithPrevious(idx);
-      return;
-    }
-
-    // F4 => Split segment. Works even while editing.
-    if (e.key === 'F4') {
-      e.preventDefault();
-      const ae = document.activeElement;
-      let idx = currentSegmentIndex;
-      let ta = null;
-      try {
-        if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
-          const row = ae.closest?.('.segment');
-          const sid = row?.dataset?.id || null;
-          flushPendingText(sid);
-          const di = row ? parseInt(row.dataset.index, 10) : NaN;
-          if (Number.isFinite(di)) idx = di;
-          if (ae.tagName === 'TEXTAREA' && ae.classList && ae.classList.contains('text-input')) {
-            ta = ae; // cursor split
-          }
-        } else {
-          flushPendingText();
-        }
-      } catch { }
-
-      if (idx >= 0) {
-        try { setActiveSegment(idx, 'auto', 'center'); } catch { }
-        // If `ta` is not the focused textarea, we use the timestamp prompt/auto-assign logic.
-        splitSegment(idx, ta);
-      }
-      return;
-    }
-
-
-    // F6 => Repeat loop: set start, set end, clear. Works even while editing.
-    if (e.key === 'F6') {
-      e.preventDefault();
-      const ae = document.activeElement;
-      let idx = currentSegmentIndex;
-      try {
-        if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
-          const row = ae.closest?.('.segment');
-          const di = row ? parseInt(row.dataset.index, 10) : NaN;
-          if (Number.isFinite(di)) idx = di;
-        }
-      } catch { }
-      if (idx >= 0) handleLoopHotkey(idx);
-      return;
-    }
-
-
-    // Segment list navigation (when NOT editing text): ArrowUp/ArrowDown/Home/End move the active segment
-    if (!isEditing && editorMode === 'segments') {
-      const k = e.key;
-      const wantsNav = (k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Home' || k === 'End' || k === 'PageUp' || k === 'PageDown');
-      if (wantsNav && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        const rows = segmentsDiv ? segmentsDiv.querySelectorAll('.segment') : null;
-        if (rows && rows.length) {
-          const isVisible = (i) => {
-            try { return !!rows[i] && !rows[i].classList.contains('filtered-out'); } catch { return false; }
-          };
-          const nextVisible = (fromIdx, dir) => {
-            let i = fromIdx;
-            for (let guard = 0; guard < rows.length + 2; guard++) {
-              i += dir;
-              if (i < 0 || i >= rows.length) return -1;
-              if (isVisible(i)) return i;
-            }
-            return -1;
-          };
-
-          // Base index: current active if visible; else try by audio time; else first visible
-          let idx = currentSegmentIndex;
-          if (!(idx >= 0 && idx < rows.length) || !isVisible(idx)) {
-            idx = -1;
-            try {
-              const ti = findSegmentIndexAtTime(player ? player.currentTime : 0);
-              if (ti !== -1 && isVisible(ti)) idx = ti;
-            } catch { }
-            if (idx === -1) idx = nextVisible(-1, +1);
-            if (idx === -1) return; // nothing visible; let browser handle
-          }
-
-          let newIdx = idx;
-          let block = 'nearest';
-          let forceScroll = false;
-
-          if (k === 'ArrowDown' || k === 'ArrowRight') {
-            const ni = nextVisible(idx, +1);
-            if (ni !== -1) newIdx = ni;
-          } else if (k === 'ArrowUp' || k === 'ArrowLeft') {
-            const ni = nextVisible(idx, -1);
-            if (ni !== -1) newIdx = ni;
-          } else if (k === 'PageDown') {
-            const STEP = 10;
-            let cur = idx;
-            for (let s = 0; s < STEP; s++) {
-              const ni = nextVisible(cur, +1);
-              if (ni === -1) break;
-              cur = ni;
-            }
-            if (cur !== idx) { newIdx = cur; forceScroll = true; }
-          } else if (k === 'PageUp') {
-            const STEP = 10;
-            let cur = idx;
-            for (let s = 0; s < STEP; s++) {
-              const ni = nextVisible(cur, -1);
-              if (ni === -1) break;
-              cur = ni;
-            }
-            if (cur !== idx) { newIdx = cur; forceScroll = true; }
-          } else if (k === 'Home') {
-            const ni = nextVisible(-1, +1);
-            if (ni !== -1) newIdx = ni;
-            block = 'start';
-            forceScroll = true;
-          } else if (k === 'End') {
-            const ni = nextVisible(rows.length, -1);
-            if (ni !== -1) newIdx = ni;
-            block = 'end';
-            forceScroll = true;
-          }
-
-          if (newIdx !== idx || k === 'Home' || k === 'End') {
-            e.preventDefault();
-            // User navigation should pause playback to avoid fighting playback-driven highlighting
-            try { if (player && !player.paused) player.pause(); } catch { }
-            try { if (player && segments[newIdx] && Number.isFinite(segments[newIdx].start)) player.currentTime = segments[newIdx].start; } catch { }
-            const beh = (k === 'Home' || k === 'End') ? 'auto' : 'auto';
-            // For Home/End: jump the scroll container immediately to avoid long smooth scrolling
-            try {
-              if (k === 'Home') segmentsDiv.scrollTop = 0;
-              if (k === 'End') segmentsDiv.scrollTop = segmentsDiv.scrollHeight;
-            } catch { }
-            // For Home/End, jump the scroll container immediately to avoid long animated travel
-            try {
-              if ((k === 'Home' || k === 'End') && segmentsDiv) {
-                segmentsDiv.scrollTop = (k === 'Home') ? 0 : segmentsDiv.scrollHeight;
-              }
-            } catch { }
-            setActiveSegment(newIdx, beh, block, forceScroll || !!e.repeat);
-            return;
-          }
-        }
-      }
-    }
-
-    if (isEditing) return;
-
-    switch (e.key) {
-      case ' ':
-        e.preventDefault();
-        if (player && player.paused && !ensureAudioLoadedForPlay()) return;
-
-        // Bij pauze -> play: eerst huidige highlight weer in beeld (center) zetten
-        if (player.paused) {
-          let idx = currentSegmentIndex;
-          const t = player.currentTime;
-
-          if (idx === -1 || !segments[idx] || !(t >= segments[idx].start && t < segments[idx].end)) {
-            idx = -1;
-            for (let i = 0; i < segments.length; i++) {
-              const s = segments[i];
-              if (t >= s.start && t < s.end) { idx = i; break; }
-            }
-          }
-
-          if (idx !== -1) setActiveSegment(idx, 'auto');
-          try { snapToVisibleIfNeeded(); } catch { }
-          player.play();
-        } else {
-          player.pause();
-        }
-        break;
-      case 'ArrowLeft':
-        if (editorMode === 'segments') break; // handled as list navigation when not editing
-        e.preventDefault();
-        seekRelative(-3);
-        break;
-      case 'ArrowRight':
-        if (editorMode === 'segments') break; // handled as list navigation when not editing
-        e.preventDefault();
-        seekRelative(3);
-        break;
-
-    }
-  });
-
-  function seekRelative(delta) {
-    if (!player.duration) return;
-    let t = player.currentTime + delta;
-    if (t < 0) t = 0;
-    if (t > player.duration) t = player.duration;
-    player.currentTime = t;
-  }
-
-  function jumpToRelativeSegment(step) {
-    if (!segments.length) return;
-
-    let idx = currentSegmentIndex;
-    if (idx === -1) {
-      const t = player.currentTime;
-      for (let i = 0; i < segments.length; i++) {
-        const s = segments[i];
-        if (t >= s.start && t < s.end) { idx = i; break; }
-      }
-      if (idx === -1) idx = 0;
-    }
-
-    let newIdx = idx + step;
-    if (newIdx < 0) newIdx = 0;
-    if (newIdx >= segments.length) newIdx = segments.length - 1;
-
-    player.pause();
-    player.currentTime = segments[newIdx].start;
-    setActiveSegment(newIdx, 'smooth');
-  }
 
   // Warn on close if dirty
   window.addEventListener('beforeunload', (e) => {
@@ -3877,11 +2503,9 @@ export function mountEditor(options = {}) {
           loadedJsonFileName = tName;
           srtSaveHandle = null;
           exportFileName = null;
-          transcriptLoadKind = 'local';
           updateFileSummaryLabel();
         } catch { }
 
-        rawJson = null;
         buildSegmentsFromSrtText(srtContent);
         loadDoneFromStorage(); // Works if based on content hash
         renderSegments();
@@ -3906,11 +2530,9 @@ export function mountEditor(options = {}) {
           // Server-loaded transcript: no write-back handle yet (design later)
           srtSaveHandle = null;
           exportFileName = null;
-          transcriptLoadKind = 'fetch';
           updateFileSummaryLabel();
         } catch { }
 
-        rawJson = null; // indicates this session isn't driven by the old JSON format
         buildSegmentsFromSrtText(srtText);
         loadDoneFromStorage();
         renderSegments();

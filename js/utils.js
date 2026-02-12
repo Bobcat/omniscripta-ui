@@ -38,34 +38,46 @@ export function _srtTcToSeconds(tc) {
 }
 
 export function _parseSrt(srtText) {
-    const blocks = String(srtText).replace(/\r/g, "").trim().split(/\n\n+/);
+    const src = String(srtText)
+        .replace(/\r/g, "")
+        .replace(/<!-- OMNISCRIPTA_META:[\s\S]*?-->/g, "")
+        .replace(/<!-- OMNISCRIPTA_META:[\s\S]*$/g, "")
+        .trim();
+    if (!src) return [];
+
+    // Parse cues without blindly splitting on blank lines, so blank lines
+    // inside a cue's text are preserved.
+    const tc = "\\d{1,2}:\\d{2}:\\d{2}(?:[,.]\\d{1,3})?";
+    const cueRe = new RegExp(
+        `(?:^|\\n)(?:\\d+\\s*\\n)?(${tc}\\s*-->\\s*${tc})\\n([\\s\\S]*?)(?=\\n{2,}(?:(?:\\d+\\s*\\n)?${tc}\\s*-->\\s*${tc})\\n|$)`,
+        "g"
+    );
     const items = [];
-    for (const b of blocks) {
-        const lines = b.split("\n").map(x => x.trimEnd());
-        if (lines.length < 2) continue;
-
-        // Usually: [index] then time line
-        let timeLineIdx = 0;
-        if (/^\d+$/.test(lines[0].trim())) timeLineIdx = 1;
-
-        const timeLine = lines[timeLineIdx] || "";
+    let match;
+    while ((match = cueRe.exec(src))) {
+        const timeLine = match[1] || "";
         const tm = timeLine.match(/(.+?)\s*-->\s*(.+)/);
         if (!tm) continue;
 
         const start = _srtTcToSeconds(tm[1]);
         const end = _srtTcToSeconds(tm[2]);
 
-        const textLines = lines.slice(timeLineIdx + 1).filter(Boolean);
-        let text = textLines.join(" ").trim();
+        const body = String(match[2] || "").replace(/\n+$/, "");
+        const textLines = body.split("\n").map(x => x.trimEnd());
+        while (textLines.length && !textLines[textLines.length - 1]) textLines.pop();
+        if (!textLines.length) textLines.push("");
 
         // Try speaker extraction (common patterns)
         let speaker = "";
-        let sm = text.match(/^(SPEAKER_\d+)\s*:\s*(.*)$/i);
-        if (sm) { speaker = sm[1]; text = sm[2].trim(); }
+        const firstLine = textLines[0] || "";
+        let sm = firstLine.match(/^(SPEAKER_\d+)\s*:\s*(.*)$/i);
+        if (sm) { speaker = sm[1]; textLines[0] = sm[2]; }
         else {
-            sm = text.match(/^\[(SPEAKER_\d+)\]\s*(.*)$/i);
-            if (sm) { speaker = sm[1]; text = sm[2].trim(); }
+            sm = firstLine.match(/^\[(SPEAKER_\d+)\]\s*(.*)$/i);
+            if (sm) { speaker = sm[1]; textLines[0] = sm[2]; }
         }
+
+        let text = textLines.join("\n").trim();
 
         // WhisperX variants sometimes leave leading punctuation (":", "-", "—")
         if (speaker) {

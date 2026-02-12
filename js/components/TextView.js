@@ -28,6 +28,8 @@ export class TextView {
         const fullList = this.getSegments();
         for (let k = 0; k < fullList.length; k++) idxById.set(fullList[k].id, k);
 
+        let textEl = null;
+        this.curSpeaker = null;
         let prevOrigIdx = null;
 
         for (let i = 0; i < segs.length; i++) {
@@ -38,34 +40,9 @@ export class TextView {
 
             if (spk !== this.curSpeaker || hasGap) {
                 this.curSpeaker = spk;
-                const block = this.createBlock(seg.start, spk);
-                // We append the block's text container to accessible later? 
-                // Actually, createBlock returns the block, but we need the text container inside it to append spans.
-                // Let's adjust createBlock to return {block, textEl}
-            }
-
-            // Wait, the loop above needs to persist the current textEl to append subsequent segments.
-            // Let's refactor similar to original app.js logic but cleaner.
-        }
-
-        // Re-implementation of render loop
-        let block = null;
-        let textEl = null;
-        this.curSpeaker = null;
-        prevOrigIdx = null;
-
-        for (let i = 0; i < segs.length; i++) {
-            const seg = segs[i];
-            const spk = seg.speaker || 'SPEAKER';
-            const origIdx = idxById.get(seg.id);
-            const hasGap = (prevOrigIdx !== null && origIdx !== (prevOrigIdx + 1));
-
-            if (spk !== this.curSpeaker || hasGap) {
-                this.curSpeaker = spk;
                 const b = this.createBlock(seg.start, spk);
-                block = b.block;
                 textEl = b.textEl;
-                frag.appendChild(block);
+                frag.appendChild(b.block);
             }
 
             const span = document.createElement('span');

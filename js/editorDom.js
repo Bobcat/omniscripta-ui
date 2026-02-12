@@ -1,0 +1,26 @@
+export function getEditorBootDom() {
+    return {
+        transcriptInput: document.getElementById('transcriptInput'),
+        audioInput: document.getElementById('audioInput'),
+        transcriptBtnLabelEl: document.getElementById('transcriptBtnLabel'),
+        audioBtnLabelEl: document.getElementById('audioBtnLabel'),
+        fileSummaryEl: document.getElementById('fileSummaryLabel'),
+        segmentsDiv: document.getElementById('segments'),
+        player: document.getElementById('player'),
+        customPlayerContainer: document.getElementById('customPlayer'),
+        textViewDiv: document.getElementById('textView'),
+        modeSegmentsBtn: document.getElementById('modeSegmentsBtn'),
+        modeTextBtn: document.getElementById('modeTextBtn'),
+        saveBtn: document.getElementById('saveBtn'),
+        saveAsBtn: document.getElementById('saveAsBtn'),
+        exportDocBtn: document.getElementById('exportDocBtn'),
+        historyBtn: document.getElementById('historyBtn'),
+        historyModal: document.getElementById('historyModal'),
+        closeHistoryBtn: document.getElementById('closeHistoryBtn'),
+        undoListEl: document.getElementById('undoList'),
+        redoListEl: document.getElementById('redoList'),
+        undoCountEl: document.getElementById('undoCount'),
+        redoCountEl: document.getElementById('redoCount'),
+        detailsEl: document.getElementById('historyDetails'),
+    };
+}

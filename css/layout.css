@@ -142,6 +142,19 @@ body {
     flex-direction: column;
 }
 
+.build-stamp {
+    padding: 8px 16px 4px;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    opacity: 0.75;
+    letter-spacing: 0.02em;
+    user-select: none;
+}
+
+.sidebar:not(.expanded) .build-stamp {
+    display: none;
+}
+
 /* Ensure projects list takes available space and scrolls */
 .projects-list {
     flex: 1;

@@ -94,22 +94,6 @@ export class EditorView {
       </div>
     </div>
   </main>
-  <!-- Save modal -->
-  <div aria-labelledby="saveTitle" aria-modal="true" class="modal hidden" id="saveModal" role="dialog">
-    <div class="modal-card">
-      <h3 id="saveTitle">Save as</h3>
-      <p>Edit the filename (Enter = save with the suggested name).</p>
-      <div class="modal-row">
-        <label for="saveName">Filename (.srt)</label>
-        <input autocomplete="off" id="saveName" spellcheck="false">
-        </input>
-      </div>
-      <div class="modal-actions">
-        <button id="cancelSaveBtn">Cancel</button>
-        <button class="primary" id="confirmSaveBtn">Download</button>
-      </div>
-    </div>
-  </div>
   <div aria-label="History" aria-modal="true" class="modal hidden" id="historyModal" role="dialog">
     <div class="modal-card history-card">
       <div class="history-topbar">

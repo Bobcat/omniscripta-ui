@@ -393,10 +393,20 @@ class App {
             // Content wrapper
             const content = document.createElement('div');
             content.className = 'project-content';
-            content.innerHTML = `
-                <span class="material-symbols-outlined">description</span>
-                <span class="link-text" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.name}</span>
-            `;
+
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'material-symbols-outlined';
+            iconSpan.textContent = 'description';
+
+            const textSpan = document.createElement('span');
+            textSpan.className = 'link-text';
+            textSpan.style.whiteSpace = 'nowrap';
+            textSpan.style.overflow = 'hidden';
+            textSpan.style.textOverflow = 'ellipsis';
+            textSpan.textContent = String(p.name || '');
+
+            content.appendChild(iconSpan);
+            content.appendChild(textSpan);
 
             // Delete button (hidden by default via CSS)
             const deleteBtn = document.createElement('button');
