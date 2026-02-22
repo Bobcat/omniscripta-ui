@@ -1,5 +1,7 @@
 import { UploadView } from "./components/UploadView.js";
 import { EditorView } from "./components/EditorView.js";
+import { SettingsView } from "./components/SettingsView.js";
+import { LiveView } from "./components/LiveView.js";
 import { ProjectService } from "./services/ProjectService.js";
 import { FileHandleService } from "./services/FileHandleService.js";
 import { fetchJobStatus } from "./api.js";
@@ -7,9 +9,10 @@ import { fetchJobStatus } from "./api.js";
 class App {
     constructor() {
         this.state = {
-            currentView: 'upload', // 'upload' | 'editor'
+            currentView: 'upload', // 'upload' | 'editor' | 'settings' | 'live'
             sidebarOpen: true, // Desktop default
             activeJob: null, // { id, filename, progress, status }
+            activeUpload: null, // { filename, language, speakers, progress, ... } before job_id is returned
             activeProjectId: null // ID of currently open project
         };
 
@@ -20,8 +23,22 @@ class App {
 
         this.views = {
             upload: new UploadView(this),
-            editor: new EditorView(this)
+            editor: new EditorView(this),
+            settings: new SettingsView(this),
+            live: new LiveView(this)
         };
+
+        this.projectActionMenu = null;
+        this.projectActionSheetBackdrop = null;
+        this.projectActionSheet = null;
+        this.projectActionProject = null;
+        this.projectActionTriggerRect = null;
+        this.projectActionCloseTimer = null;
+        this.deleteProjectModal = null;
+        this.deleteProjectMessage = null;
+        this.deleteProjectCancelBtn = null;
+        this.deleteProjectConfirmBtn = null;
+        this.pendingDeleteProject = null;
 
         this.projectService = new ProjectService();
         this.initAlertModal();
@@ -65,6 +82,8 @@ class App {
     init() {
         this.bindEvents();
         this.createMobileToggle(); // Floating hamburger for mobile
+        this.initDeleteProjectModal();
+        this.initProjectActionsUi();
         this.detectDeviceType(); // Set global mobile/desktop class
         this.checkDevice();
         this.renderProjects(); // Initial render
@@ -141,6 +160,20 @@ class App {
                     if (this.isMobile()) {
                         this.toggleSidebar(false);
                     }
+                } else if (action === 'live') {
+                    this.navigateTo('live');
+
+                    // On mobile, close sidebar after selection
+                    if (this.isMobile()) {
+                        this.toggleSidebar(false);
+                    }
+                } else if (action === 'settings') {
+                    this.navigateTo('settings');
+
+                    // On mobile, close sidebar after selection
+                    if (this.isMobile()) {
+                        this.toggleSidebar(false);
+                    }
                 }
             });
         });
@@ -172,7 +205,7 @@ class App {
         // We use event delegation or a custom event since views are dynamic
         document.addEventListener('click', (e) => {
             // Check if clicked element is a mobile-menu toggle (e.g. from editor)
-            if (e.target.matches('.mobile-menu-btn, #mobileMenuBtn, #floatingMobileMenuBtn')) {
+            if (e.target.matches('.mobile-menu-btn, #mobileMenuBtn')) {
                 this.toggleSidebar(true);
             }
         });
@@ -335,6 +368,335 @@ class App {
         this.renderProjects();
     }
 
+    initDeleteProjectModal() {
+        let modal = document.getElementById('deleteProjectModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'deleteProjectModal';
+            modal.className = 'modal hidden delete-project-modal';
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+            modal.setAttribute('aria-labelledby', 'deleteProjectTitle');
+            modal.innerHTML = `
+                <div class="modal-card delete-project-card">
+                    <h3 id="deleteProjectTitle">Delete project?</h3>
+                    <p id="deleteProjectMessage"></p>
+                    <div class="modal-actions">
+                        <button id="deleteProjectCancelBtn" type="button">Cancel</button>
+                        <button id="deleteProjectConfirmBtn" class="danger-soft" type="button">Delete</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        this.deleteProjectModal = modal;
+        this.deleteProjectMessage = modal.querySelector('#deleteProjectMessage');
+        this.deleteProjectCancelBtn = modal.querySelector('#deleteProjectCancelBtn');
+        this.deleteProjectConfirmBtn = modal.querySelector('#deleteProjectConfirmBtn');
+
+        if (this.deleteProjectCancelBtn) {
+            this.deleteProjectCancelBtn.addEventListener('click', () => this.hideDeleteProjectDialog());
+        }
+        if (this.deleteProjectConfirmBtn) {
+            this.deleteProjectConfirmBtn.addEventListener('click', () => this.confirmDeleteProject());
+        }
+
+        this.deleteProjectModal.addEventListener('mousedown', (e) => {
+            if (e.target === this.deleteProjectModal) {
+                this.hideDeleteProjectDialog();
+            }
+        });
+        this.deleteProjectModal.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.hideDeleteProjectDialog();
+            } else if (e.key === 'Enter') {
+                this.confirmDeleteProject();
+            }
+        });
+    }
+
+    showDeleteProjectDialog(project, anchorRect = null) {
+        if (!project || !this.deleteProjectModal || !this.deleteProjectMessage) return;
+        this.pendingDeleteProject = project;
+        this.deleteProjectMessage.innerText = `This will delete "${project.name}" from recent projects.`;
+        this.positionDeleteProjectDialog(anchorRect);
+        this.deleteProjectModal.classList.remove('hidden');
+        // Reposition after render using the actual dialog dimensions.
+        requestAnimationFrame(() => this.positionDeleteProjectDialog(anchorRect));
+        if (this.deleteProjectConfirmBtn) {
+            this.deleteProjectConfirmBtn.focus();
+        }
+    }
+
+    positionDeleteProjectDialog(anchorRect = null) {
+        if (!this.deleteProjectModal) return;
+
+        if (this.isMobile()) {
+            this.deleteProjectModal.style.removeProperty('--dp-left');
+            this.deleteProjectModal.style.removeProperty('--dp-top');
+            return;
+        }
+
+        let rect = anchorRect;
+        if (!rect) {
+            const sidebarRect = this.sidebar ? this.sidebar.getBoundingClientRect() : null;
+            if (sidebarRect) {
+                rect = {
+                    left: sidebarRect.right + 8,
+                    right: sidebarRect.right + 8,
+                    top: Math.max(72, sidebarRect.top + 110),
+                    bottom: Math.max(72, sidebarRect.top + 140)
+                };
+            }
+        }
+        if (!rect) return;
+
+        const viewportPadding = 8;
+        const card = this.deleteProjectModal.querySelector('.delete-project-card');
+        const cardRect = card ? card.getBoundingClientRect() : null;
+        const dialogWidth = cardRect && cardRect.width > 0 ? cardRect.width : Math.min(420, window.innerWidth - 20);
+        const dialogHeight = cardRect && cardRect.height > 0 ? cardRect.height : 188;
+
+        let left = rect.right + 8;
+        let top = rect.top - dialogHeight - 10;
+
+        if (left + dialogWidth > window.innerWidth - viewportPadding) {
+            left = rect.left - dialogWidth - 8;
+        }
+        left = Math.max(viewportPadding, Math.min(left, window.innerWidth - dialogWidth - viewportPadding));
+        top = Math.max(viewportPadding, Math.min(top, window.innerHeight - dialogHeight - viewportPadding));
+
+        this.deleteProjectModal.style.setProperty('--dp-left', `${left}px`);
+        this.deleteProjectModal.style.setProperty('--dp-top', `${top}px`);
+    }
+
+    hideDeleteProjectDialog() {
+        if (this.deleteProjectModal) {
+            this.deleteProjectModal.classList.add('hidden');
+        }
+        this.pendingDeleteProject = null;
+    }
+
+    confirmDeleteProject() {
+        const project = this.pendingDeleteProject;
+        if (!project) {
+            this.hideDeleteProjectDialog();
+            return;
+        }
+
+        this.projectService.deleteProject(project.id);
+        if (this.state.activeProjectId === project.id) {
+            this.state.activeProjectId = null;
+        }
+        this.refreshProjects();
+        this.hideDeleteProjectDialog();
+    }
+
+    initProjectActionsUi() {
+        let menu = document.getElementById('projectActionMenu');
+        if (!menu) {
+            menu = document.createElement('div');
+            menu.id = 'projectActionMenu';
+            menu.className = 'project-action-menu hidden';
+            menu.innerHTML = `
+                <button type="button" class="project-action-item delete" id="projectActionDeleteDesktop">
+                    <span class="material-symbols-outlined">delete</span>
+                    <span>Delete</span>
+                </button>
+            `;
+            document.body.appendChild(menu);
+        }
+        this.projectActionMenu = menu;
+
+        let sheetBackdrop = document.getElementById('projectActionSheetBackdrop');
+        if (!sheetBackdrop) {
+            sheetBackdrop = document.createElement('div');
+            sheetBackdrop.id = 'projectActionSheetBackdrop';
+            sheetBackdrop.className = 'project-action-sheet-backdrop hidden';
+            sheetBackdrop.innerHTML = `
+                <div class="project-action-sheet" id="projectActionSheet" role="dialog" aria-modal="true" aria-label="Project actions">
+                    <div class="project-action-sheet-handle" aria-hidden="true"></div>
+                    <button type="button" class="project-action-item delete" id="projectActionDeleteMobile">
+                        <span class="material-symbols-outlined">delete</span>
+                        <span>Delete</span>
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(sheetBackdrop);
+        }
+        this.projectActionSheetBackdrop = sheetBackdrop;
+        this.projectActionSheet = sheetBackdrop.querySelector('#projectActionSheet');
+        const sheetHandle = sheetBackdrop.querySelector('.project-action-sheet-handle');
+
+        const desktopDeleteBtn = menu.querySelector('#projectActionDeleteDesktop');
+        const mobileDeleteBtn = sheetBackdrop.querySelector('#projectActionDeleteMobile');
+
+        if (desktopDeleteBtn) {
+            desktopDeleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.deleteProjectFromActions();
+            });
+        }
+        if (mobileDeleteBtn) {
+            mobileDeleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.deleteProjectFromActions();
+            });
+        }
+
+        sheetBackdrop.addEventListener('click', (e) => {
+            if (e.target === sheetBackdrop) {
+                this.closeProjectActions();
+            }
+        });
+        if (this.projectActionSheet) {
+            this.projectActionSheet.addEventListener('click', (e) => e.stopPropagation());
+        }
+
+        if (sheetHandle && this.projectActionSheet) {
+            let dragging = false;
+            let startY = 0;
+            let deltaY = 0;
+
+            const onMove = (e) => {
+                if (!dragging || !this.projectActionSheet) return;
+                const pointY = e.touches ? e.touches[0].clientY : e.clientY;
+                deltaY = Math.max(0, pointY - startY);
+                this.projectActionSheet.style.transition = 'none';
+                this.projectActionSheet.style.transform = `translateY(${deltaY}px)`;
+                if (e.cancelable) e.preventDefault();
+            };
+
+            const onEnd = () => {
+                if (!dragging || !this.projectActionSheet) return;
+                dragging = false;
+                this.projectActionSheet.style.transition = '';
+
+                if (deltaY > 80) {
+                    this.closeProjectActions();
+                } else {
+                    this.projectActionSheet.style.transform = '';
+                    this.projectActionSheet.classList.add('open');
+                }
+
+                window.removeEventListener('touchmove', onMove);
+                window.removeEventListener('touchend', onEnd);
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onEnd);
+            };
+
+            const onStart = (e) => {
+                dragging = true;
+                startY = e.touches ? e.touches[0].clientY : e.clientY;
+                deltaY = 0;
+                window.addEventListener('touchmove', onMove, { passive: false });
+                window.addEventListener('touchend', onEnd);
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onEnd);
+            };
+
+            sheetHandle.addEventListener('touchstart', onStart, { passive: true });
+            sheetHandle.addEventListener('mousedown', onStart);
+        }
+
+        document.addEventListener('click', (e) => {
+            const inMenu = e.target.closest('#projectActionMenu');
+            const inSheet = e.target.closest('#projectActionSheet');
+            const onTrigger = e.target.closest('.project-menu-btn');
+            if (!inMenu && !inSheet && !onTrigger) {
+                this.closeProjectActions();
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeProjectActions();
+            }
+        });
+        window.addEventListener('resize', () => this.closeProjectActions());
+    }
+
+    openProjectActions(project, triggerButton) {
+        this.closeProjectActions();
+        this.projectActionProject = project;
+        this.projectActionTriggerRect = triggerButton ? triggerButton.getBoundingClientRect() : null;
+        if (this.isMobile()) {
+            this.openProjectActionsSheet();
+            return;
+        }
+        this.openProjectActionsMenu(triggerButton);
+    }
+
+    openProjectActionsMenu(triggerButton) {
+        if (!this.projectActionMenu || !triggerButton) return;
+        this.projectActionMenu.classList.remove('hidden');
+
+        const triggerRect = triggerButton.getBoundingClientRect();
+        this.projectActionTriggerRect = triggerRect;
+        const menuRect = this.projectActionMenu.getBoundingClientRect();
+        let left = triggerRect.right - menuRect.width;
+        let top = triggerRect.bottom + 6;
+
+        if (left < 8) left = 8;
+        if (top + menuRect.height > window.innerHeight - 8) {
+            top = Math.max(8, triggerRect.top - menuRect.height - 6);
+        }
+
+        this.projectActionMenu.style.left = `${left}px`;
+        this.projectActionMenu.style.top = `${top}px`;
+    }
+
+    openProjectActionsSheet() {
+        if (!this.projectActionSheetBackdrop || !this.projectActionSheet) return;
+        this.projectActionSheetBackdrop.classList.remove('hidden');
+        this.projectActionSheet.style.transform = '';
+        this.projectActionSheet.style.transition = '';
+        // Trigger transition on next frame.
+        requestAnimationFrame(() => {
+            this.projectActionSheetBackdrop.classList.add('open');
+            this.projectActionSheet.classList.add('open');
+        });
+    }
+
+    closeProjectActions(opts = {}) {
+        const immediate = !!opts.immediate;
+        if (this.projectActionCloseTimer) {
+            clearTimeout(this.projectActionCloseTimer);
+            this.projectActionCloseTimer = null;
+        }
+        if (this.projectActionMenu) {
+            this.projectActionMenu.classList.add('hidden');
+        }
+        if (this.projectActionSheetBackdrop && this.projectActionSheet) {
+            if (!this.projectActionSheetBackdrop.classList.contains('hidden')) {
+                this.projectActionSheetBackdrop.classList.remove('open');
+                this.projectActionSheet.classList.remove('open');
+                this.projectActionSheet.style.transform = '';
+                this.projectActionSheet.style.transition = '';
+                if (immediate) {
+                    this.projectActionSheetBackdrop.classList.add('hidden');
+                } else {
+                    this.projectActionCloseTimer = setTimeout(() => {
+                        if (this.projectActionSheetBackdrop) {
+                            this.projectActionSheetBackdrop.classList.add('hidden');
+                        }
+                    }, 180);
+                }
+            }
+        }
+        this.projectActionProject = null;
+    }
+
+    deleteProjectFromActions(anchorRect = null) {
+        const project = this.projectActionProject;
+        const effectiveAnchor = anchorRect || this.projectActionTriggerRect || null;
+        this.closeProjectActions({ immediate: this.isMobile() });
+        this.projectActionProject = null;
+        this.projectActionTriggerRect = null;
+        if (!project) return;
+        this.showDeleteProjectDialog(project, effectiveAnchor);
+    }
+
     renderProjects() {
         // Find or create the projects container in sidebar
         let container = document.getElementById('sidebar-projects');
@@ -377,7 +739,7 @@ class App {
         projects.forEach(p => {
             const li = document.createElement('li');
             li.title = p.name;
-            li.style.position = 'relative'; // For absolute positioning of delete btn
+            li.style.position = 'relative';
 
             // Active Highlight
             if (this.state.activeProjectId === p.id) {
@@ -408,14 +770,14 @@ class App {
             content.appendChild(iconSpan);
             content.appendChild(textSpan);
 
-            // Delete button (hidden by default via CSS)
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'delete-project-btn';
-            deleteBtn.title = 'Delete Project';
-            deleteBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size: 16px;">delete</span>';
+            const menuBtn = document.createElement('button');
+            menuBtn.className = 'project-menu-btn';
+            menuBtn.type = 'button';
+            menuBtn.title = 'Project actions';
+            menuBtn.innerHTML = '<span class="material-symbols-outlined">more_vert</span>';
 
             li.appendChild(content);
-            li.appendChild(deleteBtn);
+            li.appendChild(menuBtn);
 
             // Event: Click Project (Navigate)
             content.addEventListener('click', async () => {
@@ -490,12 +852,9 @@ class App {
             }
 
             container.appendChild(li);
-            deleteBtn.addEventListener('click', (e) => {
+            menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation(); // Don't trigger navigation
-                if (confirm(`Remove "${p.name}" from history?`)) {
-                    this.projectService.deleteProject(p.id);
-                    this.refreshProjects();
-                }
+                this.openProjectActions(p, menuBtn);
             });
         });
     }

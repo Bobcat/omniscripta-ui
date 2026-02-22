@@ -921,17 +921,6 @@ export function mountEditor(options = {}) {
     setActiveSegment,
   });
 
-  // Floating Mobile Menu Button Logic
-  const floatMenuBtn = document.getElementById('floatingMobileMenuBtn');
-  if (floatMenuBtn) {
-    floatMenuBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      // Toggle same menu as the header one
-      const fileActions = document.getElementById('headerFileActions');
-      if (fileActions) fileActions.classList.toggle('show');
-    });
-  }
-
   const replaceAllModal = document.getElementById('replaceAllModal');
   const raSummary = document.getElementById('raSummary');
   const raCancelBtn = document.getElementById('raCancelBtn');

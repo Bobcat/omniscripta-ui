@@ -49,6 +49,7 @@ export class UploadView {
     this.projectService = new ProjectService();
     // Temporary state for the selected file before upload
     this.selectedFile = null;
+    this.refreshUploadUi = null;
   }
 
   getHtml() {
@@ -103,7 +104,7 @@ export class UploadView {
               <div>
                 <label for="spk">Speakers</label>
                 <select id="spk">
-                  <option value="auto" selected>Auto (Detect)</option>
+                  <option value="none">No speaker recognition (fastest)</option>
                   <option value="1">1 Speaker</option>
                   <option value="2">2 Speakers</option>
                   <option value="3">3 Speakers</option>
@@ -112,8 +113,7 @@ export class UploadView {
                   <option value="6">6 Speakers</option>
                   <option value="7">7 Speakers</option>
                   <option value="8">8 Speakers</option>
-                  <option value="9">9 Speakers</option>
-                  <option value="10">10 Speakers</option>
+                  <option value="auto" selected>Detect automatically</option>
                 </select>
               </div>
             </div>
@@ -145,6 +145,11 @@ export class UploadView {
     this.initLogic();
   }
 
+  unmount() {
+    this.refreshUploadUi = null;
+    return {};
+  }
+
   initLogic() {
     const fileEl = document.createElement('input');
     fileEl.type = 'file';
@@ -174,6 +179,13 @@ export class UploadView {
       this.pollTimer = null;
     }
     let lastProgress = 0;
+    const setActiveUpload = (patch) => {
+      const prev = this.app.state.activeUpload || {};
+      this.app.state.activeUpload = { ...prev, ...patch };
+    };
+    const clearActiveUpload = () => {
+      this.app.state.activeUpload = null;
+    };
 
 
     // --- Logic ---
@@ -259,20 +271,54 @@ export class UploadView {
         const fields = {};
         fields.language = (langEl && langEl.value) ? langEl.value : "en";
         fields.speakers = (spkEl && spkEl.value) ? spkEl.value : "auto";
+        setActiveUpload({
+          filename: this.selectedFile.name,
+          language: fields.language,
+          speakers: fields.speakers,
+          progress: 0,
+          state: "queued",
+          phase: "upload",
+          message: "Uploading…",
+          status: "uploading"
+        });
 
         try {
-          const res = await uploadWithProgress(this.selectedFile, fields);
+          const res = await uploadWithProgress(this.selectedFile, fields, (p) => {
+            setActiveUpload({
+              progress: p,
+              state: "queued",
+              phase: "upload",
+              message: "Uploading…",
+              status: "uploading"
+            });
+            if (typeof this.refreshUploadUi === "function") {
+              this.refreshUploadUi();
+            }
+          });
           const jobId = res.job_id;
+          clearActiveUpload();
+          // Reset upload monotonic guard so job polling can start below 100%.
+          lastProgress = 0;
+          setProgress(0);
 
           startUploadBtn.textContent = "Transcribing…";
           setLine("queued", "start", "Starting transcription…");
 
           // Save project
           this.projectService.addProject(jobId, this.currentFilename || "Audio Upload");
+          this.app.state.activeJob = {
+            id: jobId,
+            filename: this.currentFilename || "Audio",
+            language: fields.language,
+            speakers: fields.speakers,
+            progress: 0,
+            status: "queued",
+          };
           this.app.refreshProjects();
 
           poll(jobId);
         } catch (e) {
+          clearActiveUpload();
           setProgress(0);
           setLine("error", "upload", e && e.message ? e.message : String(e));
 
@@ -289,15 +335,62 @@ export class UploadView {
     // --- Helpers (Same as before, simplified) ---
 
     // State Persistence
+    const restoreUploadingState = (upload) => {
+      step1.classList.add('hidden');
+      step2.classList.remove('hidden');
+
+      const filename = upload.filename || this.currentFilename || "Audio";
+      this.currentFilename = filename;
+      selectedFileNameEl.textContent = filename;
+
+      if (langEl && upload.language) langEl.value = String(upload.language);
+      if (spkEl && upload.speakers !== undefined && upload.speakers !== null) {
+        spkEl.value = String(upload.speakers);
+      }
+
+      startUploadBtn.disabled = true;
+      startUploadBtn.textContent = "Uploading…";
+      changeFileBtn.style.display = 'none';
+      if (langEl) langEl.disabled = true;
+      if (spkEl) spkEl.disabled = true;
+
+      showProgress();
+      setFilename(filename);
+
+      const uploadProgress = clamp01(upload.progress || 0);
+      lastProgress = Math.max(lastProgress, uploadProgress);
+      setProgress(lastProgress);
+      setLine(upload.state || "queued", upload.phase || "upload", upload.message || "Uploading…");
+    };
+
     const restoreState = () => {
+      const upload = this.app.state.activeUpload;
+      if (upload && upload.status === "uploading") {
+        restoreUploadingState(upload);
+        return;
+      }
+
       const job = this.app.state.activeJob;
       if (job && job.status !== 'done' && job.status !== 'error') {
-        // If a job is running, we skip step 1 & 2 and go straight to progress
+        // Keep Step 2 visible so the user still sees file/language/speakers while processing.
         step1.classList.add('hidden');
-        step2.classList.add('hidden'); // Or keep it visible but disabled? Better to hide config once started.
+        step2.classList.remove('hidden');
+
+        const filename = job.filename || "Audio";
+        this.currentFilename = filename;
+        selectedFileNameEl.textContent = filename;
+
+        if (langEl && job.language) langEl.value = job.language;
+        if (spkEl && job.speakers) spkEl.value = String(job.speakers);
+
+        startUploadBtn.disabled = true;
+        startUploadBtn.textContent = "Transcribing…";
+        changeFileBtn.style.display = 'none';
+        if (langEl) langEl.disabled = true;
+        if (spkEl) spkEl.disabled = true;
 
         showProgress();
-        setFilename(job.filename);
+        setFilename(filename);
 
         lastProgress = job.progress || 0;
         setProgress(lastProgress);
@@ -366,20 +459,27 @@ export class UploadView {
         setLine(st.state, st.phase, st.message);
 
         // Update Global State
+        const prevJob = this.app.state.activeJob || {};
+        const statusSpeakers = (st.speakers ?? st.expected_speakers ?? st.speaker_mode ?? st.num_speakers);
+
         this.app.state.activeJob = {
           id: jobId,
-          filename: this.currentFilename || (this.app.state.activeJob ? this.app.state.activeJob.filename : "Audio"),
+          filename: this.currentFilename || prevJob.filename || "Audio",
+          language: prevJob.language || (st.language ? String(st.language) : "en"),
+          speakers: prevJob.speakers || (statusSpeakers !== undefined && statusSpeakers !== null ? String(statusSpeakers) : "auto"),
           progress: p,
           status: st.state
         };
         this.app.refreshProjects();
 
         if (st.state === "done") {
+          clearActiveUpload();
           onJobReady(jobId);
           return;
         }
 
         if (st.state === "error") {
+          clearActiveUpload();
           stopPolling();
           startUploadBtn.disabled = false;
           startUploadBtn.textContent = "Start Transcription";
@@ -393,7 +493,7 @@ export class UploadView {
       this.pollTimer = setTimeout(() => poll(jobId), 900);
     };
 
-    const uploadWithProgress = (file, fields) => {
+    const uploadWithProgress = (file, fields, onProgress) => {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", getApiUrl("/api/demo/jobs"), true);
@@ -403,6 +503,9 @@ export class UploadView {
           const p = clamp01(evt.loaded / evt.total);
           setProgress(p);
           setLine("queued", "upload", "Uploading…");
+          if (typeof onProgress === "function") {
+            onProgress(p);
+          }
         };
 
         xhr.onload = () => {
@@ -428,6 +531,13 @@ export class UploadView {
 
         xhr.send(fd);
       });
+    };
+
+    this.refreshUploadUi = () => {
+      const upload = this.app.state.activeUpload;
+      if (upload && upload.status === "uploading") {
+        restoreUploadingState(upload);
+      }
     };
 
     restoreState();

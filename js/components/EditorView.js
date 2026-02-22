@@ -75,8 +75,6 @@ export class EditorView {
       <div aria-label="Topics view" class="hidden" id="topicsView"></div>
     </div>
 
-    <!-- Floating Mobile Menu Button -->
-    <button id="floatingMobileMenuBtn" class="mobile-only" type="button" title="Menu">☰</button>
     <div id="player-container">
       <audio id="player" class="hidden"></audio>
       <div id="customPlayer"></div>

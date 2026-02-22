@@ -47,3 +47,32 @@ export async function fetchSrt(url) {
     if (!r.ok) throw new Error(`fetch srt failed: ${r.status}`);
     return await r.text();
 }
+
+export async function fetchServiceSettings() {
+    const r = await fetch(getApiUrl("/api/demo/settings"), { cache: "no-store" });
+    if (!r.ok) throw new Error(`Fetch settings failed: ${r.status}`);
+    return await r.json();
+}
+
+
+export async function createLiveSession(options = {}) {
+    const qs = new URLSearchParams();
+    if (options && options.ttlSeconds !== undefined && options.ttlSeconds !== null && String(options.ttlSeconds).trim() !== "") {
+        qs.set("ttl_s", String(options.ttlSeconds).trim());
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    const r = await fetch(getApiUrl(`/api/demo/live/sessions${suffix}`), {
+        method: "POST",
+        cache: "no-store",
+    });
+    if (!r.ok) throw new Error(`Create live session failed: ${r.status}`);
+    return await r.json();
+}
+
+export async function fetchLiveSession(sessionId) {
+    const sid = String(sessionId || "").trim();
+    if (!sid) throw new Error("Missing session id");
+    const r = await fetch(getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}`), { cache: "no-store" });
+    if (!r.ok) throw new Error(`Fetch live session failed: ${r.status}`);
+    return await r.json();
+}
