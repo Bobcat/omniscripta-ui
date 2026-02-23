@@ -305,6 +305,35 @@ export class LiveView {
         }
     }
 
+    formatStatsPayload(payload) {
+        const p = payload && typeof payload === "object" ? payload : {};
+        const num = (key, fallback = 0) => Number(p[key] ?? fallback);
+        const boolish = (key) => {
+            const v = p[key];
+            if (v === undefined || v === null) return "?";
+            return String(v);
+        };
+
+        const lines = [
+            `bytes=${num("bytes_received")} frames=${num("frames_received")} uptime=${num("uptime_s").toFixed(2)}s`,
+            `decode_last=${num("decode_ms_last").toFixed(2)}ms rtf=${num("rtf").toFixed(3)} calls=${num("decode_calls")}`,
+            `p/f=${num("partials_emitted")}/${num("finals_emitted")} rev=${num("revision")} committed_segs=${num("committed_segments")} chars=${num("committed_chars")}`,
+            `ready=${boolish("engine_ready")} rx=${num("engine_rx_messages")} parse=${num("engine_rx_parse_errors")} unknown=${num("engine_rx_unknown_messages")}`,
+            `tx_audio=${num("engine_tx_sidecar_audio_bytes")} committed_until_ms=${num("committed_until_ms")} tail=${boolish("has_partial_tail")}`,
+        ];
+
+        const extra = Object.keys(p)
+            .filter((k) => k !== "type" && k !== "session_id" && k !== "seq")
+            .sort()
+            .map((k) => `${k}: ${typeof p[k] === "object" ? JSON.stringify(p[k]) : String(p[k])}`);
+        if (extra.length) {
+            lines.push("");
+            lines.push("raw:");
+            lines.push(...extra);
+        }
+        return lines.join("\n");
+    }
+
     updateControls() {
         const wsOpen = !!(this.sessionService && this.sessionService.isOpen());
         const wsConnecting = !!(this.sessionService && this.sessionService.isConnecting());
@@ -625,7 +654,9 @@ export class LiveView {
             const s = Number(payload.uptime_s || 0);
             const decodeMs = Number(payload.decode_ms_last || 0);
             const rtf = Number(payload.rtf || 0);
-            this.setDevStats(`Stats: ${b} bytes, ${f} frames, ${s.toFixed(2)}s, decode ${decodeMs.toFixed(2)}ms, rtf ${rtf.toFixed(3)}`);
+            this.setDevStats(
+                `Stats: ${b} bytes, ${f} frames, ${s.toFixed(2)}s, decode ${decodeMs.toFixed(2)}ms, rtf ${rtf.toFixed(3)}\n\n${this.formatStatsPayload(payload)}`
+            );
         } else if (t === "partial") {
             this.partialText = String(payload.text || "");
             this.updatePartialPlaceholder();

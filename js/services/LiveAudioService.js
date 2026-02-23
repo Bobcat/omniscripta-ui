@@ -2,6 +2,19 @@ const DEFAULT_TARGET_SAMPLE_RATE = 16000;
 const DEFAULT_CHUNK_MS = 40;
 const WORKLET_NAME = "live-capture-processor";
 
+function readOptionalBoolQueryParam(name) {
+    try {
+        const qs = new URLSearchParams(window.location.search || "");
+        const raw = String(qs.get(name) || "").trim().toLowerCase();
+        if (!raw) return null;
+        if (["1", "true", "yes", "on"].includes(raw)) return true;
+        if (["0", "false", "no", "off"].includes(raw)) return false;
+    } catch {
+        // ignore malformed URL state and keep defaults
+    }
+    return null;
+}
+
 function concatFloat32(a, b) {
     if (!a || a.length === 0) return b;
     if (!b || b.length === 0) return a;
@@ -147,18 +160,20 @@ export class LiveAudioService {
             throw new Error("Microphone API not available in this browser.");
         }
 
+        const dspEnabled = readOptionalBoolQueryParam("live_audio_dsp") !== false;
         const constraints = {
             audio: {
                 channelCount: 1,
                 sampleRate: this.targetSampleRate,
-                noiseSuppression: true,
-                echoCancellation: true,
-                autoGainControl: true,
+                noiseSuppression: dspEnabled,
+                echoCancellation: dspEnabled,
+                autoGainControl: dspEnabled,
             },
             video: false,
         };
 
         this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        this.log(`Browser DSP ${dspEnabled ? "enabled" : "disabled"} (live_audio_dsp=${dspEnabled ? "1" : "0"})`);
 
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (!Ctx) {
