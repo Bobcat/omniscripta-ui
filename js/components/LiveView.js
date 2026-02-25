@@ -21,6 +21,7 @@ const DEV_LIVE_FIXTURES = {
         version: "v1",
         label: "Run panel fixture (120s)",
         url: "/dev-fixtures/panel_120s_v1_08m09s_10m09s.mp3",
+        durationMs: 120000,
         startDelayMs: 700,
         tailDelayMs: 1200,
         mode: "playback",
@@ -30,6 +31,7 @@ const DEV_LIVE_FIXTURES = {
         version: "v1",
         label: "Run panel fixture (inject, 120s)",
         url: "/dev-fixtures/panel_120s_v1_08m09s_10m09s.mp3",
+        durationMs: 120000,
         startDelayMs: 700,
         tailDelayMs: 1200,
         mode: "inject",
@@ -46,6 +48,11 @@ const DEV_LIVE_FIXTURE_OPTIONS = [
 export class LiveView {
     constructor(app) {
         this.app = app;
+        const ua = String((typeof navigator !== "undefined" && navigator.userAgent) || "");
+        const coarsePointer = typeof window !== "undefined"
+            && typeof window.matchMedia === "function"
+            && !!window.matchMedia("(pointer: coarse)").matches;
+        this.isLikelyMobile = /Android|iPhone|iPad|iPod|Mobile|Opera Mini/i.test(ua) || coarsePointer;
 
         this.remoteState = "idle";
         this.finalText = "";
@@ -85,6 +92,7 @@ export class LiveView {
         this.fixtureRunToken = 0;
         this.fixtureAudio = null;
         this.fixtureStopTimerId = null;
+        this.fixtureWatchdogTimerId = null;
         this.fixtureRunLabel = "";
         this.selectedFixtureKey = DEV_LIVE_FIXTURE_OPTIONS[0] ? DEV_LIVE_FIXTURE_OPTIONS[0].value : "panel120v1";
 
@@ -140,9 +148,10 @@ export class LiveView {
             </div>
 
             <div class="live-secondary-row live-secondary-row-2up">
-              <button id="liveRunFixturePlayBtn" type="button">Play fixture</button>
+              ${this.isLikelyMobile ? "" : `<button id="liveRunFixturePlayBtn" type="button">Play fixture</button>`}
               <button id="liveRunFixtureInjectBtn" type="button">Inject fixture</button>
             </div>
+            ${this.isLikelyMobile ? `<div class="live-status-copy">Tip: On mobile, use Inject fixture for reliable tests.</div>` : ""}
 
 
           </section>
@@ -864,6 +873,32 @@ export class LiveView {
         });
     }
 
+    buildMicPermissionGuidance(err) {
+        const name = String(err && err.name ? err.name : "").trim();
+        const isPermissionError = ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(name);
+        if (!isPermissionError) return null;
+
+        const shortMessage = this.isLikelyMobile
+            ? "Microphone permission blocked. Check your phone app and site permissions, then reload."
+            : "Microphone permission blocked. Allow microphone access in browser/site settings, then reload.";
+
+        const lines = ["Microphone access was denied.", ""];
+        if (this.isLikelyMobile) {
+            lines.push("On mobile, check both:");
+            lines.push("1. Phone Settings > Apps > [your browser] > Permissions > Microphone = Allow");
+            lines.push("2. Browser site settings for this site > Microphone = Allow");
+        } else {
+            lines.push("Check this page's microphone permission in your browser/site settings and set it to Allow.");
+        }
+        lines.push("Then reload the page and try again.");
+        lines.push("Tip: 'Inject fixture' does not require microphone access.");
+
+        return {
+            shortMessage,
+            alertMessage: lines.join("\n"),
+        };
+    }
+
     async startMic() {
         if (!this.sessionService) this.initServices();
         if (!this.audioService) this.initServices();
@@ -910,10 +945,11 @@ export class LiveView {
             this.updatePartialPlaceholder();
         } catch (err) {
             const msg = err && err.message ? err.message : String(err);
+            const permissionHelp = this.buildMicPermissionGuidance(err);
             this.appendLog(`Microphone start failed: ${msg}`);
-            this.setStatus("error", `Microphone start failed: ${msg}`);
+            this.setStatus("error", permissionHelp ? permissionHelp.shortMessage : `Microphone start failed: ${msg}`);
             if (this.app && typeof this.app.showAlert === "function") {
-                this.app.showAlert("Microphone access failed", msg);
+                this.app.showAlert("Microphone access failed", permissionHelp ? permissionHelp.alertMessage : msg);
             }
         }
 
@@ -952,6 +988,10 @@ export class LiveView {
         if (this.fixtureStopTimerId !== null) {
             window.clearTimeout(this.fixtureStopTimerId);
             this.fixtureStopTimerId = null;
+        }
+        if (this.fixtureWatchdogTimerId !== null) {
+            window.clearTimeout(this.fixtureWatchdogTimerId);
+            this.fixtureWatchdogTimerId = null;
         }
         if (this.fixtureAudio) {
             try {
@@ -997,6 +1037,12 @@ export class LiveView {
         const cfg = fixture && typeof fixture === "object" ? fixture : null;
         if (!cfg || !cfg.url) return;
         const mode = String(cfg.mode || "playback").trim().toLowerCase();
+        if (mode === "playback" && this.isLikelyMobile) {
+            this.appendLog("Play fixture is disabled on mobile. Use Inject fixture instead.");
+            this.setStatus("ready", "Use Inject fixture on mobile for reliable tests.");
+            this.updateControls();
+            return;
+        }
         if (mode === "inject") {
             return this.startFixtureInjectRun(cfg);
         }
@@ -1019,9 +1065,16 @@ export class LiveView {
         const audio = new Audio(String(cfg.url));
         audio.preload = "auto";
         this.fixtureAudio = audio;
+        let finishRequested = false;
 
         const finishIfStillCurrent = async (why) => {
+            if (finishRequested) return;
+            finishRequested = true;
             if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
+            if (this.fixtureWatchdogTimerId !== null) {
+                window.clearTimeout(this.fixtureWatchdogTimerId);
+                this.fixtureWatchdogTimerId = null;
+            }
             this.appendLog(`Fixture playback ended (${why}), stopping recording...`);
             this.fixtureStopTimerId = window.setTimeout(() => {
                 this.fixtureStopTimerId = null;
@@ -1095,6 +1148,14 @@ export class LiveView {
             }
             if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
             this.appendLog(`Fixture playback started: ${cfg.id || "fixture"}`);
+            const durationMs = Math.max(0, Number(cfg.durationMs || 0));
+            if (durationMs > 0) {
+                const watchdogGraceMs = 2500;
+                this.fixtureWatchdogTimerId = window.setTimeout(() => {
+                    this.fixtureWatchdogTimerId = null;
+                    void finishIfStillCurrent("watchdog_timeout");
+                }, durationMs + watchdogGraceMs);
+            }
         } catch (err) {
             const msg = err && err.message ? err.message : String(err);
             if (this.fixtureRunActive && this.fixtureRunToken === token) {

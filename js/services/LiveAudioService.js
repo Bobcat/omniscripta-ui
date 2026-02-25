@@ -163,6 +163,12 @@ export class LiveAudioService {
             this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
         } catch (err) {
             const firstMsg = err && err.message ? err.message : String(err);
+            const firstName = String(err && err.name ? err.name : "").trim();
+            const isPermissionError = ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(firstName);
+            if (isPermissionError) {
+                this.log(`Primary mic constraints failed (${firstName || "permission"}: ${firstMsg}); not retrying permission-denied request`);
+                throw err;
+            }
             this.log(`Primary mic constraints failed (${firstMsg}); retrying with relaxed constraints`);
             const relaxedConstraints = {
                 audio: {
@@ -176,6 +182,12 @@ export class LiveAudioService {
                 this.mediaStream = await navigator.mediaDevices.getUserMedia(relaxedConstraints);
             } catch (err2) {
                 const secondMsg = err2 && err2.message ? err2.message : String(err2);
+                const secondName = String(err2 && err2.name ? err2.name : "").trim();
+                const secondIsPermissionError = ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(secondName);
+                if (secondIsPermissionError) {
+                    this.log(`Relaxed mic constraints failed (${secondName || "permission"}: ${secondMsg}); not retrying permission-denied request`);
+                    throw err2;
+                }
                 this.log(`Relaxed mic constraints failed (${secondMsg}); retrying with audio:true`);
                 this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
             }
