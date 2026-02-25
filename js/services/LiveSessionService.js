@@ -1,9 +1,10 @@
-import { createLiveSession } from "../api.js";
+import { createLiveSession, getApiUrl } from "../api.js";
 
 export class LiveSessionService {
     constructor(options = {}) {
         this.socket = null;
         this.sessionPayload = null;
+        this.lastSessionId = "";
 
         this.onOpen = typeof options.onOpen === "function" ? options.onOpen : null;
         this.onClose = typeof options.onClose === "function" ? options.onClose : null;
@@ -26,9 +27,10 @@ export class LiveSessionService {
     }
 
     getSessionId() {
-        return this.sessionPayload && this.sessionPayload.session
+        const current = this.sessionPayload && this.sessionPayload.session
             ? String(this.sessionPayload.session.session_id || "")
             : "";
+        return current || String(this.lastSessionId || "");
     }
 
     log(line) {
@@ -39,7 +41,27 @@ export class LiveSessionService {
 
     resolveWsUrl(payload) {
         const direct = String(payload && payload.ws_url ? payload.ws_url : "").trim();
-        if (direct) return direct;
+        if (direct) {
+            try {
+                const u = new URL(direct, window.location.href);
+                // If the page is HTTPS, never use an insecure ws:// URL.
+                if (window.location.protocol === "https:" && u.protocol === "ws:") {
+                    const path = String(payload && payload.ws_path ? payload.ws_path : "").trim();
+                    if (path) {
+                        const prefixed = path.startsWith("/") ? path : `/${path}`;
+                        return `wss://${window.location.host}${prefixed}`;
+                    }
+                    u.protocol = "wss:";
+                    return u.toString();
+                }
+                return u.toString();
+            } catch {
+                if (window.location.protocol !== "https:" || !direct.startsWith("ws://")) {
+                    return direct;
+                }
+                // Fall through to ws_path synthesis on malformed/insecure direct URL.
+            }
+        }
 
         const path = String(payload && payload.ws_path ? payload.ws_path : "").trim();
         if (!path) throw new Error("Missing ws_url/ws_path in live session payload");
@@ -55,6 +77,7 @@ export class LiveSessionService {
         }
 
         this.sessionPayload = await createLiveSession(options);
+        this.lastSessionId = this.getSessionId();
         const wsUrl = this.resolveWsUrl(this.sessionPayload);
 
         this.log(`Session created: ${this.getSessionId() || "(unknown)"}`);
@@ -168,5 +191,55 @@ export class LiveSessionService {
 
         this.socket = null;
         this.sessionPayload = null;
+    }
+
+    async fetchResult(sessionId) {
+        const sid = String(sessionId || this.getSessionId() || "").trim();
+        if (!sid) throw new Error("Missing session id");
+        const r = await fetch(getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}/result`), {
+            cache: "no-store",
+        });
+        if (!r.ok) throw new Error(`Fetch live result failed: ${r.status}`);
+        return await r.json();
+    }
+
+    async setFixtureMetadata(payload, sessionId) {
+        const sid = String(sessionId || this.getSessionId() || "").trim();
+        if (!sid) throw new Error("Missing session id");
+        const r = await fetch(getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}/fixture`), {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+            },
+            body: JSON.stringify(payload && typeof payload === "object" ? payload : {}),
+        });
+        if (!r.ok) throw new Error(`Set live fixture metadata failed: ${r.status}`);
+        return await r.json();
+    }
+
+    async fetchQuality(sessionId) {
+        const sid = String(sessionId || this.getSessionId() || "").trim();
+        if (!sid) throw new Error("Missing session id");
+        const r = await fetch(getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}/quality`), {
+            cache: "no-store",
+        });
+        if (!r.ok) throw new Error(`Fetch live quality failed: ${r.status}`);
+        return await r.json();
+    }
+
+    getTranscriptDownloadUrl(kind, sessionId) {
+        const sid = String(sessionId || this.getSessionId() || "").trim();
+        if (!sid) return "";
+        const normalized = String(kind || "").trim().toLowerCase();
+        if (normalized === "txt") {
+            return getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}/transcript.txt`);
+        }
+        if (normalized === "srt") {
+            return getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}/transcript.srt`);
+        }
+        if (normalized === "wav") {
+            return getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}/recording.wav`);
+        }
+        return "";
     }
 }

@@ -2,19 +2,6 @@ const DEFAULT_TARGET_SAMPLE_RATE = 16000;
 const DEFAULT_CHUNK_MS = 40;
 const WORKLET_NAME = "live-capture-processor";
 
-function readOptionalBoolQueryParam(name) {
-    try {
-        const qs = new URLSearchParams(window.location.search || "");
-        const raw = String(qs.get(name) || "").trim().toLowerCase();
-        if (!raw) return null;
-        if (["1", "true", "yes", "on"].includes(raw)) return true;
-        if (["0", "false", "no", "off"].includes(raw)) return false;
-    } catch {
-        // ignore malformed URL state and keep defaults
-    }
-    return null;
-}
-
 function concatFloat32(a, b) {
     if (!a || a.length === 0) return b;
     if (!b || b.length === 0) return a;
@@ -24,7 +11,7 @@ function concatFloat32(a, b) {
     return out;
 }
 
-function downsampleBuffer(input, inputRate, outputRate) {
+export function downsampleBuffer(input, inputRate, outputRate) {
     if (!(input instanceof Float32Array) || input.length === 0) {
         return new Float32Array(0);
     }
@@ -66,7 +53,7 @@ function downsampleBuffer(input, inputRate, outputRate) {
     return output;
 }
 
-function float32ToPcm16LeBuffer(samples) {
+export function float32ToPcm16LeBuffer(samples) {
     const src = samples instanceof Float32Array ? samples : new Float32Array(0);
     const buffer = new ArrayBuffer(src.length * 2);
     const view = new DataView(buffer);
@@ -160,7 +147,7 @@ export class LiveAudioService {
             throw new Error("Microphone API not available in this browser.");
         }
 
-        const dspEnabled = readOptionalBoolQueryParam("live_audio_dsp") !== false;
+        const dspEnabled = false;
         const constraints = {
             audio: {
                 channelCount: 1,
@@ -173,7 +160,7 @@ export class LiveAudioService {
         };
 
         this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-        this.log(`Browser DSP ${dspEnabled ? "enabled" : "disabled"} (live_audio_dsp=${dspEnabled ? "1" : "0"})`);
+        this.log(`Browser DSP ${dspEnabled ? "enabled" : "disabled"}`);
 
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (!Ctx) {

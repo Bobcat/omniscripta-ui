@@ -31,6 +31,7 @@ rm -f "$TARGET_DIR/layout.css"
 rm -f "$TARGET_DIR/upload.css"
 rm -rf "$TARGET_DIR/assets"
 rm -rf "$TARGET_DIR/editor_build"
+rm -rf "$TARGET_DIR/dev-fixtures"
 
 # 2. Build JS Bundle (No Sourcemap)
 echo "📦 Bundling JavaScript..."
@@ -49,6 +50,12 @@ cp "$APP_DIR/css/upload.css" "$TARGET_DIR/upload.css"
 # 4. Deploy HTML (SPA Shell)
 echo "📄 Deploying HTML..."
 cp "$APP_DIR/index.html" "$TARGET_DIR/index.html"
+
+# 4b. Deploy dev fixtures (optional)
+if [ -d "$APP_DIR/dev-fixtures" ]; then
+  echo "🧪 Deploying dev fixtures..."
+  cp -r "$APP_DIR/dev-fixtures" "$TARGET_DIR/dev-fixtures"
+fi
 
 sed -i \
   -e "s|src=\"js/app.js[^\\\"]*\"|src=\"app.bundle.js?v=$VERSION\"|" \
