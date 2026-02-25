@@ -450,7 +450,7 @@ export class LiveView {
             recording: "Recording",
             processing_chunks: "Processing chunks",
             finalizing: "Finalizing",
-            recording_finalized: "Ready (recording finalized)",
+            recording_finalized: "Recording finalized",
             finalized: "Ready",
             ready: "Ready",
             error: "Error",
@@ -471,19 +471,24 @@ export class LiveView {
             parts.push(`${chars} chars`);
         }
 
-        const rows = Array.isArray(r.chunk_results) ? r.chunk_results : [];
-        if (rows.length) {
-            const latest = rows[rows.length - 1];
-            if (latest && typeof latest === "object") {
-                const idx = Number(latest.chunk_index || 0);
-                const st = String(latest.state || "").trim() || "unknown";
-                const txt = String(latest.text || "").trim().replace(/\s+/g, " ");
-                let line = `Latest chunk #${idx}: ${st}`;
-                if (txt) {
-                    line += ` - ${txt.slice(0, 120)}${txt.length > 120 ? "..." : ""}`;
-                }
-                parts.push(line);
-            }
+        const reasonCounts = r.chunk_reason_counts && typeof r.chunk_reason_counts === "object"
+            ? r.chunk_reason_counts
+            : null;
+        if (reasonCounts && Object.keys(reasonCounts).length) {
+            const reasonPairs = Object.entries(reasonCounts).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+            parts.push(`Chunk triggers: ${reasonPairs.map(([k, v]) => `${k}=${v}`).join(", ")}`);
+        }
+
+        const rowsCount = Number(r.chunk_results_rows_count || 0);
+        const uniqueCount = Number(r.chunk_results_unique_count || 0);
+        const dupRows = Number(r.chunk_results_duplicate_index_rows || 0);
+        const invalidRows = Number(r.chunk_results_invalid_index_rows || 0);
+        if (rowsCount > 0 && (dupRows > 0 || invalidRows > 0 || (uniqueCount > 0 && uniqueCount !== rowsCount))) {
+            parts.push(
+                `Chunk rows: ${rowsCount} rows / ${uniqueCount || rowsCount} unique`
+                + (dupRows > 0 ? ` (duplicates ${dupRows})` : "")
+                + (invalidRows > 0 ? ` (invalid-index ${invalidRows})` : "")
+            );
         }
 
         return parts.join("\n");
