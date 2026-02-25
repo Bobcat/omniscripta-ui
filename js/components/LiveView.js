@@ -1209,7 +1209,6 @@ export class LiveView {
             this.audioPaused = false;
             this.awaitingSemiliveResult = false;
             this.remoteState = "listening";
-            this.startRecordingTimer();
             this.sessionService.sendControl("start");
             this.startResultPolling({ immediate: true, intervalMs: 1500 });
             this.setStatus("listening", "Fixture inject in progress. Transcript updates chunk by chunk.");
@@ -1237,6 +1236,7 @@ export class LiveView {
 
             const decoded = await decodeFixtureToMono(cfg.url);
             if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
+            this.startRecordingTimer();
             await streamPcmToSocketRealtime(decoded.samples, decoded.sampleRate);
             if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
 

@@ -159,7 +159,27 @@ export class LiveAudioService {
             video: false,
         };
 
-        this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        try {
+            this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (err) {
+            const firstMsg = err && err.message ? err.message : String(err);
+            this.log(`Primary mic constraints failed (${firstMsg}); retrying with relaxed constraints`);
+            const relaxedConstraints = {
+                audio: {
+                    noiseSuppression: dspEnabled,
+                    echoCancellation: dspEnabled,
+                    autoGainControl: dspEnabled,
+                },
+                video: false,
+            };
+            try {
+                this.mediaStream = await navigator.mediaDevices.getUserMedia(relaxedConstraints);
+            } catch (err2) {
+                const secondMsg = err2 && err2.message ? err2.message : String(err2);
+                this.log(`Relaxed mic constraints failed (${secondMsg}); retrying with audio:true`);
+                this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            }
+        }
         this.log(`Browser DSP ${dspEnabled ? "enabled" : "disabled"}`);
 
         const Ctx = window.AudioContext || window.webkitAudioContext;

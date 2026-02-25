@@ -2966,6 +2966,7 @@
 }
 
 .live-session-row code {
+  font-family: inherit;
   font-size: 0.78rem;
   word-break: break-all;
   background: #ffffff;
