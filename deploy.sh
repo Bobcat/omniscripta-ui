@@ -29,6 +29,7 @@ rm -f "$TARGET_DIR/layout.css"
 rm -f "$TARGET_DIR/upload.css"
 rm -rf "$TARGET_DIR/assets"
 rm -rf "$TARGET_DIR/editor_build"
+rm -rf "$TARGET_DIR/dev-fixtures"
 
 # 2. Build JS Bundle (No Sourcemap)
 echo "📦 Bundling JavaScript..."
@@ -50,6 +51,12 @@ echo "📄 Deploying HTML..."
 # Replace module script with bundle reference and update CSS paths
 # We use a temp file to avoid modifying source
 cp "$APP_DIR/index.html" "$TARGET_DIR/index.html"
+
+# 4b. Deploy dev fixtures (optional)
+if [ -d "$APP_DIR/dev-fixtures" ]; then
+    echo "🧪 Deploying dev fixtures..."
+    cp -r "$APP_DIR/dev-fixtures" "$TARGET_DIR/dev-fixtures"
+fi
 
 # Run sed in-place on the target file
 # Use regex to match href="css/style.css..." ignoring existing query params
