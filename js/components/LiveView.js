@@ -56,6 +56,8 @@ export class LiveView {
 
         this.remoteState = "idle";
         this.finalText = "";
+        this.speculativePreviewText = "";
+        this.speculativePreviewSeq = -1;
         this.partialText = "";
         this.developerToolsOpen = false;
 
@@ -163,7 +165,9 @@ export class LiveView {
               </div>
             </div>
 
-            <textarea id="liveFinalText" class="live-final-text" spellcheck="false" readonly></textarea>
+            <div id="liveFinalText" class="live-final-text" aria-live="polite" tabindex="0">
+              <span id="liveFinalTextMain" class="live-final-text-main"></span><span id="liveFinalTextSpeculative" class="live-final-text-speculative hidden"></span>
+            </div>
 
             <div class="live-partial-row">
               <div class="live-label">Status / processing</div>
@@ -171,7 +175,7 @@ export class LiveView {
             </div>
 
             <div class="live-partial-row">
-              <div class="live-label">Fixture quality</div>
+              <div class="live-label">Fixture benchmark</div>
               <div class="live-partial-text" id="liveQualityText" data-placeholder="Quality score appears here for fixture runs."></div>
             </div>
           </section>
@@ -296,6 +300,8 @@ export class LiveView {
         this.el.devStats = document.getElementById("liveDevStats");
         this.el.log = document.getElementById("liveEventLog");
         this.el.finalText = document.getElementById("liveFinalText");
+        this.el.finalTextMain = document.getElementById("liveFinalTextMain");
+        this.el.finalTextSpeculative = document.getElementById("liveFinalTextSpeculative");
         this.el.partialText = document.getElementById("livePartialText");
     }
 
@@ -373,8 +379,9 @@ export class LiveView {
         this.lastStatsSummary = "";
         this.resetSemiliveResultState();
         this.currentFixtureMeta = null;
+        this.speculativePreviewText = "";
 
-        if (this.el.finalText) this.el.finalText.value = "";
+        this.renderTranscriptText();
         if (this.el.partialText) this.el.partialText.textContent = "";
         if (this.el.qualityText) this.el.qualityText.textContent = "";
         if (this.el.log) this.el.log.textContent = "";
@@ -432,6 +439,80 @@ export class LiveView {
         this.qualityLoadedSessionId = "";
         this.qualityLoadedRevision = -1;
         this.qualitySummaryText = "";
+        this.speculativePreviewText = "";
+        this.speculativePreviewSeq = -1;
+    }
+
+    _normalizeSpecWords(words) {
+        return words.map((w) => String(w || "").toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""));
+    }
+
+    _appendSpeculativePreview(existingText, incomingText) {
+        const existing = String(existingText || "").trim();
+        const incoming = String(incomingText || "").trim();
+        if (!incoming) return existing;
+        if (!existing) return incoming;
+        if (incoming === existing || existing.endsWith(incoming)) return existing;
+
+        const prevWords = existing.split(/\s+/).filter(Boolean);
+        const nextWords = incoming.split(/\s+/).filter(Boolean);
+        let trimWords = 0;
+        const maxOverlap = Math.min(12, prevWords.length, nextWords.length);
+        if (maxOverlap >= 3) {
+            const prevNorm = this._normalizeSpecWords(prevWords);
+            const nextNorm = this._normalizeSpecWords(nextWords);
+            for (let n = maxOverlap; n >= 3; n -= 1) {
+                let same = true;
+                for (let i = 0; i < n; i += 1) {
+                    if ((prevNorm[prevNorm.length - n + i] || "") !== (nextNorm[i] || "")) {
+                        same = false;
+                        break;
+                    }
+                }
+                if (same) {
+                    trimWords = n;
+                    break;
+                }
+            }
+        }
+        const restWords = trimWords > 0 ? nextWords.slice(trimWords) : nextWords;
+        if (!restWords.length) return existing;
+        const rest = restWords.join(" ");
+        if (!rest) return existing;
+        return /[\s\n]$/.test(existing) ? `${existing}${rest}` : `${existing} ${rest}`;
+    }
+
+    _formatSpeculativeSuffixText(finalText, speculativeText) {
+        const finalValue = String(finalText || "");
+        const finalHasText = finalValue.trim().length > 0;
+        if (!finalHasText) return "";
+        const speculativeValue = String(speculativeText || "").trim();
+        if (!speculativeValue) return "";
+        const finalTrimEnd = finalValue.replace(/[\s\n]+$/g, "");
+        if (finalTrimEnd && finalTrimEnd.endsWith(speculativeValue)) {
+            return "";
+        }
+        if (/\n\s*$/.test(finalValue)) {
+            return speculativeValue;
+        }
+        return `
+${speculativeValue}`;
+    }
+
+    renderTranscriptText() {
+        const finalValue = String(this.finalText || "");
+        const speculativeSuffix = this._formatSpeculativeSuffixText(finalValue, this.speculativePreviewText);
+
+        if (this.el.finalTextMain) {
+            this.el.finalTextMain.textContent = finalValue;
+        }
+        if (this.el.finalTextSpeculative) {
+            this.el.finalTextSpeculative.textContent = speculativeSuffix;
+            this.el.finalTextSpeculative.classList.toggle("hidden", !speculativeSuffix);
+        }
+        if (this.el.finalText) {
+            this.el.finalText.scrollTop = this.el.finalText.scrollHeight;
+        }
     }
 
     getCurrentSessionId() {
@@ -520,12 +601,16 @@ export class LiveView {
         const chunkErrors = Number(run.chunk_error_count || 0);
         const dedupChunksApplied = Number(run.dedup_chunks_applied || 0);
         const dedupWordsTrimmedTotal = Number(run.dedup_words_trimmed_total || 0);
+        const asrTranscribeTimeS = run.asr_transcribe_time_total_s == null ? null : Number(run.asr_transcribe_time_total_s);
+        const asrPipelineTimeS = run.asr_pipeline_time_total_s == null ? null : Number(run.asr_pipeline_time_total_s);
+        const asrTranscribePct = run.asr_transcribe_pct_of_recording == null ? null : Number(run.asr_transcribe_pct_of_recording);
+        const asrPipelinePct = run.asr_pipeline_pct_of_recording == null ? null : Number(run.asr_pipeline_pct_of_recording);
 
         const lines = [];
         if (Number.isFinite(uploadScore)) {
             lines.push(`Upload Similarity Score: ${Math.round(uploadScore)}/100${fixtureId ? ` (${fixtureId})` : ""}`);
         } else {
-            lines.push(`Fixture quality available${fixtureId ? ` (${fixtureId})` : ""}`);
+            lines.push(`Fixture benchmark available${fixtureId ? ` (${fixtureId})` : ""}`);
         }
         lines.push(
             `Words: live ${wordLive} / ref ${wordRef}`
@@ -543,6 +628,18 @@ export class LiveView {
             lines.push(`Chunk reasons: ${reasonPairs.map(([k, v]) => `${k}=${v}`).join(", ")}`);
         }
         lines.push(`Dedup: chunks_applied=${dedupChunksApplied} words_trimmed_total=${dedupWordsTrimmedTotal}`);
+        if (asrTranscribeTimeS !== null && Number.isFinite(asrTranscribeTimeS)) {
+            lines.push(
+                `ASR transcribe time: ${asrTranscribeTimeS.toFixed(2)}s`
+                + (asrTranscribePct !== null && Number.isFinite(asrTranscribePct) ? ` (${asrTranscribePct.toFixed(1)}% of recording)` : "")
+            );
+        }
+        if (asrPipelineTimeS !== null && Number.isFinite(asrPipelineTimeS)) {
+            lines.push(
+                `ASR pipeline time: ${asrPipelineTimeS.toFixed(2)}s`
+                + (asrPipelinePct !== null && Number.isFinite(asrPipelinePct) ? ` (${asrPipelinePct.toFixed(1)}% of recording)` : "")
+            );
+        }
         lines.push(
             `Health: poll_errors=${pollErrors} chunk_errors=${chunkErrors} finalization=${String(run.finalization_state || "")}`
         );
@@ -632,12 +729,42 @@ export class LiveView {
         this.resultSrtUrl = this.resultCanExportSrt ? String(e.transcript_srt_url || "") : "";
 
         const finalText = String(result.final_text || "");
+        const speculativePreview = result.speculative_preview && typeof result.speculative_preview === "object"
+            ? result.speculative_preview
+            : {};
+        const speculativeText = String(speculativePreview.text || "");
+        const speculativeSeq = Number(speculativePreview.speculative_seq ?? -1);
+        let transcriptChanged = false;
+        let finalChanged = false;
         if (this.finalText !== finalText) {
             this.finalText = finalText;
-            if (this.el.finalText) {
-                this.el.finalText.value = finalText;
-                this.el.finalText.scrollTop = this.el.finalText.scrollHeight;
+            this.speculativePreviewText = "";
+            this.speculativePreviewSeq = -1;
+            transcriptChanged = true;
+            finalChanged = true;
+        }
+        if (!String(this.finalText || "").trim()) {
+            if (this.speculativePreviewText || this.speculativePreviewSeq !== -1) {
+                this.speculativePreviewText = "";
+                this.speculativePreviewSeq = -1;
+                transcriptChanged = true;
             }
+        } else if (!speculativeText) {
+            if (this.speculativePreviewText || this.speculativePreviewSeq !== -1) {
+                this.speculativePreviewText = "";
+                this.speculativePreviewSeq = -1;
+                transcriptChanged = true;
+            }
+        } else if (Number.isFinite(speculativeSeq) && speculativeSeq > this.speculativePreviewSeq) {
+            this.speculativePreviewText = this._appendSpeculativePreview(this.speculativePreviewText, speculativeText);
+            this.speculativePreviewSeq = speculativeSeq;
+            transcriptChanged = true;
+        } else if (!Number.isFinite(speculativeSeq) && !finalChanged && this.speculativePreviewText !== speculativeText) {
+            this.speculativePreviewText = speculativeText;
+            transcriptChanged = true;
+        }
+        if (transcriptChanged) {
+            this.renderTranscriptText();
         }
 
         this.partialText = this.formatSemiliveSummary(result);
