@@ -28,7 +28,7 @@ Read this first, then follow the detailed runbook:
 |---|---|---|
 | `transcribe-frontend-dev.service` | `:8010` | Frontend proxy + static files |
 | `transcribe-api-dev.service` | `:8001` | Portal API (FastAPI/Uvicorn) |
-| `transcribe-asr-pool-dev.service` | `:8090` | ASR Pool — warm WhisperX runners |
+| `transcribe-asr-pool-dev.service` | `:18090` | ASR Pool — warm WhisperX runners |
 | `transcribe-worker-dev@1.service` | — | Worker daemon (template; can run @2, @3, etc.) |
 
 ### Live services (system-level, `sudo systemctl`)
@@ -36,6 +36,7 @@ Read this first, then follow the detailed runbook:
 | Service | Port | Description |
 |---|---|---|
 | `transcribe-api.service` | `:8000` | Portal API (behind nginx) |
+| `transcribe-asr-pool.service` | `:8090` | ASR Pool — warm WhisperX runners |
 | `transcribe-worker.service` | — | Worker daemon |
 | `transcribe-tabby-tunnel.service` | `:5001` | SSH tunnel to Tabby LLM on PC1 |
 
