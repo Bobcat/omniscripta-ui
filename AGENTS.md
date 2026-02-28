@@ -21,8 +21,25 @@ Read this first, then follow the detailed runbook:
 - Do not edit built static artifacts directly in `/srv/transcribe/static`.
 
 ## Services
-- Server-side dev proxy service: `transcribe-frontend-dev.service`.
-- Dev backend services: `transcribe-api-dev.service`, `transcribe-worker-dev@.service`.
+
+### Dev services (user-level, `systemctl --user`)
+
+| Service | Port | Description |
+|---|---|---|
+| `transcribe-frontend-dev.service` | `:8010` | Frontend proxy + static files |
+| `transcribe-api-dev.service` | `:8001` | Portal API (FastAPI/Uvicorn) |
+| `transcribe-asr-pool-dev.service` | `:8090` | ASR Pool — warm WhisperX runners |
+| `transcribe-worker-dev@1.service` | — | Worker daemon (template; can run @2, @3, etc.) |
+
+### Live services (system-level, `sudo systemctl`)
+
+| Service | Port | Description |
+|---|---|---|
+| `transcribe-api.service` | `:8000` | Portal API (behind nginx) |
+| `transcribe-worker.service` | — | Worker daemon |
+| `transcribe-tabby-tunnel.service` | `:5001` | SSH tunnel to Tabby LLM on PC1 |
+
+Live frontend is served by nginx (no separate systemd service).
 
 ## Secrets
 - LLM key is server-side worker config, not frontend browser config.
