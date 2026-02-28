@@ -88,6 +88,11 @@ export class LiveView {
         this.qualityLoadedSessionId = "";
         this.qualityLoadedRevision = -1;
         this.qualitySummaryText = "";
+        this.speculativeQualityEnvelope = null;
+        this.speculativeQualityInFlight = false;
+        this.speculativeQualitySummaryText = "";
+        this.speculativeQualityRows = [];
+        this.qualityTimelineEntries = [];
         this.currentFixtureMeta = null;
 
         this.fixtureRunActive = false;
@@ -159,25 +164,29 @@ export class LiveView {
           </section>
 
           <section class="live-card live-output">
-            <div class="live-output-header">
-              <div>
-                <div class="live-section-kicker">Transcript (chunked)</div>
+              <div class="live-output-header">
+                <div>
+                  <div class="live-section-kicker">Transcript (chunked)</div>
+                </div>
               </div>
-            </div>
 
-            <div id="liveFinalText" class="live-final-text" aria-live="polite" tabindex="0">
-              <span id="liveFinalTextMain" class="live-final-text-main"></span><span id="liveFinalTextSpeculative" class="live-final-text-speculative hidden"></span>
-            </div>
+              <div id="liveFinalText" class="live-final-text" aria-live="polite" tabindex="0">
+                <span id="liveFinalTextMain" class="live-final-text-main"></span><span id="liveFinalTextSpeculative" class="live-final-text-speculative hidden"></span>
+              </div>
+            </section>
 
-            <div class="live-partial-row">
-              <div class="live-label">Status / processing</div>
-              <div class="live-partial-text" id="livePartialText" data-placeholder="Chunk status appears here."></div>
-            </div>
+            <section class="live-card live-run-panels">
+              <div class="live-section-kicker">Run / Benchmark</div>
 
-            <div class="live-partial-row">
-              <div class="live-label">Fixture benchmark</div>
-              <div class="live-partial-text" id="liveQualityText" data-placeholder="Quality score appears here for fixture runs."></div>
-            </div>
+              <div class="live-partial-row">
+                <div class="live-label">Status / processing</div>
+                <div class="live-partial-text" id="livePartialText" data-placeholder="Chunk status appears here."></div>
+              </div>
+
+              <div class="live-partial-row">
+                <div class="live-label">Fixture benchmark</div>
+                <div class="live-partial-text live-quality-report" id="liveQualityText" data-placeholder="Quality score appears here for fixture runs."></div>
+              </div>
           </section>
         </div>
       </div>
@@ -439,47 +448,21 @@ export class LiveView {
         this.qualityLoadedSessionId = "";
         this.qualityLoadedRevision = -1;
         this.qualitySummaryText = "";
+        this.speculativeQualityEnvelope = null;
+        this.speculativeQualityInFlight = false;
+        this.speculativeQualitySummaryText = "";
+        this.speculativeQualityRows = [];
+        this.qualityTimelineEntries = [];
         this.speculativePreviewText = "";
         this.speculativePreviewSeq = -1;
     }
 
-    _normalizeSpecWords(words) {
-        return words.map((w) => String(w || "").toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""));
-    }
-
-    _appendSpeculativePreview(existingText, incomingText) {
-        const existing = String(existingText || "").trim();
-        const incoming = String(incomingText || "").trim();
-        if (!incoming) return existing;
-        if (!existing) return incoming;
-        if (incoming === existing || existing.endsWith(incoming)) return existing;
-
-        const prevWords = existing.split(/\s+/).filter(Boolean);
-        const nextWords = incoming.split(/\s+/).filter(Boolean);
-        let trimWords = 0;
-        const maxOverlap = Math.min(12, prevWords.length, nextWords.length);
-        if (maxOverlap >= 3) {
-            const prevNorm = this._normalizeSpecWords(prevWords);
-            const nextNorm = this._normalizeSpecWords(nextWords);
-            for (let n = maxOverlap; n >= 3; n -= 1) {
-                let same = true;
-                for (let i = 0; i < n; i += 1) {
-                    if ((prevNorm[prevNorm.length - n + i] || "") !== (nextNorm[i] || "")) {
-                        same = false;
-                        break;
-                    }
-                }
-                if (same) {
-                    trimWords = n;
-                    break;
-                }
-            }
-        }
-        const restWords = trimWords > 0 ? nextWords.slice(trimWords) : nextWords;
-        if (!restWords.length) return existing;
-        const rest = restWords.join(" ");
-        if (!rest) return existing;
-        return /[\s\n]$/.test(existing) ? `${existing}${rest}` : `${existing} ${rest}`;
+    _formatFinalDisplayText(finalText) {
+        const value = String(finalText || "");
+        if (!value) return "";
+        return value
+            .replace(/\r\n?/g, "\n")
+            .replace(/[\t ]*\n+[\t ]*/g, " ");
     }
 
     _formatSpeculativeSuffixText(finalText, speculativeText) {
@@ -488,19 +471,11 @@ export class LiveView {
         if (!finalHasText) return "";
         const speculativeValue = String(speculativeText || "").trim();
         if (!speculativeValue) return "";
-        const finalTrimEnd = finalValue.replace(/[\s\n]+$/g, "");
-        if (finalTrimEnd && finalTrimEnd.endsWith(speculativeValue)) {
-            return "";
-        }
-        if (/\n\s*$/.test(finalValue)) {
-            return speculativeValue;
-        }
-        return `
-${speculativeValue}`;
+        return /\s$/.test(finalValue) ? speculativeValue : ` ${speculativeValue}`;
     }
 
     renderTranscriptText() {
-        const finalValue = String(this.finalText || "");
+        const finalValue = this._formatFinalDisplayText(this.finalText || "");
         const speculativeSuffix = this._formatSpeculativeSuffixText(finalValue, this.speculativePreviewText);
 
         if (this.el.finalTextMain) {
@@ -605,6 +580,14 @@ ${speculativeValue}`;
         const asrPipelineTimeS = run.asr_pipeline_time_total_s == null ? null : Number(run.asr_pipeline_time_total_s);
         const asrTranscribePct = run.asr_transcribe_pct_of_recording == null ? null : Number(run.asr_transcribe_pct_of_recording);
         const asrPipelinePct = run.asr_pipeline_pct_of_recording == null ? null : Number(run.asr_pipeline_pct_of_recording);
+        const asrSpecTranscribeTimeS = run.asr_speculative_transcribe_time_total_s == null ? null : Number(run.asr_speculative_transcribe_time_total_s);
+        const asrSpecPipelineTimeS = run.asr_speculative_pipeline_time_total_s == null ? null : Number(run.asr_speculative_pipeline_time_total_s);
+        const asrSpecTranscribePct = run.asr_speculative_transcribe_pct_of_recording == null ? null : Number(run.asr_speculative_transcribe_pct_of_recording);
+        const asrSpecPipelinePct = run.asr_speculative_pipeline_pct_of_recording == null ? null : Number(run.asr_speculative_pipeline_pct_of_recording);
+        const asrCombinedTranscribeTimeS = run.asr_combined_transcribe_time_total_s == null ? null : Number(run.asr_combined_transcribe_time_total_s);
+        const asrCombinedPipelineTimeS = run.asr_combined_pipeline_time_total_s == null ? null : Number(run.asr_combined_pipeline_time_total_s);
+        const asrCombinedTranscribePct = run.asr_combined_transcribe_pct_of_recording == null ? null : Number(run.asr_combined_transcribe_pct_of_recording);
+        const asrCombinedPipelinePct = run.asr_combined_pipeline_pct_of_recording == null ? null : Number(run.asr_combined_pipeline_pct_of_recording);
 
         const lines = [];
         if (Number.isFinite(uploadScore)) {
@@ -640,6 +623,30 @@ ${speculativeValue}`;
                 + (asrPipelinePct !== null && Number.isFinite(asrPipelinePct) ? ` (${asrPipelinePct.toFixed(1)}% of recording)` : "")
             );
         }
+        if (asrSpecTranscribeTimeS !== null && Number.isFinite(asrSpecTranscribeTimeS)) {
+            lines.push(
+                `ASR speculative transcribe time (sum): ${asrSpecTranscribeTimeS.toFixed(2)}s`
+                + (asrSpecTranscribePct !== null && Number.isFinite(asrSpecTranscribePct) ? ` (${asrSpecTranscribePct.toFixed(1)}% of recording)` : "")
+            );
+        }
+        if (asrSpecPipelineTimeS !== null && Number.isFinite(asrSpecPipelineTimeS)) {
+            lines.push(
+                `ASR speculative pipeline time (sum): ${asrSpecPipelineTimeS.toFixed(2)}s`
+                + (asrSpecPipelinePct !== null && Number.isFinite(asrSpecPipelinePct) ? ` (${asrSpecPipelinePct.toFixed(1)}% of recording)` : "")
+            );
+        }
+        if (asrCombinedTranscribeTimeS !== null && Number.isFinite(asrCombinedTranscribeTimeS)) {
+            lines.push(
+                `ASR combined transcribe time (final+spec): ${asrCombinedTranscribeTimeS.toFixed(2)}s`
+                + (asrCombinedTranscribePct !== null && Number.isFinite(asrCombinedTranscribePct) ? ` (${asrCombinedTranscribePct.toFixed(1)}% of recording)` : "")
+            );
+        }
+        if (asrCombinedPipelineTimeS !== null && Number.isFinite(asrCombinedPipelineTimeS)) {
+            lines.push(
+                `ASR combined pipeline time (final+spec): ${asrCombinedPipelineTimeS.toFixed(2)}s`
+                + (asrCombinedPipelinePct !== null && Number.isFinite(asrCombinedPipelinePct) ? ` (${asrCombinedPipelinePct.toFixed(1)}% of recording)` : "")
+            );
+        }
         lines.push(
             `Health: poll_errors=${pollErrors} chunk_errors=${chunkErrors} finalization=${String(run.finalization_state || "")}`
         );
@@ -650,10 +657,233 @@ ${speculativeValue}`;
         return lines.join("\n");
     }
 
+    _formatSimilarityStatsInline(stats) {
+        const s = stats && typeof stats === "object" ? stats : {};
+        const count = Number(s.count || 0);
+        if (!(count > 0)) return "n=0";
+        const mean = s.mean == null ? "?" : Number(s.mean).toFixed(3);
+        const p50 = s.p50 == null ? "?" : Number(s.p50).toFixed(3);
+        const p90 = s.p90 == null ? "?" : Number(s.p90).toFixed(3);
+        return `n=${count} mean=${mean} p50=${p50} p90=${p90}`;
+    }
+
+    formatSpeculativeQualitySummary(envelope) {
+        const e = envelope && typeof envelope === "object" ? envelope : {};
+        const sq = e.speculative_quality && typeof e.speculative_quality === "object" ? e.speculative_quality : {};
+        const summary = sq.summary && typeof sq.summary === "object" ? sq.summary : {};
+        const fixtureId = this._getFixtureIdForBenchmark();
+
+        const windowsTotal = Number(summary.windows_total || 0);
+        const windowsScored = Number(summary.windows_scored || 0);
+        const windowsMissingTarget = Number(summary.windows_missing_target || 0);
+        const openWindowItems = Number(summary.open_window_items_count || 0);
+        const suffixLast = summary.suffix_last_word_similarity && typeof summary.suffix_last_word_similarity === "object"
+            ? summary.suffix_last_word_similarity
+            : {};
+        const suffixBest = summary.suffix_best_word_similarity && typeof summary.suffix_best_word_similarity === "object"
+            ? summary.suffix_best_word_similarity
+            : {};
+        const mergedLast = summary.merged_last_word_similarity && typeof summary.merged_last_word_similarity === "object"
+            ? summary.merged_last_word_similarity
+            : {};
+        const mergedBest = summary.merged_best_word_similarity && typeof summary.merged_best_word_similarity === "object"
+            ? summary.merged_best_word_similarity
+            : {};
+        const rawLast = summary.raw_last_word_similarity && typeof summary.raw_last_word_similarity === "object"
+            ? summary.raw_last_word_similarity
+            : {};
+
+        const lines = [];
+        lines.push(`Speculative benchmark (proxy vs final${fixtureId ? ` · ${fixtureId}` : ""})`);
+        lines.push(
+            `Windows: scored ${windowsScored}/${windowsTotal}`
+            + (windowsMissingTarget > 0 ? ` | missing_target ${windowsMissingTarget}` : "")
+            + ` | open_items ${openWindowItems}`
+        );
+        lines.push(`Suffix last word similarity: ${this._formatSimilarityStatsInline(suffixLast)}`);
+        lines.push(`Suffix best word similarity: ${this._formatSimilarityStatsInline(suffixBest)}`);
+        lines.push(`Merged last/best word similarity: ${this._formatSimilarityStatsInline(mergedLast)} / ${this._formatSimilarityStatsInline(mergedBest)}`);
+        lines.push(`Raw last word similarity: ${this._formatSimilarityStatsInline(rawLast)}`);
+        lines.push("(Higher is better. Diagnostic proxy vs final chunk target; not a final score.)");
+        return lines.join("\n");
+    }
+
+    _getFixtureIdForBenchmark() {
+        const result = this.resultEnvelope && this.resultEnvelope.result && typeof this.resultEnvelope.result === "object"
+            ? this.resultEnvelope.result
+            : {};
+        return String((result && result.fixture_id) || (this.currentFixtureMeta && this.currentFixtureMeta.fixture_id) || "").trim();
+    }
+
+    _summarizeSpeculativeQualityEnvelope(envelope) {
+        const e = envelope && typeof envelope === "object" ? envelope : {};
+        const sq = e.speculative_quality && typeof e.speculative_quality === "object" ? e.speculative_quality : {};
+        const summary = sq.summary && typeof sq.summary === "object" ? sq.summary : {};
+        return {
+            fixtureId: this._getFixtureIdForBenchmark(),
+            windowsTotal: Number(summary.windows_total || 0),
+            windowsScored: Number(summary.windows_scored || 0),
+            windowsMissingTarget: Number(summary.windows_missing_target || 0),
+            openWindowItems: Number(summary.open_window_items_count || 0),
+            suffixLast: summary.suffix_last_word_similarity && typeof summary.suffix_last_word_similarity === "object"
+                ? summary.suffix_last_word_similarity
+                : {},
+            suffixBest: summary.suffix_best_word_similarity && typeof summary.suffix_best_word_similarity === "object"
+                ? summary.suffix_best_word_similarity
+                : {},
+            mergedLast: summary.merged_last_word_similarity && typeof summary.merged_last_word_similarity === "object"
+                ? summary.merged_last_word_similarity
+                : {},
+            mergedBest: summary.merged_best_word_similarity && typeof summary.merged_best_word_similarity === "object"
+                ? summary.merged_best_word_similarity
+                : {},
+            rawLast: summary.raw_last_word_similarity && typeof summary.raw_last_word_similarity === "object"
+                ? summary.raw_last_word_similarity
+                : {},
+        };
+    }
+
+    _formatSimilarityStatsCompactCell(stats) {
+        const s = stats && typeof stats === "object" ? stats : {};
+        const count = Number(s.count || 0);
+        if (!(count > 0)) return "0|--|--|--";
+        const mean = s.mean == null ? "--" : Number(s.mean).toFixed(3);
+        const p50 = s.p50 == null ? "--" : Number(s.p50).toFixed(3);
+        const p90 = s.p90 == null ? "--" : Number(s.p90).toFixed(3);
+        return `${count}|${mean}|${p50}|${p90}`;
+    }
+
+    _appendSpeculativeQualityRow(envelope) {
+        const summary = this._summarizeSpeculativeQualityEnvelope(envelope);
+        const stamp = new Date().toISOString().slice(11, 19);
+        if (!Array.isArray(this.speculativeQualityRows)) {
+            this.speculativeQualityRows = [];
+        }
+        const row = {
+            stamp,
+            fixtureId: summary.fixtureId,
+            windowsTotal: summary.windowsTotal,
+            windowsScored: summary.windowsScored,
+            windowsMissingTarget: summary.windowsMissingTarget,
+            openWindowItems: summary.openWindowItems,
+            suffixLastCell: this._formatSimilarityStatsCompactCell(summary.suffixLast),
+            suffixBestCell: this._formatSimilarityStatsCompactCell(summary.suffixBest),
+            mergedLastCell: this._formatSimilarityStatsCompactCell(summary.mergedLast),
+            mergedBestCell: this._formatSimilarityStatsCompactCell(summary.mergedBest),
+            rawLastCell: this._formatSimilarityStatsCompactCell(summary.rawLast),
+        };
+        row.signature = JSON.stringify({
+            fixtureId: row.fixtureId,
+            windowsTotal: row.windowsTotal,
+            windowsScored: row.windowsScored,
+            windowsMissingTarget: row.windowsMissingTarget,
+            openWindowItems: row.openWindowItems,
+            suffixLastCell: row.suffixLastCell,
+            suffixBestCell: row.suffixBestCell,
+            mergedLastCell: row.mergedLastCell,
+            mergedBestCell: row.mergedBestCell,
+            rawLastCell: row.rawLastCell,
+        });
+        const last = this.speculativeQualityRows[this.speculativeQualityRows.length - 1];
+        if (last && last.signature === row.signature) {
+            return false;
+        }
+        this.speculativeQualityRows.push(row);
+        return true;
+    }
+
+    _padTableCell(value, width, align = "left") {
+        const text = String(value == null ? "" : value);
+        if (text.length >= width) return text;
+        const pad = " ".repeat(width - text.length);
+        return align === "right" ? `${pad}${text}` : `${text}${pad}`;
+    }
+
+    _formatAsciiTable(headers, rows, aligns = []) {
+        const cols = headers.map((h, idx) => {
+            const header = String(h == null ? "" : h);
+            const width = rows.reduce((acc, row) => {
+                const cell = String((row && row[idx]) == null ? "" : row[idx]);
+                return Math.max(acc, cell.length);
+            }, header.length);
+            return { header, width, align: aligns[idx] || "left" };
+        });
+
+        const headerLine = cols.map((c) => this._padTableCell(c.header, c.width, "left")).join("  ");
+        const dividerLine = cols.map((c) => "-".repeat(c.width)).join("  ");
+        const bodyLines = rows.map((row) => cols.map((c, idx) => this._padTableCell((row && row[idx]) || "", c.width, c.align)).join("  "));
+        return [headerLine, dividerLine, ...bodyLines].join("\n");
+    }
+
+    _formatSpeculativeQualityTablesText() {
+        const rows = Array.isArray(this.speculativeQualityRows) ? this.speculativeQualityRows : [];
+        if (!rows.length) return "";
+        const latest = rows[rows.length - 1] || {};
+        const fixtureId = String(latest.fixtureId || this._getFixtureIdForBenchmark() || "").trim();
+
+        const progressRows = rows.map((row, idx) => [
+            String(idx + 1),
+            String(row.stamp || ""),
+            `${Number(row.windowsScored || 0)}/${Number(row.windowsTotal || 0)}`,
+            String(Number(row.windowsMissingTarget || 0)),
+            String(Number(row.openWindowItems || 0)),
+        ]);
+
+        const similarityRows = rows.map((row, idx) => [
+            String(idx + 1),
+            String(row.stamp || ""),
+            String(row.suffixLastCell || "0|--|--|--"),
+            String(row.suffixBestCell || "0|--|--|--"),
+            String(row.mergedLastCell || "0|--|--|--"),
+            String(row.mergedBestCell || "0|--|--|--"),
+            String(row.rawLastCell || "0|--|--|--"),
+        ]);
+
+        const sections = [];
+        sections.push(`Speculative Benchmark Timeline (proxy vs final${fixtureId ? ` · ${fixtureId}` : ""})`);
+        sections.push("Similarity Table (cell = n|mean|p50|p90)");
+        sections.push(this._formatAsciiTable(["#", "Time", "SuffixLast", "SuffixBest", "MergedLast", "MergedBest", "RawLast"], similarityRows, ["right", "left", "left", "left", "left", "left", "left"]));
+        sections.push("Progress Table (1 row = 1 speculative benchmark update)");
+        sections.push(this._formatAsciiTable(["#", "Time", "Win", "Missing", "Open"], progressRows, ["right", "left", "right", "right", "right"]));
+        sections.push("Legend: Win=scored/total windows. Higher is better. Proxy metric vs final chunk target (diagnostic, not final score).");
+        return sections.join("\n\n");
+    }
+
+    applySemiliveSpeculativeQualityEnvelope(envelope) {
+        const e = envelope && typeof envelope === "object" ? envelope : {};
+        this.speculativeQualityEnvelope = e;
+        this.speculativeQualitySummaryText = this.formatSpeculativeQualitySummary(e);
+        this._appendSpeculativeQualityRow(e);
+        this.updateQualityPlaceholder();
+    }
+
+    async refreshSemiliveSpeculativeQuality(options = {}) {
+        const quiet = options.quiet === true;
+        const sid = this.getCurrentSessionId();
+        if (!sid || !this.sessionService) return false;
+        if (this.speculativeQualityInFlight) return false;
+        this.speculativeQualityInFlight = true;
+        try {
+            const envelope = await this.sessionService.fetchSpeculativeQuality(sid);
+            this.applySemiliveSpeculativeQualityEnvelope(envelope);
+            return true;
+        } catch (err) {
+            if (!quiet) {
+                const msg = err && err.message ? err.message : String(err);
+                this.appendLog(`Speculative quality fetch failed: ${msg}`);
+            }
+            return false;
+        } finally {
+            this.speculativeQualityInFlight = false;
+            this.updateControls();
+        }
+    }
+
     applySemiliveQualityEnvelope(envelope) {
         const e = envelope && typeof envelope === "object" ? envelope : {};
         this.qualityEnvelope = e;
         this.qualitySummaryText = this.formatQualitySummary(e);
+        this._appendQualityTimelineEntry("final", this.qualitySummaryText);
         this.updateQualityPlaceholder();
 
         const sid = String(e.session_id || this.getCurrentSessionId() || "").trim();
@@ -688,10 +918,52 @@ ${speculativeValue}`;
         }
     }
 
+    _appendQualityTimelineEntry(kind, summaryText) {
+        const body = String(summaryText || "").trim();
+        if (!body) return false;
+        if (!Array.isArray(this.qualityTimelineEntries)) {
+            this.qualityTimelineEntries = [];
+        }
+        const label = kind === "final" ? "Final quality" : "Speculative update";
+        const stamp = new Date().toISOString().slice(11, 19);
+        const entry = {
+            kind: String(kind || "speculative"),
+            label,
+            stamp,
+            body,
+        };
+        const last = this.qualityTimelineEntries[this.qualityTimelineEntries.length - 1];
+        if (last && last.kind === entry.kind && last.body === entry.body) {
+            return false;
+        }
+        this.qualityTimelineEntries.push(entry);
+        return true;
+    }
+
+    _formatQualityTimelineText(options = {}) {
+        const includeKinds = Array.isArray(options.includeKinds) ? new Set(options.includeKinds.map((v) => String(v || "").toLowerCase())) : null;
+        const baseEntries = Array.isArray(this.qualityTimelineEntries) ? this.qualityTimelineEntries : [];
+        const entries = includeKinds ? baseEntries.filter((entry) => includeKinds.has(String(entry && entry.kind || "").toLowerCase())) : baseEntries;
+        if (!entries.length) return "";
+        return entries.map((entry, idx) => {
+            const n = idx + 1;
+            const head = `#${n} ${String(entry.stamp || "")} · ${String(entry.label || "Update")}`;
+            return `${head}\n${String(entry.body || "")}`;
+        }).join("\n\n");
+    }
+
     updateQualityPlaceholder() {
         if (!this.el.qualityText) return;
 
-        const txt = String(this.qualitySummaryText || "").trim();
+        const speculativeTablesTxt = this._formatSpeculativeQualityTablesText();
+        const finalTimelineTxt = this._formatQualityTimelineText({ includeKinds: ["final"] });
+        const combinedSections = [];
+        if (speculativeTablesTxt) combinedSections.push(speculativeTablesTxt);
+        if (finalTimelineTxt) combinedSections.push(`Final Fixture Benchmark\n${finalTimelineTxt}`);
+        const timelineTxt = combinedSections.join("\n\n").trim();
+        const finalTxt = String(this.qualitySummaryText || "").trim();
+        const speculativeTxt = String(this.speculativeQualitySummaryText || "").trim();
+        const txt = timelineTxt || finalTxt || speculativeTxt;
         if (txt) {
             this.el.qualityText.textContent = txt;
             this.el.qualityText.setAttribute("data-empty", "0");
@@ -708,7 +980,7 @@ ${speculativeValue}`;
         const fixtureId = String((result && result.fixture_id) || (this.currentFixtureMeta && this.currentFixtureMeta.fixture_id) || "").trim();
         let placeholder = "Quality score appears here for fixture runs.";
         if (fixtureId && (this.awaitingSemiliveResult || this.audioStreaming || this.remoteState === "finalizing")) {
-            placeholder = `Fixture ${fixtureId}: quality score will be computed when the transcript is ready.`;
+            placeholder = `Fixture ${fixtureId}: speculative benchmark updates during the run; final quality score appears when the transcript is ready.`;
         } else if (fixtureId) {
             placeholder = `Fixture ${fixtureId}: no quality score available yet.`;
         }
@@ -735,33 +1007,17 @@ ${speculativeValue}`;
         const speculativeText = String(speculativePreview.text || "");
         const speculativeSeq = Number(speculativePreview.speculative_seq ?? -1);
         let transcriptChanged = false;
-        let finalChanged = false;
         if (this.finalText !== finalText) {
             this.finalText = finalText;
-            this.speculativePreviewText = "";
-            this.speculativePreviewSeq = -1;
             transcriptChanged = true;
-            finalChanged = true;
         }
-        if (!String(this.finalText || "").trim()) {
-            if (this.speculativePreviewText || this.speculativePreviewSeq !== -1) {
-                this.speculativePreviewText = "";
-                this.speculativePreviewSeq = -1;
-                transcriptChanged = true;
-            }
-        } else if (!speculativeText) {
-            if (this.speculativePreviewText || this.speculativePreviewSeq !== -1) {
-                this.speculativePreviewText = "";
-                this.speculativePreviewSeq = -1;
-                transcriptChanged = true;
-            }
-        } else if (Number.isFinite(speculativeSeq) && speculativeSeq > this.speculativePreviewSeq) {
-            this.speculativePreviewText = this._appendSpeculativePreview(this.speculativePreviewText, speculativeText);
+        const nextSpeculativeText = String(this.finalText || "").trim() ? speculativeText : "";
+        if (this.speculativePreviewText !== nextSpeculativeText) {
+            this.speculativePreviewText = nextSpeculativeText;
+            transcriptChanged = true;
+        }
+        if (this.speculativePreviewSeq !== speculativeSeq) {
             this.speculativePreviewSeq = speculativeSeq;
-            transcriptChanged = true;
-        } else if (!Number.isFinite(speculativeSeq) && !finalChanged && this.speculativePreviewText !== speculativeText) {
-            this.speculativePreviewText = speculativeText;
-            transcriptChanged = true;
         }
         if (transcriptChanged) {
             this.renderTranscriptText();
@@ -780,6 +1036,10 @@ ${speculativeValue}`;
 
         const finalizationState = String(result.finalization_state || "").trim().toLowerCase();
         const ready = !!e.ready || finalizationState === "ready";
+        const fixtureIdForBenchmark = String(result.fixture_id || (this.currentFixtureMeta && this.currentFixtureMeta.fixture_id) || "").trim();
+        if (fixtureIdForBenchmark && !ready) {
+            void this.refreshSemiliveSpeculativeQuality({ quiet: true });
+        }
 
         if (ready) {
             this.awaitingSemiliveResult = false;

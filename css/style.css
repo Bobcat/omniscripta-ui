@@ -2673,7 +2673,14 @@
   display: grid;
   grid-template-columns: minmax(300px, 370px) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+}
+
+.live-main-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
 }
 
 .live-card {
@@ -2689,6 +2696,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  height: 100%;
 }
 
 .live-section-kicker {
@@ -3033,6 +3041,14 @@
   flex-direction: column;
   gap: 10px;
   min-height: 560px;
+  height: 100%;
+}
+
+.live-run-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  grid-column: 1 / -1;
 }
 
 .live-output-header {
@@ -3078,11 +3094,22 @@
   color: #3f3f46;
   font-size: 0.92rem;
   line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .live-partial-text[data-empty="1"]::before {
   content: attr(data-placeholder);
   color: #8b8f98;
+}
+
+.live-quality-report {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: pre;
+  word-break: normal;
+  overflow: auto;
 }
 
 .live-final-text {
@@ -3125,6 +3152,10 @@
     gap: 12px;
   }
 
+  .live-main-column {
+    order: 1;
+  }
+
   .live-output {
     order: 1;
     min-height: 0;
@@ -3132,6 +3163,11 @@
 
   .live-controls {
     order: 2;
+  }
+
+  .live-run-panels {
+    order: 3;
+    grid-column: auto;
   }
 
   .live-output-header {
