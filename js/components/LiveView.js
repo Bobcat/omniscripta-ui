@@ -467,11 +467,9 @@ export class LiveView {
 
     _formatSpeculativeSuffixText(finalText, speculativeText) {
         const finalValue = String(finalText || "");
-        const finalHasText = finalValue.trim().length > 0;
-        if (!finalHasText) return "";
         const speculativeValue = String(speculativeText || "").trim();
         if (!speculativeValue) return "";
-        return /\s$/.test(finalValue) ? speculativeValue : ` ${speculativeValue}`;
+        return /\s$/.test(finalValue) ? speculativeValue : (" " + speculativeValue);
     }
 
     renderTranscriptText() {
@@ -556,6 +554,14 @@ export class LiveView {
         const fixture = q.fixture && typeof q.fixture === "object" ? q.fixture : {};
         const score = q.score && typeof q.score === "object" ? q.score : {};
         const run = q.run_metrics && typeof q.run_metrics === "object" ? q.run_metrics : {};
+        const liveEngine = String(
+            qenv.live_engine
+            || q.live_engine
+            || run.live_engine
+            || this._getActiveLiveEngine()
+            || ""
+        ).trim().toLowerCase();
+        const isRollingContext = liveEngine === "rolling_context";
 
         const fixtureId = String(qenv.fixture_id || fixture.fixture_id || "").trim();
         const uploadScore = Number(score.upload_similarity_score);
@@ -610,7 +616,9 @@ export class LiveView {
         if (reasonPairs.length) {
             lines.push(`Chunk reasons: ${reasonPairs.map(([k, v]) => `${k}=${v}`).join(", ")}`);
         }
-        lines.push(`Dedup: chunks_applied=${dedupChunksApplied} words_trimmed_total=${dedupWordsTrimmedTotal}`);
+        if (!isRollingContext) {
+            lines.push(`Dedup: chunks_applied=${dedupChunksApplied} words_trimmed_total=${dedupWordsTrimmedTotal}`);
+        }
         if (asrTranscribeTimeS !== null && Number.isFinite(asrTranscribeTimeS)) {
             lines.push(
                 `ASR transcribe time: ${asrTranscribeTimeS.toFixed(2)}s`
@@ -623,25 +631,25 @@ export class LiveView {
                 + (asrPipelinePct !== null && Number.isFinite(asrPipelinePct) ? ` (${asrPipelinePct.toFixed(1)}% of recording)` : "")
             );
         }
-        if (asrSpecTranscribeTimeS !== null && Number.isFinite(asrSpecTranscribeTimeS)) {
+        if (!isRollingContext && asrSpecTranscribeTimeS !== null && Number.isFinite(asrSpecTranscribeTimeS)) {
             lines.push(
                 `ASR speculative transcribe time (sum): ${asrSpecTranscribeTimeS.toFixed(2)}s`
                 + (asrSpecTranscribePct !== null && Number.isFinite(asrSpecTranscribePct) ? ` (${asrSpecTranscribePct.toFixed(1)}% of recording)` : "")
             );
         }
-        if (asrSpecPipelineTimeS !== null && Number.isFinite(asrSpecPipelineTimeS)) {
+        if (!isRollingContext && asrSpecPipelineTimeS !== null && Number.isFinite(asrSpecPipelineTimeS)) {
             lines.push(
                 `ASR speculative pipeline time (sum): ${asrSpecPipelineTimeS.toFixed(2)}s`
                 + (asrSpecPipelinePct !== null && Number.isFinite(asrSpecPipelinePct) ? ` (${asrSpecPipelinePct.toFixed(1)}% of recording)` : "")
             );
         }
-        if (asrCombinedTranscribeTimeS !== null && Number.isFinite(asrCombinedTranscribeTimeS)) {
+        if (!isRollingContext && asrCombinedTranscribeTimeS !== null && Number.isFinite(asrCombinedTranscribeTimeS)) {
             lines.push(
                 `ASR combined transcribe time (final+spec): ${asrCombinedTranscribeTimeS.toFixed(2)}s`
                 + (asrCombinedTranscribePct !== null && Number.isFinite(asrCombinedTranscribePct) ? ` (${asrCombinedTranscribePct.toFixed(1)}% of recording)` : "")
             );
         }
-        if (asrCombinedPipelineTimeS !== null && Number.isFinite(asrCombinedPipelineTimeS)) {
+        if (!isRollingContext && asrCombinedPipelineTimeS !== null && Number.isFinite(asrCombinedPipelineTimeS)) {
             lines.push(
                 `ASR combined pipeline time (final+spec): ${asrCombinedPipelineTimeS.toFixed(2)}s`
                 + (asrCombinedPipelinePct !== null && Number.isFinite(asrCombinedPipelinePct) ? ` (${asrCombinedPipelinePct.toFixed(1)}% of recording)` : "")
@@ -713,6 +721,29 @@ export class LiveView {
             ? this.resultEnvelope.result
             : {};
         return String((result && result.fixture_id) || (this.currentFixtureMeta && this.currentFixtureMeta.fixture_id) || "").trim();
+    }
+
+    _getActiveLiveEngine() {
+        const result = this.resultEnvelope && this.resultEnvelope.result && typeof this.resultEnvelope.result === "object"
+            ? this.resultEnvelope.result
+            : {};
+        const quality = this.qualityEnvelope && this.qualityEnvelope.quality && typeof this.qualityEnvelope.quality === "object"
+            ? this.qualityEnvelope.quality
+            : {};
+        const runMetrics = quality.run_metrics && typeof quality.run_metrics === "object"
+            ? quality.run_metrics
+            : {};
+        return String(
+            result.live_engine
+            || (this.qualityEnvelope && this.qualityEnvelope.live_engine)
+            || quality.live_engine
+            || runMetrics.live_engine
+            || ""
+        ).trim().toLowerCase();
+    }
+
+    _isRollingContextEngine() {
+        return this._getActiveLiveEngine() === "rolling_context";
     }
 
     _summarizeSpeculativeQualityEnvelope(envelope) {
@@ -816,6 +847,7 @@ export class LiveView {
     }
 
     _formatSpeculativeQualityTablesText() {
+        if (this._isRollingContextEngine()) return "";
         const rows = Array.isArray(this.speculativeQualityRows) ? this.speculativeQualityRows : [];
         if (!rows.length) return "";
         const latest = rows[rows.length - 1] || {};
@@ -955,14 +987,15 @@ export class LiveView {
     updateQualityPlaceholder() {
         if (!this.el.qualityText) return;
 
+        const isRollingContext = this._isRollingContextEngine();
         const speculativeTablesTxt = this._formatSpeculativeQualityTablesText();
         const finalTimelineTxt = this._formatQualityTimelineText({ includeKinds: ["final"] });
         const combinedSections = [];
-        if (speculativeTablesTxt) combinedSections.push(speculativeTablesTxt);
+        if (!isRollingContext && speculativeTablesTxt) combinedSections.push(speculativeTablesTxt);
         if (finalTimelineTxt) combinedSections.push(`Final Fixture Benchmark\n${finalTimelineTxt}`);
         const timelineTxt = combinedSections.join("\n\n").trim();
         const finalTxt = String(this.qualitySummaryText || "").trim();
-        const speculativeTxt = String(this.speculativeQualitySummaryText || "").trim();
+        const speculativeTxt = isRollingContext ? "" : String(this.speculativeQualitySummaryText || "").trim();
         const txt = timelineTxt || finalTxt || speculativeTxt;
         if (txt) {
             this.el.qualityText.textContent = txt;
@@ -980,7 +1013,9 @@ export class LiveView {
         const fixtureId = String((result && result.fixture_id) || (this.currentFixtureMeta && this.currentFixtureMeta.fixture_id) || "").trim();
         let placeholder = "Quality score appears here for fixture runs.";
         if (fixtureId && (this.awaitingSemiliveResult || this.audioStreaming || this.remoteState === "finalizing")) {
-            placeholder = `Fixture ${fixtureId}: speculative benchmark updates during the run; final quality score appears when the transcript is ready.`;
+            placeholder = isRollingContext
+                ? `Fixture ${fixtureId}: live updates during the run; final quality score appears when the transcript is ready.`
+                : `Fixture ${fixtureId}: speculative benchmark updates during the run; final quality score appears when the transcript is ready.`;
         } else if (fixtureId) {
             placeholder = `Fixture ${fixtureId}: no quality score available yet.`;
         }
@@ -1011,7 +1046,7 @@ export class LiveView {
             this.finalText = finalText;
             transcriptChanged = true;
         }
-        const nextSpeculativeText = String(this.finalText || "").trim() ? speculativeText : "";
+        const nextSpeculativeText = speculativeText;
         if (this.speculativePreviewText !== nextSpeculativeText) {
             this.speculativePreviewText = nextSpeculativeText;
             transcriptChanged = true;
@@ -1096,7 +1131,7 @@ export class LiveView {
     }
 
     startResultPolling(options = {}) {
-        const intervalMs = Math.max(500, Number(options.intervalMs || 1500));
+        const intervalMs = 250;
         const immediate = options.immediate !== false;
 
         this.stopResultPolling();
