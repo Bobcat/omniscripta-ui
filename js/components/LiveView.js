@@ -105,36 +105,90 @@ export class LiveView {
     getHtml() {
         return `
       <div class="live-wrap">
-        <div class="live-layout">
-          <section class="live-card live-controls">
-            <div class="live-section-kicker">Session</div>
 
-            <div class="live-status-panel">
-              <div class="live-status-panel-top">
-                <span class="live-status-badge idle" id="liveStatusBadge">Idle</span>
-                <span class="live-status-pill-note">Live</span>
+        <!-- Main canvas -->
+        <div class="live-canvas">
+
+          <!-- Canvas header: status badge -->
+          <div class="live-canvas-header">
+            <span class="live-status-badge status-idle" id="liveStatusBadge">Ready</span>
+          </div>
+
+          <!-- Transcript area -->
+          <div class="live-transcript-area" id="liveTranscriptArea">
+
+            <!-- Idle placeholder -->
+            <div class="live-placeholder" id="livePlaceholder">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="22"></line>
+              </svg>
+              <span>Click start to begin recording...</span>
+            </div>
+
+            <!-- Transcript text (hidden when idle) -->
+            <div id="liveFinalText" class="live-final-text hidden" aria-live="polite" tabindex="0">
+              <span id="liveFinalTextMain" class="live-final-text-main"></span><span id="liveFinalTextPreview" class="live-final-text-preview hidden"></span>
+            </div>
+
+          </div>
+
+          <!-- Floating controls card (bottom-center) -->
+          <div class="live-controls-float" id="liveControlsFloat">
+
+            <!-- Timer (visible in listening/paused) -->
+            <div class="live-float-timer hidden" id="liveDurationText">00:00</div>
+
+            <!-- Idle: big start button -->
+            <div class="live-float-idle" id="liveFloatIdle">
+              <button class="live-btn-start" id="liveStartBtn" type="button" title="Start Recording" aria-label="Start Recording"></button>
+            </div>
+
+            <!-- Listening: Pause + Finish -->
+            <div class="live-float-listening hidden" id="liveFloatListening">
+              <div class="live-float-btn-row">
+                <button class="live-float-btn-secondary" id="livePauseBtn" type="button">Pause</button>
+                <button class="live-float-btn-danger" id="liveStopBtn" type="button">Finish</button>
               </div>
-              <div class="live-status-timer" id="liveDurationText">00:00</div>
-              <div class="live-status-copy" id="liveStatusText" title="Not connected">Not connected</div>
             </div>
 
-            <div class="live-primary-controls">
-              <button id="liveStartBtn" type="button">Start</button>
-              <button id="livePauseBtn" type="button" disabled>Pause</button>
-              <button id="liveResumeBtn" type="button" disabled>Resume</button>
-              <button class="primary live-finish-btn" id="liveStopBtn" type="button" disabled>Finish</button>
+            <!-- Paused: Resume + Finish -->
+            <div class="live-float-paused hidden" id="liveFloatPaused">
+              <div class="live-float-btn-row">
+                <button class="live-float-btn-secondary" id="liveResumeBtn" type="button">Resume</button>
+                <button class="live-float-btn-danger" id="liveStopPausedBtn" type="button">Finish</button>
+              </div>
             </div>
 
-            <div class="live-secondary-row">
-              <button id="liveClearBtn" type="button">Clear transcript</button>
-              <button id="liveDownloadWavBtn" type="button" disabled>Download WAV</button>
-              <button id="liveDownloadTxtBtn" type="button" disabled>Download TXT</button>
-              <button id="liveDownloadSrtBtn" type="button" disabled>Download SRT</button>
+            <!-- Finished: downloads + clear -->
+            <div class="live-float-finished hidden" id="liveFloatFinished">
+              <div class="live-float-btn-row">
+                <button class="live-float-btn-outline" id="liveDownloadWavBtn" type="button" disabled>Download WAV</button>
+                <button class="live-float-btn-outline" id="liveDownloadTxtBtn" type="button" disabled>Download TXT</button>
+                <button class="live-float-btn-outline" id="liveDownloadSrtBtn" type="button" disabled>Download SRT</button>
+              </div>
+              <button class="live-float-btn-clear" id="liveClearBtn" type="button">Clear transcript</button>
             </div>
 
-            <div class="live-controls-divider" role="separator" aria-label="Developer fixture tools">
-              <span>Dev / fixture tools</span>
+            <!-- Connecting / Finalizing: status message -->
+            <div class="live-float-processing hidden" id="liveFloatProcessing">
+              <span class="live-float-processing-text" id="liveProcessingText">Connecting...</span>
             </div>
+
+            <!-- Dev Tools toggle (always visible) -->
+            <button class="live-dev-toggle-link" id="liveDevToggleBtn" type="button" aria-expanded="false">⚙ Dev Tools</button>
+
+          </div>
+
+        </div>
+
+        <!-- Dev section (hidden by default) -->
+        <div class="live-dev-section hidden" id="liveDevSection">
+
+          <!-- Session card -->
+          <div class="live-card live-controls">
+            <div class="live-section-kicker">Session</div>
 
             <div class="live-session-row">
               <div class="muted">Session ID</div>
@@ -145,8 +199,8 @@ export class LiveView {
               <div class="muted">Fixture (dev)</div>
               <select id="liveFixtureSelect" class="live-select">
                 ${DEV_LIVE_FIXTURE_OPTIONS.map((opt) => (
-                    `<option value="${String(opt.value || "")}">${String(opt.label || opt.value || "")}</option>`
-                )).join("")}
+            `<option value="${String(opt.value || "")}">${String(opt.label || opt.value || "")}</option>`
+        )).join("")}
               </select>
             </div>
 
@@ -155,39 +209,29 @@ export class LiveView {
               <button id="liveRunFixtureInjectBtn" type="button">Inject fixture</button>
             </div>
             ${this.isLikelyMobile ? `<div class="live-status-copy">Tip: On mobile, use Inject fixture for reliable tests.</div>` : ""}
+          </div>
 
+          <!-- Run/Benchmark card -->
+          <div class="live-card live-run-panels">
+            <div class="live-section-kicker">Run / Benchmark</div>
 
-          </section>
+            <div class="live-partial-row">
+              <div class="live-label">Status / processing</div>
+              <div class="live-partial-text" id="livePartialText" data-placeholder="Chunk status appears here."></div>
+            </div>
 
-          <section class="live-card live-output">
-              <div class="live-output-header">
-                <div>
-                  <div class="live-section-kicker">Transcript</div>
-                </div>
-              </div>
+            <div class="live-partial-row">
+              <div class="live-label">Fixture benchmark</div>
+              <div class="live-partial-text live-quality-report" id="liveQualityText" data-placeholder="Quality score appears here for fixture runs."></div>
+            </div>
+          </div>
 
-              <div id="liveFinalText" class="live-final-text" aria-live="polite" tabindex="0">
-                <span id="liveFinalTextMain" class="live-final-text-main"></span><span id="liveFinalTextPreview" class="live-final-text-preview hidden"></span>
-              </div>
-            </section>
-
-            <section class="live-card live-run-panels">
-              <div class="live-section-kicker">Run / Benchmark</div>
-
-              <div class="live-partial-row">
-                <div class="live-label">Status / processing</div>
-                <div class="live-partial-text" id="livePartialText" data-placeholder="Chunk status appears here."></div>
-              </div>
-
-              <div class="live-partial-row">
-                <div class="live-label">Fixture benchmark</div>
-                <div class="live-partial-text live-quality-report" id="liveQualityText" data-placeholder="Quality score appears here for fixture runs."></div>
-              </div>
-          </section>
         </div>
+
       </div>
     `;
     }
+
 
     mount(container) {
         container.innerHTML = this.getHtml();
@@ -282,16 +326,13 @@ export class LiveView {
 
     captureElements() {
         this.el.statusBadge = document.getElementById("liveStatusBadge");
-        this.el.statusText = document.getElementById("liveStatusText");
         this.el.durationText = document.getElementById("liveDurationText");
         this.el.sessionId = document.getElementById("liveSessionId");
-        this.el.connectBtn = document.getElementById("liveConnectBtn");
-        this.el.disconnectBtn = document.getElementById("liveDisconnectBtn");
         this.el.startBtn = document.getElementById("liveStartBtn");
         this.el.pauseBtn = document.getElementById("livePauseBtn");
         this.el.resumeBtn = document.getElementById("liveResumeBtn");
-        this.el.pingBtn = document.getElementById("livePingBtn");
         this.el.stopBtn = document.getElementById("liveStopBtn");
+        this.el.stopPausedBtn = document.getElementById("liveStopPausedBtn");
         this.el.clearBtn = document.getElementById("liveClearBtn");
         this.el.fixtureSelect = document.getElementById("liveFixtureSelect");
         this.el.runFixturePlayBtn = document.getElementById("liveRunFixturePlayBtn");
@@ -301,22 +342,21 @@ export class LiveView {
         this.el.downloadSrtBtn = document.getElementById("liveDownloadSrtBtn");
         this.el.qualityText = document.getElementById("liveQualityText");
         this.el.devToggleBtn = document.getElementById("liveDevToggleBtn");
-        this.el.devPanel = document.getElementById("liveDevPanel");
-        this.el.devStats = document.getElementById("liveDevStats");
-        this.el.log = document.getElementById("liveEventLog");
+        this.el.devSection = document.getElementById("liveDevSection");
         this.el.finalText = document.getElementById("liveFinalText");
         this.el.finalTextMain = document.getElementById("liveFinalTextMain");
         this.el.finalTextPreview = document.getElementById("liveFinalTextPreview");
+        this.el.placeholder = document.getElementById("livePlaceholder");
+        this.el.floatIdle = document.getElementById("liveFloatIdle");
+        this.el.floatListening = document.getElementById("liveFloatListening");
+        this.el.floatPaused = document.getElementById("liveFloatPaused");
+        this.el.floatFinished = document.getElementById("liveFloatFinished");
+        this.el.floatProcessing = document.getElementById("liveFloatProcessing");
+        this.el.processingText = document.getElementById("liveProcessingText");
         this.el.partialText = document.getElementById("livePartialText");
     }
 
     bindUi() {
-        if (this.el.connectBtn) {
-            this.el.connectBtn.addEventListener("click", () => this.connectSession());
-        }
-        if (this.el.disconnectBtn) {
-            this.el.disconnectBtn.addEventListener("click", () => this.cleanupSession("client_disconnect", { sendStop: true }));
-        }
         if (this.el.startBtn) {
             this.el.startBtn.addEventListener("click", () => this.startMic());
         }
@@ -326,11 +366,11 @@ export class LiveView {
         if (this.el.resumeBtn) {
             this.el.resumeBtn.addEventListener("click", () => this.resumeMic());
         }
-        if (this.el.pingBtn) {
-            this.el.pingBtn.addEventListener("click", () => this.sendControl("ping"));
-        }
         if (this.el.stopBtn) {
             this.el.stopBtn.addEventListener("click", () => this.stopMic());
+        }
+        if (this.el.stopPausedBtn) {
+            this.el.stopPausedBtn.addEventListener("click", () => this.stopMic());
         }
         if (this.el.clearBtn) {
             this.el.clearBtn.addEventListener("click", () => this.clearOutput());
@@ -369,11 +409,11 @@ export class LiveView {
         const next = typeof forceOpen === "boolean" ? forceOpen : !this.developerToolsOpen;
         this.developerToolsOpen = next;
 
-        if (this.el.devPanel) {
-            this.el.devPanel.classList.toggle("hidden", !next);
+        if (this.el.devSection) {
+            this.el.devSection.classList.toggle("hidden", !next);
         }
         if (this.el.devToggleBtn) {
-            this.el.devToggleBtn.textContent = next ? "Hide" : "Show";
+            this.el.devToggleBtn.textContent = next ? "⚙ Dev Tools ✕" : "⚙ Dev Tools";
             this.el.devToggleBtn.setAttribute("aria-expanded", next ? "true" : "false");
         }
     }
@@ -385,33 +425,30 @@ export class LiveView {
         this.resetLiveResultState();
         this.currentFixtureMeta = null;
         this.previewText = "";
+        this.remoteState = "idle";
 
         this.renderTranscriptText();
         if (this.el.partialText) this.el.partialText.textContent = "";
         if (this.el.qualityText) this.el.qualityText.textContent = "";
-        if (this.el.log) this.el.log.textContent = "";
-        if (this.el.devStats) this.el.devStats.textContent = "No stats yet";
 
         this.updatePartialPlaceholder();
         this.updateQualityPlaceholder();
+        this.setUiPhase("idle");
         this.updateControls();
     }
 
     setStatus(kind, text) {
+        // setStatus is kept for internal calls; the visible badge is now
+        // driven entirely by setUiPhase() via updateControls().
         const normalized = String(kind || "idle").toLowerCase();
-        const label = STATUS_LABELS[normalized] || normalized;
-        const copy = String(text || "");
-
-        if (this.el.statusBadge) {
-            this.el.statusBadge.textContent = label;
-            this.el.statusBadge.className = `live-status-badge ${normalized}`;
-            this.el.statusBadge.title = label;
+        if (!this.audioStreaming) {
+            this.remoteState = normalized;
         }
         if (this.el.statusText) {
-            this.el.statusText.textContent = copy;
-            this.el.statusText.title = copy;
+            this.el.statusText.textContent = String(text || "");
         }
     }
+
 
     appendLog(line) {
         if (!this.el.log) return;
@@ -893,18 +930,27 @@ export class LiveView {
     }
 
     updateControls() {
-        const wsOpen = !!(this.sessionService && this.sessionService.isOpen());
         const wsConnecting = !!(this.sessionService && this.sessionService.isConnecting());
-        const hasSessionId = !!this.getCurrentSessionId();
 
-        if (this.el.connectBtn) this.el.connectBtn.disabled = wsOpen || wsConnecting;
-        if (this.el.disconnectBtn) this.el.disconnectBtn.disabled = !wsOpen && !wsConnecting;
+        // Determine UI phase
+        let phase = "idle";
+        if (wsConnecting && !this.audioStreaming) {
+            phase = "connecting";
+        } else if (this.audioStreaming && this.audioPaused) {
+            phase = "paused";
+        } else if (this.audioStreaming) {
+            phase = "listening";
+        } else if (this.awaitingLiveResult || this.remoteState === "finalizing") {
+            phase = "finalizing";
+        } else if (this.remoteState === "ready" || this.remoteState === "ended") {
+            phase = "finished";
+        } else if (this.remoteState === "error") {
+            phase = "error";
+        }
 
-        if (this.el.startBtn) this.el.startBtn.disabled = this.audioStreaming || wsConnecting;
-        if (this.el.pauseBtn) this.el.pauseBtn.disabled = !this.audioStreaming || this.audioPaused || this.fixtureRunActive;
-        if (this.el.resumeBtn) this.el.resumeBtn.disabled = !this.audioStreaming || !this.audioPaused || this.fixtureRunActive;
-        if (this.el.pingBtn) this.el.pingBtn.disabled = !wsOpen;
-        if (this.el.stopBtn) this.el.stopBtn.disabled = !this.audioStreaming;
+        this.setUiPhase(phase);
+
+        // Dev fixture controls
         if (this.el.fixtureSelect) {
             this.el.fixtureSelect.disabled = this.fixtureRunActive || this.audioStreaming || wsConnecting;
             if (this.el.fixtureSelect.value !== this.selectedFixtureKey) {
@@ -923,7 +969,9 @@ export class LiveView {
                 ? (this.fixtureRunLabel ? `Running: ${this.fixtureRunLabel}` : "Fixture running...")
                 : "Inject fixture";
         }
-        if (this.el.downloadWavBtn) this.el.downloadWavBtn.disabled = !this.resultCanExportWav || this.audioStreaming;
+
+        // Download buttons (enabled when export is ready)
+        if (this.el.downloadWavBtn) this.el.downloadWavBtn.disabled = !this.resultCanExportWav;
         if (this.el.downloadTxtBtn) this.el.downloadTxtBtn.disabled = !this.resultCanExportTxt;
         if (this.el.downloadSrtBtn) this.el.downloadSrtBtn.disabled = !this.resultCanExportSrt;
 
@@ -932,6 +980,54 @@ export class LiveView {
             this.el.sessionId.textContent = sid || "(none)";
         }
     }
+
+    setUiPhase(phase) {
+        const badgeLabels = {
+            idle: "Ready",
+            connecting: "Connecting...",
+            listening: "Listening...",
+            paused: "Paused...",
+            finalizing: "Processing...",
+            finished: "Recording Saved",
+            error: "Error",
+        };
+        const badgeClasses = {
+            idle: "status-idle",
+            connecting: "status-connecting",
+            listening: "status-listening",
+            paused: "status-paused",
+            finalizing: "status-finalizing",
+            finished: "status-finished",
+            error: "status-error",
+        };
+        if (this.el.statusBadge) {
+            this.el.statusBadge.textContent = badgeLabels[phase] || phase;
+            this.el.statusBadge.className = `live-status-badge ${badgeClasses[phase] || "status-idle"}`;
+        }
+
+        // Placeholder vs transcript text
+        const showTranscript = phase !== "idle" && phase !== "connecting";
+        if (this.el.placeholder) this.el.placeholder.classList.toggle("hidden", showTranscript);
+        if (this.el.finalText) this.el.finalText.classList.toggle("hidden", !showTranscript || (!this.finalText && !this.previewText));
+
+        // Timer: visible in listening + paused
+        const showTimer = phase === "listening" || phase === "paused";
+        if (this.el.durationText) this.el.durationText.classList.toggle("hidden", !showTimer);
+
+        // Floating card panels
+        if (this.el.floatIdle) this.el.floatIdle.classList.toggle("hidden", phase !== "idle");
+        if (this.el.floatListening) this.el.floatListening.classList.toggle("hidden", phase !== "listening");
+        if (this.el.floatPaused) this.el.floatPaused.classList.toggle("hidden", phase !== "paused");
+        if (this.el.floatFinished) this.el.floatFinished.classList.toggle("hidden", phase !== "finished");
+        if (this.el.floatProcessing) {
+            const showProc = phase === "connecting" || phase === "finalizing";
+            this.el.floatProcessing.classList.toggle("hidden", !showProc);
+            if (showProc && this.el.processingText) {
+                this.el.processingText.textContent = phase === "connecting" ? "Connecting..." : "Processing recording...";
+            }
+        }
+    }
+
 
     async connectSession() {
         if (!this.sessionService) this.initServices();
