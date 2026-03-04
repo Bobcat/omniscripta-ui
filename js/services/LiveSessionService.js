@@ -227,17 +227,6 @@ export class LiveSessionService {
         return await r.json();
     }
 
-    async fetchSpeculativeQuality(sessionId, options = {}) {
-        const sid = String(sessionId || this.getSessionId() || "").trim();
-        if (!sid) throw new Error("Missing session id");
-        const verbose = options && options.verbose === true ? "?verbose=1" : "";
-        const r = await fetch(getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}/speculative-quality${verbose}`), {
-            cache: "no-store",
-        });
-        if (!r.ok) throw new Error(`Fetch live speculative quality failed: ${r.status}`);
-        return await r.json();
-    }
-
     getTranscriptDownloadUrl(kind, sessionId) {
         const sid = String(sessionId || this.getSessionId() || "").trim();
         if (!sid) return "";

@@ -1011,7 +1011,7 @@ export function mountEditor(options = {}) {
   let globalSeq = 0;
   let rowById = new Map();
 
-  // Chunked textarea sizing state (prevents long main-thread stalls)
+  // Transcript textarea sizing state (prevents long main-thread stalls)
   let _taSizeQueue = [];
   let _taSizeSet = new Set();
   let _taSizeRaf = 0;
@@ -1626,7 +1626,7 @@ export function mountEditor(options = {}) {
     el.style.overflowY = (needed > TEXTAREA_MAX_HEIGHT) ? 'auto' : 'hidden';
   }
 
-  // Chunked textarea sizing (avoids long stalls after split/undo/resize)
+  // Transcript textarea sizing (avoids long stalls after split/undo/resize)
   function queueTextareaSizing(el) {
     if (!el) return;
     if (_taSizeSet.has(el)) return;

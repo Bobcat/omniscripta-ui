@@ -56,8 +56,8 @@ export class LiveView {
 
         this.remoteState = "idle";
         this.finalText = "";
-        this.speculativePreviewText = "";
-        this.speculativePreviewSeq = -1;
+        this.previewText = "";
+        this.previewSeq = -1;
         this.partialText = "";
         this.developerToolsOpen = false;
 
@@ -73,7 +73,7 @@ export class LiveView {
 
         this.lastStatsSummary = "";
 
-        this.awaitingSemiliveResult = false;
+        this.awaitingLiveResult = false;
         this.resultPollTimerId = null;
         this.resultPollInFlight = false;
         this.resultEnvelope = null;
@@ -88,10 +88,6 @@ export class LiveView {
         this.qualityLoadedSessionId = "";
         this.qualityLoadedRevision = -1;
         this.qualitySummaryText = "";
-        this.speculativeQualityEnvelope = null;
-        this.speculativeQualityInFlight = false;
-        this.speculativeQualitySummaryText = "";
-        this.speculativeQualityRows = [];
         this.qualityTimelineEntries = [];
         this.currentFixtureMeta = null;
 
@@ -116,7 +112,7 @@ export class LiveView {
             <div class="live-status-panel">
               <div class="live-status-panel-top">
                 <span class="live-status-badge idle" id="liveStatusBadge">Idle</span>
-                <span class="live-status-pill-note">Chunked</span>
+                <span class="live-status-pill-note">Live</span>
               </div>
               <div class="live-status-timer" id="liveDurationText">00:00</div>
               <div class="live-status-copy" id="liveStatusText" title="Not connected">Not connected</div>
@@ -166,12 +162,12 @@ export class LiveView {
           <section class="live-card live-output">
               <div class="live-output-header">
                 <div>
-                  <div class="live-section-kicker">Transcript (chunked)</div>
+                  <div class="live-section-kicker">Transcript</div>
                 </div>
               </div>
 
               <div id="liveFinalText" class="live-final-text" aria-live="polite" tabindex="0">
-                <span id="liveFinalTextMain" class="live-final-text-main"></span><span id="liveFinalTextSpeculative" class="live-final-text-speculative hidden"></span>
+                <span id="liveFinalTextMain" class="live-final-text-main"></span><span id="liveFinalTextPreview" class="live-final-text-preview hidden"></span>
               </div>
             </section>
 
@@ -226,7 +222,7 @@ export class LiveView {
         if (!this.sessionService) {
             this.sessionService = new LiveSessionService({
                 onOpen: () => {
-                    this.setStatus("connected", "Connected. Ready for chunked recording.");
+                    this.setStatus("connected", "Connected. Ready for recording.");
                     this.updateControls();
                 },
                 onClose: (ev) => {
@@ -235,7 +231,7 @@ export class LiveView {
                     this.stopAudioCapture({ quiet: true });
                     this.stopRecordingTimer({ reset: false });
                     this.remoteState = "disconnected";
-                    if (this.awaitingSemiliveResult) {
+                    if (this.awaitingLiveResult) {
                         this.setStatus("finalizing", "Connection closed. Transcript is still being processed...");
                         this.startResultPolling({ immediate: true, intervalMs: 1000 });
                     } else {
@@ -310,7 +306,7 @@ export class LiveView {
         this.el.log = document.getElementById("liveEventLog");
         this.el.finalText = document.getElementById("liveFinalText");
         this.el.finalTextMain = document.getElementById("liveFinalTextMain");
-        this.el.finalTextSpeculative = document.getElementById("liveFinalTextSpeculative");
+        this.el.finalTextPreview = document.getElementById("liveFinalTextPreview");
         this.el.partialText = document.getElementById("livePartialText");
     }
 
@@ -356,13 +352,13 @@ export class LiveView {
             });
         }
         if (this.el.downloadWavBtn) {
-            this.el.downloadWavBtn.addEventListener("click", () => this.downloadSemiliveTranscript("wav"));
+            this.el.downloadWavBtn.addEventListener("click", () => this.downloadLiveTranscript("wav"));
         }
         if (this.el.downloadTxtBtn) {
-            this.el.downloadTxtBtn.addEventListener("click", () => this.downloadSemiliveTranscript("txt"));
+            this.el.downloadTxtBtn.addEventListener("click", () => this.downloadLiveTranscript("txt"));
         }
         if (this.el.downloadSrtBtn) {
-            this.el.downloadSrtBtn.addEventListener("click", () => this.downloadSemiliveTranscript("srt"));
+            this.el.downloadSrtBtn.addEventListener("click", () => this.downloadLiveTranscript("srt"));
         }
         if (this.el.devToggleBtn) {
             this.el.devToggleBtn.addEventListener("click", () => this.toggleDeveloperTools());
@@ -386,9 +382,9 @@ export class LiveView {
         this.finalText = "";
         this.partialText = "";
         this.lastStatsSummary = "";
-        this.resetSemiliveResultState();
+        this.resetLiveResultState();
         this.currentFixtureMeta = null;
-        this.speculativePreviewText = "";
+        this.previewText = "";
 
         this.renderTranscriptText();
         if (this.el.partialText) this.el.partialText.textContent = "";
@@ -434,8 +430,8 @@ export class LiveView {
         }
     }
 
-    resetSemiliveResultState() {
-        this.awaitingSemiliveResult = false;
+    resetLiveResultState() {
+        this.awaitingLiveResult = false;
         this.resultEnvelope = null;
         this.resultCanExportWav = false;
         this.resultCanExportTxt = false;
@@ -448,13 +444,9 @@ export class LiveView {
         this.qualityLoadedSessionId = "";
         this.qualityLoadedRevision = -1;
         this.qualitySummaryText = "";
-        this.speculativeQualityEnvelope = null;
-        this.speculativeQualityInFlight = false;
-        this.speculativeQualitySummaryText = "";
-        this.speculativeQualityRows = [];
         this.qualityTimelineEntries = [];
-        this.speculativePreviewText = "";
-        this.speculativePreviewSeq = -1;
+        this.previewText = "";
+        this.previewSeq = -1;
     }
 
     _formatFinalDisplayText(finalText) {
@@ -465,23 +457,23 @@ export class LiveView {
             .replace(/[\t ]*\n+[\t ]*/g, " ");
     }
 
-    _formatSpeculativeSuffixText(finalText, speculativeText) {
+    _formatPreviewSuffixText(finalText, previewText) {
         const finalValue = String(finalText || "");
-        const speculativeValue = String(speculativeText || "").trim();
-        if (!speculativeValue) return "";
-        return /\s$/.test(finalValue) ? speculativeValue : (" " + speculativeValue);
+        const previewValue = String(previewText || "").trim();
+        if (!previewValue) return "";
+        return /\s$/.test(finalValue) ? previewValue : (" " + previewValue);
     }
 
     renderTranscriptText() {
         const finalValue = this._formatFinalDisplayText(this.finalText || "");
-        const speculativeSuffix = this._formatSpeculativeSuffixText(finalValue, this.speculativePreviewText);
+        const previewSuffix = this._formatPreviewSuffixText(finalValue, this.previewText);
 
         if (this.el.finalTextMain) {
             this.el.finalTextMain.textContent = finalValue;
         }
-        if (this.el.finalTextSpeculative) {
-            this.el.finalTextSpeculative.textContent = speculativeSuffix;
-            this.el.finalTextSpeculative.classList.toggle("hidden", !speculativeSuffix);
+        if (this.el.finalTextPreview) {
+            this.el.finalTextPreview.textContent = previewSuffix;
+            this.el.finalTextPreview.classList.toggle("hidden", !previewSuffix);
         }
         if (this.el.finalText) {
             this.el.finalText.scrollTop = this.el.finalText.scrollHeight;
@@ -492,7 +484,7 @@ export class LiveView {
         return this.sessionService ? String(this.sessionService.getSessionId() || "").trim() : "";
     }
 
-    formatSemiliveSummary(result) {
+    formatLiveSummary(result) {
         const r = result && typeof result === "object" ? result : {};
         const total = Number(r.chunks_total || 0);
         const done = Number(r.chunks_done || 0);
@@ -554,14 +546,6 @@ export class LiveView {
         const fixture = q.fixture && typeof q.fixture === "object" ? q.fixture : {};
         const score = q.score && typeof q.score === "object" ? q.score : {};
         const run = q.run_metrics && typeof q.run_metrics === "object" ? q.run_metrics : {};
-        const liveEngine = String(
-            qenv.live_engine
-            || q.live_engine
-            || run.live_engine
-            || this._getActiveLiveEngine()
-            || ""
-        ).trim().toLowerCase();
-        const isRollingContext = liveEngine === "rolling_context";
 
         const fixtureId = String(qenv.fixture_id || fixture.fixture_id || "").trim();
         const uploadScore = Number(score.upload_similarity_score);
@@ -580,20 +564,10 @@ export class LiveView {
             : {};
         const pollErrors = Number(run.poll_error_count || 0);
         const chunkErrors = Number(run.chunk_error_count || 0);
-        const dedupChunksApplied = Number(run.dedup_chunks_applied || 0);
-        const dedupWordsTrimmedTotal = Number(run.dedup_words_trimmed_total || 0);
         const asrTranscribeTimeS = run.asr_transcribe_time_total_s == null ? null : Number(run.asr_transcribe_time_total_s);
         const asrPipelineTimeS = run.asr_pipeline_time_total_s == null ? null : Number(run.asr_pipeline_time_total_s);
         const asrTranscribePct = run.asr_transcribe_pct_of_recording == null ? null : Number(run.asr_transcribe_pct_of_recording);
         const asrPipelinePct = run.asr_pipeline_pct_of_recording == null ? null : Number(run.asr_pipeline_pct_of_recording);
-        const asrSpecTranscribeTimeS = run.asr_speculative_transcribe_time_total_s == null ? null : Number(run.asr_speculative_transcribe_time_total_s);
-        const asrSpecPipelineTimeS = run.asr_speculative_pipeline_time_total_s == null ? null : Number(run.asr_speculative_pipeline_time_total_s);
-        const asrSpecTranscribePct = run.asr_speculative_transcribe_pct_of_recording == null ? null : Number(run.asr_speculative_transcribe_pct_of_recording);
-        const asrSpecPipelinePct = run.asr_speculative_pipeline_pct_of_recording == null ? null : Number(run.asr_speculative_pipeline_pct_of_recording);
-        const asrCombinedTranscribeTimeS = run.asr_combined_transcribe_time_total_s == null ? null : Number(run.asr_combined_transcribe_time_total_s);
-        const asrCombinedPipelineTimeS = run.asr_combined_pipeline_time_total_s == null ? null : Number(run.asr_combined_pipeline_time_total_s);
-        const asrCombinedTranscribePct = run.asr_combined_transcribe_pct_of_recording == null ? null : Number(run.asr_combined_transcribe_pct_of_recording);
-        const asrCombinedPipelinePct = run.asr_combined_pipeline_pct_of_recording == null ? null : Number(run.asr_combined_pipeline_pct_of_recording);
 
         const lines = [];
         if (Number.isFinite(uploadScore)) {
@@ -616,9 +590,6 @@ export class LiveView {
         if (reasonPairs.length) {
             lines.push(`Chunk reasons: ${reasonPairs.map(([k, v]) => `${k}=${v}`).join(", ")}`);
         }
-        if (!isRollingContext) {
-            lines.push(`Dedup: chunks_applied=${dedupChunksApplied} words_trimmed_total=${dedupWordsTrimmedTotal}`);
-        }
         if (asrTranscribeTimeS !== null && Number.isFinite(asrTranscribeTimeS)) {
             lines.push(
                 `ASR transcribe time: ${asrTranscribeTimeS.toFixed(2)}s`
@@ -631,30 +602,6 @@ export class LiveView {
                 + (asrPipelinePct !== null && Number.isFinite(asrPipelinePct) ? ` (${asrPipelinePct.toFixed(1)}% of recording)` : "")
             );
         }
-        if (!isRollingContext && asrSpecTranscribeTimeS !== null && Number.isFinite(asrSpecTranscribeTimeS)) {
-            lines.push(
-                `ASR speculative transcribe time (sum): ${asrSpecTranscribeTimeS.toFixed(2)}s`
-                + (asrSpecTranscribePct !== null && Number.isFinite(asrSpecTranscribePct) ? ` (${asrSpecTranscribePct.toFixed(1)}% of recording)` : "")
-            );
-        }
-        if (!isRollingContext && asrSpecPipelineTimeS !== null && Number.isFinite(asrSpecPipelineTimeS)) {
-            lines.push(
-                `ASR speculative pipeline time (sum): ${asrSpecPipelineTimeS.toFixed(2)}s`
-                + (asrSpecPipelinePct !== null && Number.isFinite(asrSpecPipelinePct) ? ` (${asrSpecPipelinePct.toFixed(1)}% of recording)` : "")
-            );
-        }
-        if (!isRollingContext && asrCombinedTranscribeTimeS !== null && Number.isFinite(asrCombinedTranscribeTimeS)) {
-            lines.push(
-                `ASR combined transcribe time (final+spec): ${asrCombinedTranscribeTimeS.toFixed(2)}s`
-                + (asrCombinedTranscribePct !== null && Number.isFinite(asrCombinedTranscribePct) ? ` (${asrCombinedTranscribePct.toFixed(1)}% of recording)` : "")
-            );
-        }
-        if (!isRollingContext && asrCombinedPipelineTimeS !== null && Number.isFinite(asrCombinedPipelineTimeS)) {
-            lines.push(
-                `ASR combined pipeline time (final+spec): ${asrCombinedPipelineTimeS.toFixed(2)}s`
-                + (asrCombinedPipelinePct !== null && Number.isFinite(asrCombinedPipelinePct) ? ` (${asrCombinedPipelinePct.toFixed(1)}% of recording)` : "")
-            );
-        }
         lines.push(
             `Health: poll_errors=${pollErrors} chunk_errors=${chunkErrors} finalization=${String(run.finalization_state || "")}`
         );
@@ -665,253 +612,7 @@ export class LiveView {
         return lines.join("\n");
     }
 
-    _formatSimilarityStatsInline(stats) {
-        const s = stats && typeof stats === "object" ? stats : {};
-        const count = Number(s.count || 0);
-        if (!(count > 0)) return "n=0";
-        const mean = s.mean == null ? "?" : Number(s.mean).toFixed(3);
-        const p50 = s.p50 == null ? "?" : Number(s.p50).toFixed(3);
-        const p90 = s.p90 == null ? "?" : Number(s.p90).toFixed(3);
-        return `n=${count} mean=${mean} p50=${p50} p90=${p90}`;
-    }
-
-    formatSpeculativeQualitySummary(envelope) {
-        const e = envelope && typeof envelope === "object" ? envelope : {};
-        const sq = e.speculative_quality && typeof e.speculative_quality === "object" ? e.speculative_quality : {};
-        const summary = sq.summary && typeof sq.summary === "object" ? sq.summary : {};
-        const fixtureId = this._getFixtureIdForBenchmark();
-
-        const windowsTotal = Number(summary.windows_total || 0);
-        const windowsScored = Number(summary.windows_scored || 0);
-        const windowsMissingTarget = Number(summary.windows_missing_target || 0);
-        const openWindowItems = Number(summary.open_window_items_count || 0);
-        const suffixLast = summary.suffix_last_word_similarity && typeof summary.suffix_last_word_similarity === "object"
-            ? summary.suffix_last_word_similarity
-            : {};
-        const suffixBest = summary.suffix_best_word_similarity && typeof summary.suffix_best_word_similarity === "object"
-            ? summary.suffix_best_word_similarity
-            : {};
-        const mergedLast = summary.merged_last_word_similarity && typeof summary.merged_last_word_similarity === "object"
-            ? summary.merged_last_word_similarity
-            : {};
-        const mergedBest = summary.merged_best_word_similarity && typeof summary.merged_best_word_similarity === "object"
-            ? summary.merged_best_word_similarity
-            : {};
-        const rawLast = summary.raw_last_word_similarity && typeof summary.raw_last_word_similarity === "object"
-            ? summary.raw_last_word_similarity
-            : {};
-
-        const lines = [];
-        lines.push(`Speculative benchmark (proxy vs final${fixtureId ? ` · ${fixtureId}` : ""})`);
-        lines.push(
-            `Windows: scored ${windowsScored}/${windowsTotal}`
-            + (windowsMissingTarget > 0 ? ` | missing_target ${windowsMissingTarget}` : "")
-            + ` | open_items ${openWindowItems}`
-        );
-        lines.push(`Suffix last word similarity: ${this._formatSimilarityStatsInline(suffixLast)}`);
-        lines.push(`Suffix best word similarity: ${this._formatSimilarityStatsInline(suffixBest)}`);
-        lines.push(`Merged last/best word similarity: ${this._formatSimilarityStatsInline(mergedLast)} / ${this._formatSimilarityStatsInline(mergedBest)}`);
-        lines.push(`Raw last word similarity: ${this._formatSimilarityStatsInline(rawLast)}`);
-        lines.push("(Higher is better. Diagnostic proxy vs final chunk target; not a final score.)");
-        return lines.join("\n");
-    }
-
-    _getFixtureIdForBenchmark() {
-        const result = this.resultEnvelope && this.resultEnvelope.result && typeof this.resultEnvelope.result === "object"
-            ? this.resultEnvelope.result
-            : {};
-        return String((result && result.fixture_id) || (this.currentFixtureMeta && this.currentFixtureMeta.fixture_id) || "").trim();
-    }
-
-    _getActiveLiveEngine() {
-        const result = this.resultEnvelope && this.resultEnvelope.result && typeof this.resultEnvelope.result === "object"
-            ? this.resultEnvelope.result
-            : {};
-        const quality = this.qualityEnvelope && this.qualityEnvelope.quality && typeof this.qualityEnvelope.quality === "object"
-            ? this.qualityEnvelope.quality
-            : {};
-        const runMetrics = quality.run_metrics && typeof quality.run_metrics === "object"
-            ? quality.run_metrics
-            : {};
-        return String(
-            result.live_engine
-            || (this.qualityEnvelope && this.qualityEnvelope.live_engine)
-            || quality.live_engine
-            || runMetrics.live_engine
-            || ""
-        ).trim().toLowerCase();
-    }
-
-    _isRollingContextEngine() {
-        return this._getActiveLiveEngine() === "rolling_context";
-    }
-
-    _summarizeSpeculativeQualityEnvelope(envelope) {
-        const e = envelope && typeof envelope === "object" ? envelope : {};
-        const sq = e.speculative_quality && typeof e.speculative_quality === "object" ? e.speculative_quality : {};
-        const summary = sq.summary && typeof sq.summary === "object" ? sq.summary : {};
-        return {
-            fixtureId: this._getFixtureIdForBenchmark(),
-            windowsTotal: Number(summary.windows_total || 0),
-            windowsScored: Number(summary.windows_scored || 0),
-            windowsMissingTarget: Number(summary.windows_missing_target || 0),
-            openWindowItems: Number(summary.open_window_items_count || 0),
-            suffixLast: summary.suffix_last_word_similarity && typeof summary.suffix_last_word_similarity === "object"
-                ? summary.suffix_last_word_similarity
-                : {},
-            suffixBest: summary.suffix_best_word_similarity && typeof summary.suffix_best_word_similarity === "object"
-                ? summary.suffix_best_word_similarity
-                : {},
-            mergedLast: summary.merged_last_word_similarity && typeof summary.merged_last_word_similarity === "object"
-                ? summary.merged_last_word_similarity
-                : {},
-            mergedBest: summary.merged_best_word_similarity && typeof summary.merged_best_word_similarity === "object"
-                ? summary.merged_best_word_similarity
-                : {},
-            rawLast: summary.raw_last_word_similarity && typeof summary.raw_last_word_similarity === "object"
-                ? summary.raw_last_word_similarity
-                : {},
-        };
-    }
-
-    _formatSimilarityStatsCompactCell(stats) {
-        const s = stats && typeof stats === "object" ? stats : {};
-        const count = Number(s.count || 0);
-        if (!(count > 0)) return "0|--|--|--";
-        const mean = s.mean == null ? "--" : Number(s.mean).toFixed(3);
-        const p50 = s.p50 == null ? "--" : Number(s.p50).toFixed(3);
-        const p90 = s.p90 == null ? "--" : Number(s.p90).toFixed(3);
-        return `${count}|${mean}|${p50}|${p90}`;
-    }
-
-    _appendSpeculativeQualityRow(envelope) {
-        const summary = this._summarizeSpeculativeQualityEnvelope(envelope);
-        const stamp = new Date().toISOString().slice(11, 19);
-        if (!Array.isArray(this.speculativeQualityRows)) {
-            this.speculativeQualityRows = [];
-        }
-        const row = {
-            stamp,
-            fixtureId: summary.fixtureId,
-            windowsTotal: summary.windowsTotal,
-            windowsScored: summary.windowsScored,
-            windowsMissingTarget: summary.windowsMissingTarget,
-            openWindowItems: summary.openWindowItems,
-            suffixLastCell: this._formatSimilarityStatsCompactCell(summary.suffixLast),
-            suffixBestCell: this._formatSimilarityStatsCompactCell(summary.suffixBest),
-            mergedLastCell: this._formatSimilarityStatsCompactCell(summary.mergedLast),
-            mergedBestCell: this._formatSimilarityStatsCompactCell(summary.mergedBest),
-            rawLastCell: this._formatSimilarityStatsCompactCell(summary.rawLast),
-        };
-        row.signature = JSON.stringify({
-            fixtureId: row.fixtureId,
-            windowsTotal: row.windowsTotal,
-            windowsScored: row.windowsScored,
-            windowsMissingTarget: row.windowsMissingTarget,
-            openWindowItems: row.openWindowItems,
-            suffixLastCell: row.suffixLastCell,
-            suffixBestCell: row.suffixBestCell,
-            mergedLastCell: row.mergedLastCell,
-            mergedBestCell: row.mergedBestCell,
-            rawLastCell: row.rawLastCell,
-        });
-        const last = this.speculativeQualityRows[this.speculativeQualityRows.length - 1];
-        if (last && last.signature === row.signature) {
-            return false;
-        }
-        this.speculativeQualityRows.push(row);
-        return true;
-    }
-
-    _padTableCell(value, width, align = "left") {
-        const text = String(value == null ? "" : value);
-        if (text.length >= width) return text;
-        const pad = " ".repeat(width - text.length);
-        return align === "right" ? `${pad}${text}` : `${text}${pad}`;
-    }
-
-    _formatAsciiTable(headers, rows, aligns = []) {
-        const cols = headers.map((h, idx) => {
-            const header = String(h == null ? "" : h);
-            const width = rows.reduce((acc, row) => {
-                const cell = String((row && row[idx]) == null ? "" : row[idx]);
-                return Math.max(acc, cell.length);
-            }, header.length);
-            return { header, width, align: aligns[idx] || "left" };
-        });
-
-        const headerLine = cols.map((c) => this._padTableCell(c.header, c.width, "left")).join("  ");
-        const dividerLine = cols.map((c) => "-".repeat(c.width)).join("  ");
-        const bodyLines = rows.map((row) => cols.map((c, idx) => this._padTableCell((row && row[idx]) || "", c.width, c.align)).join("  "));
-        return [headerLine, dividerLine, ...bodyLines].join("\n");
-    }
-
-    _formatSpeculativeQualityTablesText() {
-        if (this._isRollingContextEngine()) return "";
-        const rows = Array.isArray(this.speculativeQualityRows) ? this.speculativeQualityRows : [];
-        if (!rows.length) return "";
-        const latest = rows[rows.length - 1] || {};
-        const fixtureId = String(latest.fixtureId || this._getFixtureIdForBenchmark() || "").trim();
-
-        const progressRows = rows.map((row, idx) => [
-            String(idx + 1),
-            String(row.stamp || ""),
-            `${Number(row.windowsScored || 0)}/${Number(row.windowsTotal || 0)}`,
-            String(Number(row.windowsMissingTarget || 0)),
-            String(Number(row.openWindowItems || 0)),
-        ]);
-
-        const similarityRows = rows.map((row, idx) => [
-            String(idx + 1),
-            String(row.stamp || ""),
-            String(row.suffixLastCell || "0|--|--|--"),
-            String(row.suffixBestCell || "0|--|--|--"),
-            String(row.mergedLastCell || "0|--|--|--"),
-            String(row.mergedBestCell || "0|--|--|--"),
-            String(row.rawLastCell || "0|--|--|--"),
-        ]);
-
-        const sections = [];
-        sections.push(`Speculative Benchmark Timeline (proxy vs final${fixtureId ? ` · ${fixtureId}` : ""})`);
-        sections.push("Similarity Table (cell = n|mean|p50|p90)");
-        sections.push(this._formatAsciiTable(["#", "Time", "SuffixLast", "SuffixBest", "MergedLast", "MergedBest", "RawLast"], similarityRows, ["right", "left", "left", "left", "left", "left", "left"]));
-        sections.push("Progress Table (1 row = 1 speculative benchmark update)");
-        sections.push(this._formatAsciiTable(["#", "Time", "Win", "Missing", "Open"], progressRows, ["right", "left", "right", "right", "right"]));
-        sections.push("Legend: Win=scored/total windows. Higher is better. Proxy metric vs final chunk target (diagnostic, not final score).");
-        return sections.join("\n\n");
-    }
-
-    applySemiliveSpeculativeQualityEnvelope(envelope) {
-        const e = envelope && typeof envelope === "object" ? envelope : {};
-        this.speculativeQualityEnvelope = e;
-        this.speculativeQualitySummaryText = this.formatSpeculativeQualitySummary(e);
-        this._appendSpeculativeQualityRow(e);
-        this.updateQualityPlaceholder();
-    }
-
-    async refreshSemiliveSpeculativeQuality(options = {}) {
-        const quiet = options.quiet === true;
-        const sid = this.getCurrentSessionId();
-        if (!sid || !this.sessionService) return false;
-        if (this.speculativeQualityInFlight) return false;
-        this.speculativeQualityInFlight = true;
-        try {
-            const envelope = await this.sessionService.fetchSpeculativeQuality(sid);
-            this.applySemiliveSpeculativeQualityEnvelope(envelope);
-            return true;
-        } catch (err) {
-            if (!quiet) {
-                const msg = err && err.message ? err.message : String(err);
-                this.appendLog(`Speculative quality fetch failed: ${msg}`);
-            }
-            return false;
-        } finally {
-            this.speculativeQualityInFlight = false;
-            this.updateControls();
-        }
-    }
-
-    applySemiliveQualityEnvelope(envelope) {
+    applyLiveQualityEnvelope(envelope) {
         const e = envelope && typeof envelope === "object" ? envelope : {};
         this.qualityEnvelope = e;
         this.qualitySummaryText = this.formatQualitySummary(e);
@@ -928,7 +629,7 @@ export class LiveView {
         this.qualityLoadedRevision = Number.isFinite(revision) ? revision : -1;
     }
 
-    async refreshSemiliveQuality(options = {}) {
+    async refreshLiveQuality(options = {}) {
         const quiet = options.quiet === true;
         const sid = this.getCurrentSessionId();
         if (!sid || !this.sessionService) return false;
@@ -936,7 +637,7 @@ export class LiveView {
         this.qualityInFlight = true;
         try {
             const envelope = await this.sessionService.fetchQuality(sid);
-            this.applySemiliveQualityEnvelope(envelope);
+            this.applyLiveQualityEnvelope(envelope);
             return true;
         } catch (err) {
             if (!quiet) {
@@ -956,10 +657,10 @@ export class LiveView {
         if (!Array.isArray(this.qualityTimelineEntries)) {
             this.qualityTimelineEntries = [];
         }
-        const label = kind === "final" ? "Final quality" : "Speculative update";
+        const label = "Final quality";
         const stamp = new Date().toISOString().slice(11, 19);
         const entry = {
-            kind: String(kind || "speculative"),
+            kind: String(kind || "final"),
             label,
             stamp,
             body,
@@ -987,16 +688,12 @@ export class LiveView {
     updateQualityPlaceholder() {
         if (!this.el.qualityText) return;
 
-        const isRollingContext = this._isRollingContextEngine();
-        const speculativeTablesTxt = this._formatSpeculativeQualityTablesText();
         const finalTimelineTxt = this._formatQualityTimelineText({ includeKinds: ["final"] });
         const combinedSections = [];
-        if (!isRollingContext && speculativeTablesTxt) combinedSections.push(speculativeTablesTxt);
         if (finalTimelineTxt) combinedSections.push(`Final Fixture Benchmark\n${finalTimelineTxt}`);
         const timelineTxt = combinedSections.join("\n\n").trim();
         const finalTxt = String(this.qualitySummaryText || "").trim();
-        const speculativeTxt = isRollingContext ? "" : String(this.speculativeQualitySummaryText || "").trim();
-        const txt = timelineTxt || finalTxt || speculativeTxt;
+        const txt = timelineTxt || finalTxt;
         if (txt) {
             this.el.qualityText.textContent = txt;
             this.el.qualityText.setAttribute("data-empty", "0");
@@ -1012,17 +709,15 @@ export class LiveView {
             : {};
         const fixtureId = String((result && result.fixture_id) || (this.currentFixtureMeta && this.currentFixtureMeta.fixture_id) || "").trim();
         let placeholder = "Quality score appears here for fixture runs.";
-        if (fixtureId && (this.awaitingSemiliveResult || this.audioStreaming || this.remoteState === "finalizing")) {
-            placeholder = isRollingContext
-                ? `Fixture ${fixtureId}: live updates during the run; final quality score appears when the transcript is ready.`
-                : `Fixture ${fixtureId}: speculative benchmark updates during the run; final quality score appears when the transcript is ready.`;
+        if (fixtureId && (this.awaitingLiveResult || this.audioStreaming || this.remoteState === "finalizing")) {
+            placeholder = `Fixture ${fixtureId}: final quality score appears when the transcript is ready.`;
         } else if (fixtureId) {
             placeholder = `Fixture ${fixtureId}: no quality score available yet.`;
         }
         this.el.qualityText.setAttribute("data-placeholder", placeholder);
     }
 
-    applySemiliveResultEnvelope(envelope) {
+    applyLiveResultEnvelope(envelope) {
         const e = envelope && typeof envelope === "object" ? envelope : {};
         const result = e.result && typeof e.result === "object" ? e.result : {};
         const sid = this.getCurrentSessionId();
@@ -1036,29 +731,29 @@ export class LiveView {
         this.resultSrtUrl = this.resultCanExportSrt ? String(e.transcript_srt_url || "") : "";
 
         const finalText = String(result.final_text || "");
-        const speculativePreview = result.speculative_preview && typeof result.speculative_preview === "object"
-            ? result.speculative_preview
+        const preview = result.preview && typeof result.preview === "object"
+            ? result.preview
             : {};
-        const speculativeText = String(speculativePreview.text || "");
-        const speculativeSeq = Number(speculativePreview.speculative_seq ?? -1);
+        const previewText = String(preview.text || "");
+        const previewSeq = Number(preview.preview_seq ?? -1);
         let transcriptChanged = false;
         if (this.finalText !== finalText) {
             this.finalText = finalText;
             transcriptChanged = true;
         }
-        const nextSpeculativeText = speculativeText;
-        if (this.speculativePreviewText !== nextSpeculativeText) {
-            this.speculativePreviewText = nextSpeculativeText;
+        const nextPreviewText = previewText;
+        if (this.previewText !== nextPreviewText) {
+            this.previewText = nextPreviewText;
             transcriptChanged = true;
         }
-        if (this.speculativePreviewSeq !== speculativeSeq) {
-            this.speculativePreviewSeq = speculativeSeq;
+        if (this.previewSeq !== previewSeq) {
+            this.previewSeq = previewSeq;
         }
         if (transcriptChanged) {
             this.renderTranscriptText();
         }
 
-        this.partialText = this.formatSemiliveSummary(result);
+        this.partialText = this.formatLiveSummary(result);
         this.updatePartialPlaceholder();
         this.currentFixtureMeta = String(result.fixture_id || "").trim()
             ? {
@@ -1072,12 +767,9 @@ export class LiveView {
         const finalizationState = String(result.finalization_state || "").trim().toLowerCase();
         const ready = !!e.ready || finalizationState === "ready";
         const fixtureIdForBenchmark = String(result.fixture_id || (this.currentFixtureMeta && this.currentFixtureMeta.fixture_id) || "").trim();
-        if (fixtureIdForBenchmark && !ready) {
-            void this.refreshSemiliveSpeculativeQuality({ quiet: true });
-        }
 
         if (ready) {
-            this.awaitingSemiliveResult = false;
+            this.awaitingLiveResult = false;
             if (!this.audioStreaming) {
                 this.remoteState = "ready";
                 this.setStatus("ready", "Transcript ready. Download TXT, SRT, or WAV.");
@@ -1089,15 +781,15 @@ export class LiveView {
                 && Number(this.qualityLoadedRevision) === rev
             );
             if (String(result.fixture_id || "").trim() && !qualityAlreadyLoaded) {
-                void this.refreshSemiliveQuality({ quiet: true });
+                void this.refreshLiveQuality({ quiet: true });
             }
         } else if (!this.audioStreaming) {
             if (finalizationState === "error") {
-                this.awaitingSemiliveResult = false;
+                this.awaitingLiveResult = false;
                 this.remoteState = "error";
                 this.setStatus("error", "Transcript processing failed.");
                 this.stopResultPolling();
-            } else if (this.awaitingSemiliveResult || this.remoteState === "ended" || this.remoteState === "disconnected") {
+            } else if (this.awaitingLiveResult || this.remoteState === "ended" || this.remoteState === "disconnected") {
                 this.remoteState = "finalizing";
                 this.setStatus("finalizing", "Transcript is being processed in chunks...");
             }
@@ -1106,7 +798,7 @@ export class LiveView {
         this.updateControls();
     }
 
-    async refreshSemiliveResult(options = {}) {
+    async refreshLiveResult(options = {}) {
         const quiet = options.quiet === true;
         const sid = this.getCurrentSessionId();
         if (!sid || !this.sessionService) return false;
@@ -1116,7 +808,7 @@ export class LiveView {
         this.updateControls();
         try {
             const envelope = await this.sessionService.fetchResult(sid);
-            this.applySemiliveResultEnvelope(envelope);
+            this.applyLiveResultEnvelope(envelope);
             return true;
         } catch (err) {
             if (!quiet) {
@@ -1136,10 +828,10 @@ export class LiveView {
 
         this.stopResultPolling();
         if (immediate) {
-            void this.refreshSemiliveResult({ quiet: true });
+            void this.refreshLiveResult({ quiet: true });
         }
         this.resultPollTimerId = window.setInterval(() => {
-            void this.refreshSemiliveResult({ quiet: true });
+            void this.refreshLiveResult({ quiet: true });
         }, intervalMs);
         this.updateControls();
     }
@@ -1151,7 +843,7 @@ export class LiveView {
         }
     }
 
-    downloadSemiliveTranscript(kind) {
+    downloadLiveTranscript(kind) {
         const normalized = String(kind || "").trim().toLowerCase();
         const url = normalized === "wav"
             ? this.resultWavUrl
@@ -1183,9 +875,9 @@ export class LiveView {
 
         const lines = [
             `bytes=${num("bytes_received")} frames=${num("frames_received")} uptime=${num("uptime_s").toFixed(2)}s`,
-            `mode=${String(p.live_mode || "semilive_chunked")} recording=${boolish("semilive_recording_state")} finalization=${boolish("semilive_finalization_state")}`,
-            `rec_ms=${num("semilive_recording_duration_ms")} chunks=${num("semilive_chunks_done")}/${num("semilive_chunks_total")} failed=${num("semilive_chunks_failed")}`,
-            `jobs pending=${num("semilive_chunk_jobs_pending")} queue=${num("semilive_chunk_jobs_to_enqueue")} chunk_open=${boolish("semilive_chunker_chunk_open")}`,
+            `mode=${String(p.live_mode || "single_lane")} recording=${boolish("live_recording_state")} finalization=${boolish("live_finalization_state")}`,
+            `rec_ms=${num("live_recording_duration_ms")} chunks=${num("live_commits_done")}/${num("live_commits_total")} failed=${num("live_commits_failed")}`,
+            `jobs pending=${num("live_jobs_pending")} inflight=${boolish("live_inflight")}`,
         ];
 
         const extra = Object.keys(p)
@@ -1254,10 +946,10 @@ export class LiveView {
         try {
             await this.sessionService.connect();
             this.stopResultPolling();
-            this.resetSemiliveResultState();
+            this.resetLiveResultState();
             this.currentFixtureMeta = null;
-            this.awaitingSemiliveResult = false;
-            void this.refreshSemiliveResult({ quiet: true });
+            this.awaitingLiveResult = false;
+            void this.refreshLiveResult({ quiet: true });
             this.updateQualityPlaceholder();
             this.updateControls();
             return true;
@@ -1363,12 +1055,12 @@ export class LiveView {
 
             this.audioStreaming = true;
             this.audioPaused = false;
-            this.awaitingSemiliveResult = false;
+            this.awaitingLiveResult = false;
             this.remoteState = "listening";
             this.startRecordingTimer();
             this.sessionService.sendControl("start");
             this.startResultPolling({ immediate: true, intervalMs: 1500 });
-            this.setStatus("listening", "Recording in progress. Transcript updates chunk by chunk.");
+            this.setStatus("listening", "Recording in progress.");
             this.updatePartialPlaceholder();
         } catch (err) {
             const msg = err && err.message ? err.message : String(err);
@@ -1406,7 +1098,7 @@ export class LiveView {
         this.startRecordingTimer();
         this.sessionService && this.sessionService.sendControl("resume");
         this.startResultPolling({ immediate: false, intervalMs: 1500 });
-        this.setStatus("listening", "Recording in progress. Transcript updates chunk by chunk.");
+        this.setStatus("listening", "Recording in progress.");
         this.updatePartialPlaceholder();
         this.updateControls();
     }
@@ -1695,11 +1387,11 @@ export class LiveView {
             this.stopRecordingTimer({ reset: true });
             this.audioStreaming = true;
             this.audioPaused = false;
-            this.awaitingSemiliveResult = false;
+            this.awaitingLiveResult = false;
             this.remoteState = "listening";
             this.sessionService.sendControl("start");
             this.startResultPolling({ immediate: true, intervalMs: 1500 });
-            this.setStatus("listening", "Fixture inject in progress. Transcript updates chunk by chunk.");
+            this.setStatus("listening", "Fixture inject in progress.");
             this.updatePartialPlaceholder();
 
             this.currentFixtureMeta = {
@@ -1766,7 +1458,7 @@ export class LiveView {
             }
         }
 
-        this.awaitingSemiliveResult = true;
+        this.awaitingLiveResult = true;
         this.remoteState = "finalizing";
         this.startResultPolling({ immediate: true, intervalMs: 1000 });
         this.setStatus("finalizing", "Recording stopped. Processing final chunks...");
@@ -1792,7 +1484,7 @@ export class LiveView {
         this.stopAudioCapture({ quiet: true });
         this.stopRecordingTimer({ reset: true });
         this.stopResultPolling();
-        this.awaitingSemiliveResult = false;
+        this.awaitingLiveResult = false;
 
         if (this.sessionService) {
             this.sessionService.destroy(reason, { sendStop: options.sendStop !== false });
@@ -1914,16 +1606,16 @@ export class LiveView {
         if (t === "ready") {
             this.remoteState = "ready";
             this.setStatus("ready", "Ready. Start recording; transcript will appear in chunks.");
-            void this.refreshSemiliveResult({ quiet: true });
+            void this.refreshLiveResult({ quiet: true });
         } else if (t === "control_ack") {
             this.remoteState = String(payload.state || this.remoteState || "connected");
             const ctl = String(payload.control_type || "").toLowerCase();
             if (ctl === "pause") {
                 this.setStatus("paused", "Recording paused. Resume to continue.");
             } else if (ctl === "resume" || ctl === "start") {
-                this.setStatus("listening", "Recording in progress. Transcript updates chunk by chunk.");
+                this.setStatus("listening", "Recording in progress.");
             } else if (ctl === "stop") {
-                this.awaitingSemiliveResult = true;
+                this.awaitingLiveResult = true;
                 this.remoteState = "finalizing";
                 this.startResultPolling({ immediate: true, intervalMs: 1000 });
                 this.setStatus("finalizing", "Finalizing recording. Processing final chunks...");
@@ -1942,13 +1634,13 @@ export class LiveView {
                 `Stats: ${b} bytes, ${f} frames, ${s.toFixed(2)}s, decode ${decodeMs.toFixed(2)}ms, rtf ${rtf.toFixed(3)}\n\n${this.formatStatsPayload(payload)}`
             );
         } else if (t === "partial") {
-            // WhisperLive preview is intentionally de-emphasized in semilive UX.
+            // WhisperLive preview is intentionally de-emphasized in live UX.
         } else if (t === "final") {
-            // Final transcript for the user comes from semilive result polling (/result).
+            // Final transcript for the user comes from live result polling (/result).
         } else if (t === "ended") {
             this.stopAudioCapture({ quiet: true });
             this.stopRecordingTimer({ reset: false });
-            this.awaitingSemiliveResult = true;
+            this.awaitingLiveResult = true;
             this.remoteState = "finalizing";
             this.startResultPolling({ immediate: true, intervalMs: 1000 });
             this.setStatus("finalizing", `Recording finished (${payload.reason || "unknown"}). Transcript is being processed...`);
@@ -1959,7 +1651,7 @@ export class LiveView {
             if (payload.fatal) {
                 this.stopAudioCapture({ quiet: true });
                 this.stopRecordingTimer({ reset: false });
-                if (this.awaitingSemiliveResult) {
+                if (this.awaitingLiveResult) {
                     this.startResultPolling({ immediate: true, intervalMs: 1000 });
                 }
             }
