@@ -106,82 +106,90 @@ export class LiveView {
         return `
       <div class="live-wrap">
 
-        <!-- Main canvas -->
-        <div class="live-canvas">
+        <!-- Main content area (always 100vh) -->
+        <div class="live-main">
 
-          <!-- Canvas header: status badge -->
-          <div class="live-canvas-header">
+        <!-- Top bar: badge only -->
+        <header class="live-header">
+          <div class="header-left">
             <span class="live-status-badge status-idle" id="liveStatusBadge">Ready</span>
           </div>
+        </header>
 
-          <!-- Transcript area -->
-          <div class="live-transcript-area" id="liveTranscriptArea">
+        <!-- Content area (no card, full height) -->
+        <div class="live-content-area" id="liveTranscriptArea">
 
-            <!-- Idle placeholder -->
-            <div class="live-placeholder" id="livePlaceholder">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                <line x1="12" y1="19" x2="12" y2="22"></line>
-              </svg>
-              <span>Click start to begin recording...</span>
+          <!-- Idle placeholder -->
+          <div class="live-placeholder" id="livePlaceholder">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="22"></line>
+            </svg>
+            <span>Click start to begin recording...</span>
+
+            <!-- Idle: round start button moved inside placeholder -->
+            <div class="live-float-idle" id="liveFloatIdle" style="margin-top: 16px;">
+              <button class="btn-primary-start" id="liveStartBtn" type="button" title="Start Recording" aria-label="Start Recording"></button>
             </div>
-
-            <!-- Transcript text (hidden when idle) -->
-            <div id="liveFinalText" class="live-final-text hidden" aria-live="polite" tabindex="0">
-              <span id="liveFinalTextMain" class="live-final-text-main"></span><span id="liveFinalTextPreview" class="live-final-text-preview hidden"></span>
-            </div>
-
           </div>
 
-          <!-- Floating controls card (bottom-center) -->
-          <div class="live-controls-float" id="liveControlsFloat">
+          <!-- Transcript text (hidden when idle) -->
+          <div id="liveFinalText" class="live-final-text hidden" aria-live="polite" tabindex="0">
+            <span id="liveFinalTextMain" class="live-final-text-main"></span><span id="liveFinalTextPreview" class="live-final-text-preview hidden"></span>
+          </div>
 
-            <!-- Timer (visible in listening/paused) -->
-            <div class="live-float-timer hidden" id="liveDurationText">00:00</div>
+        </div>
 
-            <!-- Idle: big start button -->
-            <div class="live-float-idle" id="liveFloatIdle">
-              <button class="live-btn-start" id="liveStartBtn" type="button" title="Start Recording" aria-label="Start Recording"></button>
-            </div>
+        <!-- Fixed Bottom Controls -->
+        <div class="live-bottom-bar" id="liveControlsFloat">
 
+          <!-- Left: Timer -->
+          <div class="controls-left">
+            <div class="timer hidden" id="liveDurationText">00:00</div>
+          </div>
+
+          <!-- Center: Actions -->
+          <div class="controls-center">
             <!-- Listening: Pause + Finish -->
-            <div class="live-float-listening hidden" id="liveFloatListening">
-              <div class="live-float-btn-row">
-                <button class="live-float-btn-secondary" id="livePauseBtn" type="button">Pause</button>
-                <button class="live-float-btn-danger" id="liveStopBtn" type="button">Finish</button>
-              </div>
+            <div class="live-float-listening hidden" id="liveFloatListening" style="display: flex; gap: 8px;">
+              <button class="btn-secondary" id="livePauseBtn" type="button">Pause</button>
+              <button class="btn-danger" id="liveStopBtn" type="button">Finish</button>
             </div>
 
             <!-- Paused: Resume + Finish -->
-            <div class="live-float-paused hidden" id="liveFloatPaused">
-              <div class="live-float-btn-row">
-                <button class="live-float-btn-secondary" id="liveResumeBtn" type="button">Resume</button>
-                <button class="live-float-btn-danger" id="liveStopPausedBtn" type="button">Finish</button>
-              </div>
-            </div>
-
-            <!-- Finished: downloads + clear -->
-            <div class="live-float-finished hidden" id="liveFloatFinished">
-              <div class="live-float-btn-row">
-                <button class="live-float-btn-outline" id="liveDownloadWavBtn" type="button" disabled>Download WAV</button>
-                <button class="live-float-btn-outline" id="liveDownloadTxtBtn" type="button" disabled>Download TXT</button>
-                <button class="live-float-btn-outline" id="liveDownloadSrtBtn" type="button" disabled>Download SRT</button>
-              </div>
-              <button class="live-float-btn-clear" id="liveClearBtn" type="button">Clear transcript</button>
+            <div class="live-float-paused hidden" id="liveFloatPaused" style="display: flex; gap: 8px;">
+              <button class="btn-secondary" id="liveResumeBtn" type="button">Resume</button>
+              <button class="btn-danger" id="liveStopPausedBtn" type="button">Finish</button>
             </div>
 
             <!-- Connecting / Finalizing: status message -->
             <div class="live-float-processing hidden" id="liveFloatProcessing">
               <span class="live-float-processing-text" id="liveProcessingText">Connecting...</span>
             </div>
+          </div>
+
+          <!-- Right: Exports + Dev Toggle -->
+          <div class="controls-right" style="flex-wrap: wrap; justify-content: flex-end;">
+            <!-- Finished: downloads + clear -->
+            <div class="live-float-finished hidden" id="liveFloatFinished" style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+              <button class="btn-outline" id="liveDownloadWavBtn" type="button" disabled>Download WAV</button>
+              <button class="btn-outline" id="liveDownloadTxtBtn" type="button" disabled>Download TXT</button>
+              <button class="btn-outline" id="liveDownloadSrtBtn" type="button" disabled>Download SRT</button>
+              <button class="btn-outline" id="liveClearBtn" type="button" style="color: var(--accent-red); border-color: transparent;">Clear transcript</button>
+            </div>
+
+            <div class="spacer" style="width: 1px; height: 24px; background: var(--border-color); margin: 0 8px;"></div>
 
             <!-- Dev Tools toggle (always visible) -->
-            <button class="live-dev-toggle-link" id="liveDevToggleBtn" type="button" aria-expanded="false">⚙ Dev Tools</button>
-
+            <button class="btn-outline" id="liveDevToggleBtn" type="button" aria-expanded="false" style="border-color: transparent; color: var(--text-muted); font-size: 0.8rem; padding: 4px 8px;">⚙ Dev Tools</button>
           </div>
 
         </div>
+
+        </div>
+        <!-- /live-main -->
+
 
         <!-- Dev section (hidden by default) -->
         <div class="live-dev-section hidden" id="liveDevSection">
