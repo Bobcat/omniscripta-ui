@@ -517,6 +517,9 @@ export class LiveView {
         const finalValue = this._formatFinalDisplayText(this.finalText || "");
         const previewSuffix = this._formatPreviewSuffixText(finalValue, this.previewText);
 
+        // Remember if user was at bottom before adding new content
+        const wasAtBottom = this._isAtBottom();
+
         if (this.el.finalTextMain) {
             this.el.finalTextMain.textContent = finalValue;
         }
@@ -524,9 +527,19 @@ export class LiveView {
             this.el.finalTextPreview.textContent = previewSuffix;
             this.el.finalTextPreview.classList.toggle("hidden", !previewSuffix);
         }
-        if (this.el.finalText) {
+        
+        // Only auto-scroll if user was already at bottom
+        // If user scrolled back to read, respect that and don't jump
+        if (wasAtBottom && this.el.finalText) {
             this.el.finalText.scrollTop = this.el.finalText.scrollHeight;
         }
+    }
+
+    _isAtBottom() {
+        if (!this.el.finalText) return true;
+        const el = this.el.finalText;
+        // Within 40px of bottom = "at bottom"
+        return el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
     }
 
     getCurrentSessionId() {
