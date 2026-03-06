@@ -137,6 +137,27 @@ export class LiveAudioService {
         return !!this.paused;
     }
 
+    async _enumerateAudioInputs() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            return devices.filter(d => d.kind === 'audioinput');
+        } catch (e) {
+            return [];
+        }
+    }
+
+    async _tryGetUserMedia(constraints, label) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            this.log(`Mic acquired${label ? ` (${label})` : ''}`);
+            return stream;
+        } catch (err) {
+            const name = String(err && err.name ? err.name : "").trim();
+            const isPermissionError = ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(name);
+            return { error: err, isPermissionError };
+        }
+    }
+
     async start() {
         if (this.started) {
             this.paused = false;
@@ -147,8 +168,19 @@ export class LiveAudioService {
             throw new Error("Microphone API not available in this browser.");
         }
 
-        const dspEnabled = false;
-        const constraints = {
+        let dspEnabled = false;
+        try {
+            const cfgResp = await fetch("/api/config", { cache: "no-store" });
+            if (cfgResp && cfgResp.ok) {
+                const cfg = await cfgResp.json();
+                dspEnabled = !!(cfg && cfg.live_auto_gain_control);
+            }
+        } catch {
+            // keep default false when config endpoint is unavailable
+        }
+        
+        // Strategy 1: Try standard constraints first
+        const standardConstraints = {
             audio: {
                 channelCount: 1,
                 sampleRate: this.targetSampleRate,
@@ -158,40 +190,85 @@ export class LiveAudioService {
             },
             video: false,
         };
-
-        try {
-            this.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-        } catch (err) {
-            const firstMsg = err && err.message ? err.message : String(err);
-            const firstName = String(err && err.name ? err.name : "").trim();
-            const isPermissionError = ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(firstName);
-            if (isPermissionError) {
-                this.log(`Primary mic constraints failed (${firstName || "permission"}: ${firstMsg}); not retrying permission-denied request`);
-                throw err;
-            }
-            this.log(`Primary mic constraints failed (${firstMsg}); retrying with relaxed constraints`);
-            const relaxedConstraints = {
-                audio: {
-                    noiseSuppression: dspEnabled,
-                    echoCancellation: dspEnabled,
-                    autoGainControl: dspEnabled,
-                },
-                video: false,
-            };
-            try {
-                this.mediaStream = await navigator.mediaDevices.getUserMedia(relaxedConstraints);
-            } catch (err2) {
-                const secondMsg = err2 && err2.message ? err2.message : String(err2);
-                const secondName = String(err2 && err2.name ? err2.name : "").trim();
-                const secondIsPermissionError = ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(secondName);
-                if (secondIsPermissionError) {
-                    this.log(`Relaxed mic constraints failed (${secondName || "permission"}: ${secondMsg}); not retrying permission-denied request`);
-                    throw err2;
+        
+        let result = await this._tryGetUserMedia(standardConstraints, "standard constraints");
+        if (result instanceof MediaStream) {
+            this.mediaStream = result;
+        } else if (result.isPermissionError) {
+            throw result.error;
+        } else {
+            // Strategy 2: Get list of available devices and try each one
+            this.log(`Standard constraints failed (${result.error && result.error.message ? result.error.message : String(result.error)}); scanning for available mics...`);
+            
+            const devices = await this._enumerateAudioInputs();
+            const deviceIds = devices
+                .filter(d => d.deviceId)
+                .map(d => ({ id: d.deviceId, label: d.label || d.deviceId.slice(0, 8) }));
+            
+            this.log(`Found ${deviceIds.length} audio input(s)`);
+            
+            let acquiredStream = null;
+            
+            // Try each device with relaxed constraints
+            for (const device of deviceIds) {
+                this.log(`Trying device: ${device.label}...`);
+                const deviceConstraints = {
+                    audio: {
+                        deviceId: { exact: device.id },
+                        noiseSuppression: dspEnabled,
+                        echoCancellation: dspEnabled,
+                        autoGainControl: dspEnabled,
+                    },
+                    video: false,
+                };
+                
+                result = await this._tryGetUserMedia(deviceConstraints, `device ${device.label}`);
+                if (result instanceof MediaStream) {
+                    acquiredStream = result;
+                    this.log(`Successfully acquired mic: ${device.label}`);
+                    break;
                 }
-                this.log(`Relaxed mic constraints failed (${secondMsg}); retrying with audio:true`);
-                this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                if (result.isPermissionError) {
+                    throw result.error;
+                }
             }
+            
+            // Strategy 3: If no specific device worked, try default
+            if (!acquiredStream) {
+                this.log("No specific device worked; trying default mic...");
+                const defaultConstraints = {
+                    audio: {
+                        noiseSuppression: dspEnabled,
+                        echoCancellation: dspEnabled,
+                        autoGainControl: dspEnabled,
+                    },
+                    video: false,
+                };
+                
+                result = await this._tryGetUserMedia(defaultConstraints, "default");
+                if (result instanceof MediaStream) {
+                    acquiredStream = result;
+                } else if (result.isPermissionError) {
+                    throw result.error;
+                }
+            }
+            
+            // Strategy 4: Last resort - any audio
+            if (!acquiredStream) {
+                this.log("Default failed; trying any available audio...");
+                result = await this._tryGetUserMedia({ audio: true, video: false }, "any audio");
+                if (result instanceof MediaStream) {
+                    acquiredStream = result;
+                } else if (result.isPermissionError) {
+                    throw result.error;
+                } else {
+                    throw result.error;
+                }
+            }
+            
+            this.mediaStream = acquiredStream;
         }
+        
         this.log(`Browser DSP ${dspEnabled ? "enabled" : "disabled"}`);
 
         const Ctx = window.AudioContext || window.webkitAudioContext;

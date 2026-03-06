@@ -109,10 +109,13 @@ export class LiveView {
         <!-- Main content area (always 100vh) -->
         <div class="live-main">
 
-        <!-- Top bar: badge only -->
+        <!-- Top bar: badge + timer -->
         <header class="live-header">
           <div class="header-left">
             <span class="live-status-badge status-idle" id="liveStatusBadge">Ready</span>
+          </div>
+          <div class="header-right">
+            <div class="timer timer-top hidden" id="liveDurationTextTop">00:00</div>
           </div>
         </header>
 
@@ -170,13 +173,13 @@ export class LiveView {
           </div>
 
           <!-- Right: Exports + Dev Toggle -->
-          <div class="controls-right" style="flex-wrap: wrap; justify-content: flex-end;">
+          <div class="controls-right" style="flex-wrap: nowrap; justify-content: flex-end;">
             <!-- Finished: downloads + clear -->
-            <div class="live-float-finished hidden" id="liveFloatFinished" style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
-              <button class="btn-outline" id="liveDownloadWavBtn" type="button" disabled>Download WAV</button>
-              <button class="btn-outline" id="liveDownloadTxtBtn" type="button" disabled>Download TXT</button>
-              <button class="btn-outline" id="liveDownloadSrtBtn" type="button" disabled>Download SRT</button>
-              <button class="btn-outline" id="liveClearBtn" type="button" style="color: var(--accent-red); border-color: transparent;">Clear transcript</button>
+            <div class="live-float-finished hidden" id="liveFloatFinished" style="display: flex; gap: 6px; flex-wrap: nowrap; justify-content: flex-end;">
+              <button class="btn-outline btn-compact" id="liveDownloadWavBtn" type="button" disabled>WAV</button>
+              <button class="btn-outline btn-compact" id="liveDownloadTxtBtn" type="button" disabled>TXT</button>
+              <button class="btn-outline btn-compact" id="liveDownloadSrtBtn" type="button" disabled>SRT</button>
+              <button class="btn-outline btn-compact" id="liveClearBtn" type="button" style="color: var(--accent-red); border-color: transparent;">Clear</button>
             </div>
 
             <div class="spacer" style="width: 1px; height: 24px; background: var(--border-color); margin: 0 8px;"></div>
@@ -335,6 +338,7 @@ export class LiveView {
     captureElements() {
         this.el.statusBadge = document.getElementById("liveStatusBadge");
         this.el.durationText = document.getElementById("liveDurationText");
+        this.el.durationTextTop = document.getElementById("liveDurationTextTop");
         this.el.sessionId = document.getElementById("liveSessionId");
         this.el.startBtn = document.getElementById("liveStartBtn");
         this.el.pauseBtn = document.getElementById("livePauseBtn");
@@ -1021,6 +1025,7 @@ export class LiveView {
         // Timer: visible in listening + paused
         const showTimer = phase === "listening" || phase === "paused";
         if (this.el.durationText) this.el.durationText.classList.toggle("hidden", !showTimer);
+        if (this.el.durationTextTop) this.el.durationTextTop.classList.toggle("hidden", !showTimer);
 
         // Floating card panels
         if (this.el.floatIdle) this.el.floatIdle.classList.toggle("hidden", phase !== "idle");
@@ -1653,7 +1658,7 @@ export class LiveView {
     }
 
     updateDurationDisplay() {
-        if (!this.el.durationText) return;
+        if (!this.el.durationText && !this.el.durationTextTop) return;
         const totalSeconds = Math.floor(this.getRecordingElapsedMs() / 1000);
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -1661,9 +1666,11 @@ export class LiveView {
 
         const mm = String(minutes).padStart(2, "0");
         const ss = String(seconds).padStart(2, "0");
-        this.el.durationText.textContent = hours > 0
+        const display = hours > 0
             ? `${String(hours).padStart(2, "0")}:${mm}:${ss}`
             : `${mm}:${ss}`;
+        if (this.el.durationText) this.el.durationText.textContent = display;
+        if (this.el.durationTextTop) this.el.durationTextTop.textContent = display;
     }
 
     updatePartialPlaceholder() {

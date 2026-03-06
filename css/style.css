@@ -2688,6 +2688,13 @@
       flex: 1 1 0;
     }
 
+    .live-header .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
     /* ---- Bottom bar chrome ---- */
     .live-bottom-bar {
       display: flex;
@@ -2722,7 +2729,7 @@
       display: flex;
       align-items: center;
       justify-content: flex-end;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
       flex: 1 1 0;
     }
@@ -2776,6 +2783,10 @@
       font-size: 0.92rem;
       font-weight: 600;
       color: var(--text-main, #1e293b);
+    }
+
+    .timer.timer-top {
+      font-size: 1.2rem;
     }
 
     /* Big round start button */
@@ -2854,6 +2865,11 @@
       font-size: 0.9rem;
       cursor: pointer;
       transition: background-color 0.15s;
+    }
+
+    .btn-outline.btn-compact {
+      padding: 6px 10px;
+      font-size: 0.85rem;
     }
 
     .btn-outline:hover:not([disabled]) {
@@ -3393,9 +3409,7 @@
 
     .live-final-text {
       width: 100%;
-      min-height: 420px;
       flex: 1 1 auto;
-      overflow: auto;
       padding: 12px;
       font-size: 0.94rem;
       line-height: 1.55;
@@ -3452,7 +3466,7 @@
       }
 
       .live-final-text {
-        min-height: 300px;
+        min-height: 0;
       }
 
       .live-controls-grid-dev {
