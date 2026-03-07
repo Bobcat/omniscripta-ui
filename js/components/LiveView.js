@@ -185,7 +185,10 @@ export class LiveView {
             <div class="spacer" style="width: 1px; height: 24px; background: var(--border-color); margin: 0 8px;"></div>
 
             <!-- Dev Tools toggle (always visible) -->
-            <button class="btn-outline" id="liveDevToggleBtn" type="button" aria-expanded="false" style="border-color: transparent; color: var(--text-muted); font-size: 0.8rem; padding: 4px 8px;">⚙ Dev Tools</button>
+            <button class="btn-outline btn-dev-toggle" id="liveDevToggleBtn" type="button" aria-expanded="false" title="Dev Tools">
+              <span class="dev-toggle-icon">⚙</span>
+              <span class="dev-toggle-text">Dev Tools</span>
+            </button>
           </div>
 
         </div>
@@ -216,10 +219,9 @@ export class LiveView {
             </div>
 
             <div class="live-secondary-row live-secondary-row-2up">
-              ${this.isLikelyMobile ? "" : `<button id="liveRunFixturePlayBtn" type="button">Play fixture</button>`}
+              <button id="liveRunFixturePlayBtn" type="button">Play fixture</button>
               <button id="liveRunFixtureInjectBtn" type="button">Inject fixture</button>
             </div>
-            ${this.isLikelyMobile ? `<div class="live-status-copy">Tip: On mobile, use Inject fixture for reliable tests.</div>` : ""}
           </div>
 
           <!-- Run/Benchmark card -->
@@ -425,8 +427,17 @@ export class LiveView {
             this.el.devSection.classList.toggle("hidden", !next);
         }
         if (this.el.devToggleBtn) {
-            this.el.devToggleBtn.textContent = next ? "⚙ Dev Tools ✕" : "⚙ Dev Tools";
+            // Desktop: update text, mobile: handled by CSS
+            const iconSpan = this.el.devToggleBtn.querySelector('.dev-toggle-icon');
+            const textSpan = this.el.devToggleBtn.querySelector('.dev-toggle-text');
+            if (iconSpan) {
+                iconSpan.textContent = next ? "✕" : "⚙";
+            }
+            if (textSpan) {
+                textSpan.textContent = next ? "Hide Dev Tools" : "Dev Tools";
+            }
             this.el.devToggleBtn.setAttribute("aria-expanded", next ? "true" : "false");
+            this.el.devToggleBtn.title = next ? "Hide Dev Tools" : "Dev Tools";
         }
     }
 
