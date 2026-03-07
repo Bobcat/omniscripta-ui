@@ -166,27 +166,15 @@ export class LiveAudioService {
 
         if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
             throw new Error("Microphone API not available in this browser.");
-        }
-
-        let dspEnabled = false;
-        try {
-            const cfgResp = await fetch("/api/config", { cache: "no-store" });
-            if (cfgResp && cfgResp.ok) {
-                const cfg = await cfgResp.json();
-                dspEnabled = !!(cfg && cfg.live_auto_gain_control);
-            }
-        } catch {
-            // keep default false when config endpoint is unavailable
-        }
-        
+        }        
         // Strategy 1: Try standard constraints first
         const standardConstraints = {
             audio: {
                 channelCount: 1,
                 sampleRate: this.targetSampleRate,
-                noiseSuppression: dspEnabled,
-                echoCancellation: dspEnabled,
-                autoGainControl: dspEnabled,
+                noiseSuppression: false,
+                echoCancellation: false,
+                autoGainControl: false,
             },
             video: false,
         };
@@ -215,9 +203,9 @@ export class LiveAudioService {
                 const deviceConstraints = {
                     audio: {
                         deviceId: { exact: device.id },
-                        noiseSuppression: dspEnabled,
-                        echoCancellation: dspEnabled,
-                        autoGainControl: dspEnabled,
+                        noiseSuppression: false,
+                        echoCancellation: false,
+                        autoGainControl: false,
                     },
                     video: false,
                 };
@@ -238,9 +226,9 @@ export class LiveAudioService {
                 this.log("No specific device worked; trying default mic...");
                 const defaultConstraints = {
                     audio: {
-                        noiseSuppression: dspEnabled,
-                        echoCancellation: dspEnabled,
-                        autoGainControl: dspEnabled,
+                        noiseSuppression: false,
+                        echoCancellation: false,
+                        autoGainControl: false,
                     },
                     video: false,
                 };
@@ -268,8 +256,6 @@ export class LiveAudioService {
             
             this.mediaStream = acquiredStream;
         }
-        
-        this.log(`Browser DSP ${dspEnabled ? "enabled" : "disabled"}`);
 
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (!Ctx) {
