@@ -45,6 +45,14 @@ const DEV_LIVE_FIXTURE_OPTIONS = [
     },
 ];
 
+const LIVE_SPEAKER_TAG_PREFIX_RE = /^\s*\[?\s*(speaker[_ ]?\d+|spk[_ ]?\d+)\s*\]?\s*[:\-]/i;
+const LIVE_SPEAKER_TAG_GLOBAL_RE = /\[?\s*(speaker[_ ]?\d+|spk[_ ]?\d+)\s*\]?\s*[:\-]\s*/gi;
+const DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES = {
+    blockEverySegments: 3,
+    blockMinChars: 220,
+    blockMinWords: 35,
+};
+
 export class LiveView {
     constructor(app) {
         this.app = app;
@@ -55,7 +63,8 @@ export class LiveView {
         this.isLikelyMobile = /Android|iPhone|iPad|iPod|Mobile|Opera Mini/i.test(ua) || coarsePointer;
 
         this.remoteState = "idle";
-        this.finalText = "";
+        this.finalSegments = [];
+        this.finalSegmentsSignature = "";
         this.previewText = "";
         this.previewSeq = -1;
         this.partialText = "";
@@ -77,10 +86,8 @@ export class LiveView {
         this.resultPollTimerId = null;
         this.resultPollInFlight = false;
         this.resultEnvelope = null;
-        this.resultCanExportTxt = false;
         this.resultCanExportSrt = false;
         this.resultCanExportWav = false;
-        this.resultTxtUrl = "";
         this.resultSrtUrl = "";
         this.resultWavUrl = "";
         this.qualityEnvelope = null;
@@ -88,6 +95,7 @@ export class LiveView {
         this.qualityLoadedSessionId = "";
         this.qualityLoadedRevision = -1;
         this.qualitySummaryText = "";
+        this.runMetricsSummaryText = "";
         this.qualityTimelineEntries = [];
         this.currentFixtureMeta = null;
 
@@ -98,6 +106,8 @@ export class LiveView {
         this.fixtureWatchdogTimerId = null;
         this.fixtureRunLabel = "";
         this.selectedFixtureKey = DEV_LIVE_FIXTURE_OPTIONS[0] ? DEV_LIVE_FIXTURE_OPTIONS[0].value : "panel120v1";
+        this.devSpeakerLabelsEnabled = true;
+        this.liveTranscriptFormatRules = { ...DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES };
 
         this.el = {};
     }
@@ -222,6 +232,14 @@ export class LiveView {
               <button id="liveRunFixturePlayBtn" type="button">Play fixture</button>
               <button id="liveRunFixtureInjectBtn" type="button">Inject fixture</button>
             </div>
+
+            <div class="live-dev-toggle-row">
+              <div>
+                <div class="live-dev-toggle-label">Speaker Labels In Transcript</div>
+                <div class="live-dev-toggle-help">Show labels only at paragraph starts (never inline in running text).</div>
+              </div>
+              <button id="liveSpeakerLabelsToggleBtn" class="live-dev-toggle-btn" type="button">Off</button>
+            </div>
           </div>
 
           <!-- Run/Benchmark card -->
@@ -234,7 +252,7 @@ export class LiveView {
             </div>
 
             <div class="live-partial-row">
-              <div class="live-label">Fixture benchmark</div>
+              <div class="live-label">Run metrics / benchmark</div>
               <div class="live-partial-text live-quality-report" id="liveQualityText" data-placeholder="Quality score appears here for fixture runs."></div>
             </div>
           </div>
@@ -251,6 +269,8 @@ export class LiveView {
         this.captureElements();
         this.initServices();
         this.bindUi();
+        this.setSpeakerLabelsEnabled(this.devSpeakerLabelsEnabled);
+        void this.loadUiSettings();
         this.updateDurationDisplay();
         this.updatePartialPlaceholder();
         this.updateQualityPlaceholder();
@@ -337,6 +357,38 @@ export class LiveView {
         }
     }
 
+    applyUiSettingsEnvelope(envelope) {
+        const e = envelope && typeof envelope === "object" ? envelope : {};
+        const settings = e.settings && typeof e.settings === "object" ? e.settings : {};
+        const live = settings.live && typeof settings.live === "object" ? settings.live : {};
+
+        const incomingRules = live.transcript_format_rules;
+        if (incomingRules && typeof incomingRules === "object") {
+            const next = { ...DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES };
+            Object.keys(next).forEach((key) => {
+                if (!Object.prototype.hasOwnProperty.call(incomingRules, key)) return;
+                const value = Number(incomingRules[key]);
+                if (!Number.isFinite(value)) return;
+                next[key] = value;
+            });
+            this.liveTranscriptFormatRules = next;
+        }
+        if (Object.prototype.hasOwnProperty.call(live, "speaker_labels_default_enabled")) {
+            this.setSpeakerLabelsEnabled(!!live.speaker_labels_default_enabled);
+        }
+        this.renderTranscriptText();
+    }
+
+    async loadUiSettings() {
+        if (!this.sessionService || typeof this.sessionService.fetchUiSettings !== "function") return;
+        try {
+            const envelope = await this.sessionService.fetchUiSettings();
+            this.applyUiSettingsEnvelope(envelope);
+        } catch (err) {
+            // Keep defaults silently when UI settings endpoint is unavailable.
+        }
+    }
+
     captureElements() {
         this.el.statusBadge = document.getElementById("liveStatusBadge");
         this.el.durationText = document.getElementById("liveDurationText");
@@ -357,6 +409,7 @@ export class LiveView {
         this.el.qualityText = document.getElementById("liveQualityText");
         this.el.devToggleBtn = document.getElementById("liveDevToggleBtn");
         this.el.devSection = document.getElementById("liveDevSection");
+        this.el.speakerLabelsToggleBtn = document.getElementById("liveSpeakerLabelsToggleBtn");
         this.el.finalText = document.getElementById("liveFinalText");
         this.el.finalTextMain = document.getElementById("liveFinalTextMain");
         this.el.finalTextPreview = document.getElementById("liveFinalTextPreview");
@@ -417,6 +470,11 @@ export class LiveView {
         if (this.el.devToggleBtn) {
             this.el.devToggleBtn.addEventListener("click", () => this.toggleDeveloperTools());
         }
+        if (this.el.speakerLabelsToggleBtn) {
+            this.el.speakerLabelsToggleBtn.addEventListener("click", () => {
+                this.setSpeakerLabelsEnabled(!this.devSpeakerLabelsEnabled);
+            });
+        }
     }
 
     toggleDeveloperTools(forceOpen) {
@@ -441,8 +499,16 @@ export class LiveView {
         }
     }
 
+    setSpeakerLabelsEnabled(enabled) {
+        this.devSpeakerLabelsEnabled = !!enabled;
+        if (this.el.speakerLabelsToggleBtn) {
+            this.el.speakerLabelsToggleBtn.textContent = this.devSpeakerLabelsEnabled ? "On" : "Off";
+            this.el.speakerLabelsToggleBtn.setAttribute("aria-pressed", this.devSpeakerLabelsEnabled ? "true" : "false");
+        }
+        this.renderTranscriptText();
+    }
+
     clearOutput() {
-        this.finalText = "";
         this.partialText = "";
         this.lastStatsSummary = "";
         this.resetLiveResultState();
@@ -494,45 +560,255 @@ export class LiveView {
         this.awaitingLiveResult = false;
         this.resultEnvelope = null;
         this.resultCanExportWav = false;
-        this.resultCanExportTxt = false;
         this.resultCanExportSrt = false;
         this.resultWavUrl = "";
-        this.resultTxtUrl = "";
         this.resultSrtUrl = "";
         this.qualityEnvelope = null;
         this.qualityInFlight = false;
         this.qualityLoadedSessionId = "";
         this.qualityLoadedRevision = -1;
         this.qualitySummaryText = "";
+        this.runMetricsSummaryText = "";
         this.qualityTimelineEntries = [];
         this.previewText = "";
         this.previewSeq = -1;
+        this.finalSegments = [];
+        this.finalSegmentsSignature = "";
     }
 
-    _formatFinalDisplayText(finalText) {
-        const value = String(finalText || "");
-        if (!value) return "";
-        return value
-            .replace(/\r\n?/g, "\n")
-            .replace(/[\t ]*\n+[\t ]*/g, " ");
+    _normalizeSegmentText(value) {
+        return String(value || "").replace(/\s+/g, " ").trim();
+    }
+
+    _segmentsSignature(segments) {
+        if (!Array.isArray(segments) || !segments.length) return "";
+        const rows = [];
+        for (let i = 0; i < segments.length; i += 1) {
+            const seg = segments[i] && typeof segments[i] === "object" ? segments[i] : {};
+            const text = this._normalizeSegmentText(seg.text);
+            const t0Raw = Number(seg.t0_ms);
+            const t1Raw = Number(seg.t1_ms);
+            const t0 = Number.isFinite(t0Raw) ? Math.max(0, Math.round(t0Raw)) : 0;
+            const t1 = Number.isFinite(t1Raw) ? Math.max(t0, Math.round(t1Raw)) : t0;
+            rows.push(`${t0}:${t1}:${text}`);
+        }
+        return rows.join("|");
+    }
+
+    _stripSpeakerTagsFromText(text) {
+        return this._normalizeSegmentText(String(text || "").replace(LIVE_SPEAKER_TAG_GLOBAL_RE, " "));
+    }
+
+    _speakerLabelFromToken(token) {
+        const raw = String(token || "").trim();
+        if (!raw) return "";
+        const m = raw.match(/(?:speaker|spk)[_ ]?(\d+)/i);
+        if (!m) return "";
+        const idx = Number(m[1]);
+        if (!Number.isFinite(idx) || idx < 0) return "";
+        return `Speaker ${idx + 1}`;
+    }
+
+    _formatRules() {
+        const src = this.liveTranscriptFormatRules && typeof this.liveTranscriptFormatRules === "object"
+            ? this.liveTranscriptFormatRules
+            : DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES;
+        const out = { ...DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES };
+        Object.keys(out).forEach((k) => {
+            const v = Number(src[k]);
+            if (Number.isFinite(v)) out[k] = v;
+        });
+        return out;
+    }
+
+    _countWords(text) {
+        const tokens = String(text || "").trim().match(/\S+/g);
+        return tokens ? tokens.length : 0;
+    }
+
+    _startsWithUppercaseWord(text) {
+        return /^[\s"'(\[]*[A-Z][\w'-]*/.test(String(text || ""));
+    }
+
+    _endsWithClosedSentence(text) {
+        return /[.!?]["')\]]*\s*$/.test(String(text || ""));
+    }
+
+    _endsWithSinglePeriodOrTerminalPunctuation(text) {
+        const v = String(text || "");
+        if (/[!?]["')\]]*\s*$/.test(v)) return true;
+        if (!/\.["')\]]*\s*$/.test(v)) return false;
+        return !/(?:\.\.\.|…)["')\]]*\s*$/.test(v);
+    }
+
+    _capitalizeFirstLetterIfLowercase(text) {
+        return String(text || "").replace(/^([\s"'([{<]*)([a-z])/, (_m, lead, letter) => `${lead}${letter.toUpperCase()}`);
+    }
+
+    _canBreakAfterSegment(currentText, nextText) {
+        const cur = String(currentText || "");
+        const next = String(nextText || "");
+        if (!this._endsWithClosedSentence(cur)) return false;
+        if (/[,;:]\s*$/.test(cur)) return false;
+        if (/(\.\.\.|…)\s*$/.test(cur)) return false;
+        if (next && !this._startsWithUppercaseWord(next)) return false;
+        return true;
+    }
+
+    _formatSegmentBlocksDiarizeHardPresentation(finalSegments) {
+        if (!Array.isArray(finalSegments) || !finalSegments.length) return { text: "", paragraphs: [] };
+        const rules = this._formatRules();
+
+        const segments = [];
+        for (let i = 0; i < finalSegments.length; i += 1) {
+            const seg = finalSegments[i] && typeof finalSegments[i] === "object" ? finalSegments[i] : {};
+            const rawText = String(seg.text || "");
+            const text = this._stripSpeakerTagsFromText(rawText);
+            if (!text) continue;
+            const tagged = rawText.match(LIVE_SPEAKER_TAG_PREFIX_RE);
+            const inferredSpeaker = tagged ? String(tagged[1] || "").trim().toUpperCase().replace(" ", "_") : "";
+            const speaker = String(seg.speaker || "").trim() || inferredSpeaker;
+            segments.push({ text, speaker });
+        }
+        if (!segments.length) return { text: "", paragraphs: [] };
+
+        const paragraphs = [{ text: segments[0].text, speaker: segments[0].speaker, breakBefore: "start" }];
+        let blockSegCount = 1;
+        let blockChars = segments[0].text.length;
+        let blockWords = this._countWords(segments[0].text);
+
+        for (let i = 1; i < segments.length; i += 1) {
+            const prev = segments[i - 1];
+            const cur = segments[i];
+            const shouldCapitalizeCur = this._endsWithSinglePeriodOrTerminalPunctuation(prev.text);
+            const curText = shouldCapitalizeCur ? this._capitalizeFirstLetterIfLowercase(cur.text) : cur.text;
+            const speakerChanged = !!(prev.speaker && cur.speaker && prev.speaker !== cur.speaker);
+            if (speakerChanged) {
+                paragraphs.push({ text: curText, speaker: cur.speaker, breakBefore: "speaker_change" });
+                blockSegCount = 1;
+                blockChars = curText.length;
+                blockWords = this._countWords(curText);
+                continue;
+            }
+
+            const targetReached = blockSegCount >= Number(rules.blockEverySegments || 0);
+            const minReached = (
+                blockChars >= Number(rules.blockMinChars || 0)
+                || blockWords >= Number(rules.blockMinWords || 0)
+            );
+            if (targetReached && minReached && this._canBreakAfterSegment(prev.text, curText)) {
+                paragraphs.push({ text: curText, speaker: cur.speaker, breakBefore: "heuristic" });
+                blockSegCount = 1;
+                blockChars = curText.length;
+                blockWords = this._countWords(curText);
+                continue;
+            }
+
+            const tail = paragraphs[paragraphs.length - 1];
+            tail.text = tail.text ? `${tail.text} ${curText}` : curText;
+            blockSegCount += 1;
+            blockChars += curText.length;
+            blockWords += this._countWords(curText);
+        }
+
+        const normalizedParagraphs = paragraphs
+            .map((p) => ({
+                text: this._normalizeSegmentText(p.text),
+                speaker: String(p.speaker || "").trim(),
+                breakBefore: String(p.breakBefore || "heuristic"),
+            }))
+            .filter((p) => !!p.text);
+        const text = normalizedParagraphs.map((p) => p.text).join("\n");
+        return { text, paragraphs: normalizedParagraphs };
     }
 
     _formatPreviewSuffixText(finalText, previewText) {
         const finalValue = String(finalText || "");
-        const previewValue = String(previewText || "").trim();
+        const rawPreview = String(previewText || "").trim();
+        if (!rawPreview) return "";
+        const previewValue = this.devSpeakerLabelsEnabled
+            ? rawPreview
+            : this._stripSpeakerTagsFromText(rawPreview);
         if (!previewValue) return "";
         return /\s$/.test(finalValue) ? previewValue : (" " + previewValue);
     }
 
+    _renderFinalMainText(text) {
+        if (!this.el.finalTextMain) return;
+        const host = this.el.finalTextMain;
+        host.textContent = "";
+
+        const value = String(text || "");
+        if (!value) return;
+
+        const lines = value.split("\n");
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < lines.length; i += 1) {
+            if (i > 0) {
+                frag.appendChild(document.createElement("br"));
+                const spacer = document.createElement("span");
+                spacer.className = "live-softbreak-gap";
+                spacer.setAttribute("aria-hidden", "true");
+                frag.appendChild(spacer);
+            }
+            frag.appendChild(document.createTextNode(lines[i]));
+        }
+
+        host.appendChild(frag);
+    }
+
+    _renderFinalMainParagraphs(paragraphs) {
+        if (!this.el.finalTextMain) return;
+        const host = this.el.finalTextMain;
+        host.textContent = "";
+
+        const rows = Array.isArray(paragraphs) ? paragraphs : [];
+        if (!rows.length) return;
+
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < rows.length; i += 1) {
+            const row = rows[i] && typeof rows[i] === "object" ? rows[i] : {};
+            const text = this._normalizeSegmentText(row.text);
+            if (!text) continue;
+            const breakBefore = String(row.breakBefore || "heuristic");
+            if (i > 0) {
+                frag.appendChild(document.createElement("br"));
+                const spacer = document.createElement("span");
+                spacer.className = breakBefore === "speaker_change"
+                    ? "live-softbreak-gap live-softbreak-gap-speaker"
+                    : "live-softbreak-gap";
+                spacer.setAttribute("aria-hidden", "true");
+                frag.appendChild(spacer);
+            }
+
+            if (this.devSpeakerLabelsEnabled) {
+                const label = this._speakerLabelFromToken(row.speaker);
+                if (label) {
+                    const labelEl = document.createElement("span");
+                    labelEl.className = "live-speaker-label";
+                    labelEl.textContent = label;
+                    frag.appendChild(labelEl);
+                }
+            }
+            frag.appendChild(document.createTextNode(text));
+        }
+        host.appendChild(frag);
+    }
+
     renderTranscriptText() {
-        const finalValue = this._formatFinalDisplayText(this.finalText || "");
+        const diarizePresentation = this._formatSegmentBlocksDiarizeHardPresentation(this.finalSegments);
+        const finalValue = (diarizePresentation && diarizePresentation.text)
+            ? String(diarizePresentation.text)
+            : "";
         const previewSuffix = this._formatPreviewSuffixText(finalValue, this.previewText);
 
         // Remember if user was at bottom before adding new content
         const wasAtBottom = this._isAtBottom();
 
-        if (this.el.finalTextMain) {
-            this.el.finalTextMain.textContent = finalValue;
+        if (diarizePresentation && Array.isArray(diarizePresentation.paragraphs) && diarizePresentation.paragraphs.length) {
+            this._renderFinalMainParagraphs(diarizePresentation.paragraphs);
+        } else {
+            this._renderFinalMainText(finalValue);
         }
         if (this.el.finalTextPreview) {
             this.el.finalTextPreview.textContent = previewSuffix;
@@ -575,7 +851,11 @@ export class LiveView {
             error: "Error",
         })[fstate] || fstate.replace(/_/g, " ");
         const rev = Number(r.transcript_revision || 0);
-        const chars = String(r.final_text || "").trim().length;
+        const segs = Array.isArray(r.final_segments) ? r.final_segments : [];
+        const chars = segs.reduce((acc, seg) => {
+            const text = seg && typeof seg === "object" ? String(seg.text || "").trim() : "";
+            return acc + (text ? text.length : 0);
+        }, 0);
         const durMs = Number(r.recording_duration_ms || 0);
 
         const parts = [
@@ -685,6 +965,60 @@ export class LiveView {
         return lines.join("\n");
     }
 
+    formatRunMetricsSummaryFromResult(result) {
+        const r = result && typeof result === "object" ? result : {};
+        const recMs = Number(r.recording_duration_ms || 0);
+        const chunksTotal = Number(r.chunks_total || 0);
+        const chunksDone = Number(r.chunks_done || 0);
+        const chunksFailed = Number(r.chunks_failed || 0);
+        const chunksPending = Number(r.chunks_pending || Math.max(0, chunksTotal - chunksDone - chunksFailed));
+        const chunkReasons = r.chunk_reason_counts && typeof r.chunk_reason_counts === "object"
+            ? r.chunk_reason_counts
+            : {};
+        const finalizationState = String(r.finalization_state || "").trim();
+
+        let asrTranscribeTimeS = 0;
+        let asrPipelineTimeS = 0;
+        const chunkRows = Array.isArray(r.chunk_results) ? r.chunk_results : [];
+        for (let i = 0; i < chunkRows.length; i += 1) {
+            const row = chunkRows[i] && typeof chunkRows[i] === "object" ? chunkRows[i] : {};
+            if (String(row.state || "") !== "ready") continue;
+            const transcribe = Number(row.asr_transcribe_time_s);
+            if (Number.isFinite(transcribe) && transcribe > 0) asrTranscribeTimeS += transcribe;
+            const pipeline = Number(row.asr_pipeline_time_s);
+            if (Number.isFinite(pipeline) && pipeline > 0) asrPipelineTimeS += pipeline;
+        }
+
+        const recordingS = recMs > 0 ? recMs / 1000 : 0;
+        const asrTranscribePct = recordingS > 0 ? (asrTranscribeTimeS / recordingS) * 100 : null;
+        const asrPipelinePct = recordingS > 0 ? (asrPipelineTimeS / recordingS) * 100 : null;
+        const asrRtf = recordingS > 0 ? (asrTranscribeTimeS / recordingS) : null;
+
+        const lines = [];
+        lines.push(
+            `Run: ${chunksDone}/${chunksTotal} chunks ready`
+            + ` (failed ${chunksFailed}, pending ${chunksPending})`
+            + (recMs > 0 ? ` | recording ${(recMs / 1000).toFixed(1)}s` : "")
+        );
+        const reasonPairs = Object.entries(chunkReasons).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+        if (reasonPairs.length) {
+            lines.push(`Chunk reasons: ${reasonPairs.map(([k, v]) => `${k}=${v}`).join(", ")}`);
+        }
+        lines.push(
+            `ASR transcribe time: ${asrTranscribeTimeS.toFixed(2)}s`
+            + (asrTranscribePct !== null && Number.isFinite(asrTranscribePct) ? ` (${asrTranscribePct.toFixed(1)}% of recording)` : "")
+        );
+        lines.push(
+            `ASR pipeline time: ${asrPipelineTimeS.toFixed(2)}s`
+            + (asrPipelinePct !== null && Number.isFinite(asrPipelinePct) ? ` (${asrPipelinePct.toFixed(1)}% of recording)` : "")
+        );
+        if (asrRtf !== null && Number.isFinite(asrRtf)) {
+            lines.push(`ASR real-time factor: ${asrRtf.toFixed(3)}x`);
+        }
+        lines.push(`Finalization: ${finalizationState || "unknown"}`);
+        return lines.join("\n");
+    }
+
     applyLiveQualityEnvelope(envelope) {
         const e = envelope && typeof envelope === "object" ? envelope : {};
         this.qualityEnvelope = e;
@@ -763,6 +1097,8 @@ export class LiveView {
 
         const finalTimelineTxt = this._formatQualityTimelineText({ includeKinds: ["final"] });
         const combinedSections = [];
+        const runTxt = String(this.runMetricsSummaryText || "").trim();
+        if (runTxt) combinedSections.push(`Run Metrics\n${runTxt}`);
         if (finalTimelineTxt) combinedSections.push(`Final Fixture Benchmark\n${finalTimelineTxt}`);
         const timelineTxt = combinedSections.join("\n\n").trim();
         const finalTxt = String(this.qualitySummaryText || "").trim();
@@ -781,11 +1117,11 @@ export class LiveView {
             ? this.resultEnvelope.result
             : {};
         const fixtureId = String((result && result.fixture_id) || (this.currentFixtureMeta && this.currentFixtureMeta.fixture_id) || "").trim();
-        let placeholder = "Quality score appears here for fixture runs.";
+        let placeholder = "Run metrics appear here after transcript finalization.";
         if (fixtureId && (this.awaitingLiveResult || this.audioStreaming || this.remoteState === "finalizing")) {
-            placeholder = `Fixture ${fixtureId}: final quality score appears when the transcript is ready.`;
+            placeholder = `Fixture ${fixtureId}: run metrics and final quality appear when the transcript is ready.`;
         } else if (fixtureId) {
-            placeholder = `Fixture ${fixtureId}: no quality score available yet.`;
+            placeholder = `Fixture ${fixtureId}: no run metrics/quality available yet.`;
         }
         this.el.qualityText.setAttribute("data-placeholder", placeholder);
     }
@@ -797,21 +1133,23 @@ export class LiveView {
 
         this.resultEnvelope = e;
         this.resultCanExportWav = !!e.can_export_wav;
-        this.resultCanExportTxt = !!e.can_export_txt;
         this.resultCanExportSrt = !!e.can_export_srt;
         this.resultWavUrl = this.resultCanExportWav ? String(e.recording_wav_url || "") : "";
-        this.resultTxtUrl = this.resultCanExportTxt ? String(e.transcript_txt_url || "") : "";
         this.resultSrtUrl = this.resultCanExportSrt ? String(e.transcript_srt_url || "") : "";
 
-        const finalText = String(result.final_text || "");
+        const finalSegments = Array.isArray(result.final_segments) ? result.final_segments : [];
         const preview = result.preview && typeof result.preview === "object"
             ? result.preview
             : {};
         const previewText = String(preview.text || "");
         const previewSeq = Number(preview.preview_seq ?? -1);
         let transcriptChanged = false;
-        if (this.finalText !== finalText) {
-            this.finalText = finalText;
+        const nextSegmentsSignature = this._segmentsSignature(finalSegments);
+        if (this.finalSegmentsSignature !== nextSegmentsSignature) {
+            this.finalSegments = finalSegments.map((seg) => (
+                seg && typeof seg === "object" ? seg : {}
+            ));
+            this.finalSegmentsSignature = nextSegmentsSignature;
             transcriptChanged = true;
         }
         const nextPreviewText = previewText;
@@ -827,6 +1165,7 @@ export class LiveView {
         }
 
         this.partialText = this.formatLiveSummary(result);
+        this.runMetricsSummaryText = this.formatRunMetricsSummaryFromResult(result);
         this.updatePartialPlaceholder();
         this.currentFixtureMeta = String(result.fixture_id || "").trim()
             ? {
@@ -918,13 +1257,29 @@ export class LiveView {
 
     downloadLiveTranscript(kind) {
         const normalized = String(kind || "").trim().toLowerCase();
+        if (normalized === "txt") {
+            const text = this.el.finalText ? String(this.el.finalText.innerText || "").trim() : "";
+            if (!text) {
+                this.appendLog("No txt export available yet");
+                return;
+            }
+            const blob = new Blob([text + "\n"], { type: "text/plain;charset=utf-8" });
+            const sid = this.getCurrentSessionId() || "live-transcript";
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = `${sid}.txt`;
+            a.rel = "noopener";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.setTimeout(() => URL.revokeObjectURL(a.href), 0);
+            return;
+        }
         const url = normalized === "wav"
             ? this.resultWavUrl
-            : normalized === "txt"
-                ? this.resultTxtUrl
-                : normalized === "srt"
-                    ? this.resultSrtUrl
-                    : "";
+            : normalized === "srt"
+                ? this.resultSrtUrl
+                : "";
         if (!url) {
             this.appendLog(`No ${normalized || "transcript"} export available yet`);
             return;
@@ -1008,7 +1363,10 @@ export class LiveView {
 
         // Download buttons (enabled when export is ready)
         if (this.el.downloadWavBtn) this.el.downloadWavBtn.disabled = !this.resultCanExportWav;
-        if (this.el.downloadTxtBtn) this.el.downloadTxtBtn.disabled = !this.resultCanExportTxt;
+        if (this.el.downloadTxtBtn) {
+            const txt = this.el.finalText ? String(this.el.finalText.innerText || "").trim() : "";
+            this.el.downloadTxtBtn.disabled = !txt;
+        }
         if (this.el.downloadSrtBtn) this.el.downloadSrtBtn.disabled = !this.resultCanExportSrt;
 
         if (this.el.sessionId) {
@@ -1044,7 +1402,8 @@ export class LiveView {
         // Placeholder vs transcript text
         const showTranscript = phase !== "idle" && phase !== "connecting";
         if (this.el.placeholder) this.el.placeholder.classList.toggle("hidden", showTranscript);
-        if (this.el.finalText) this.el.finalText.classList.toggle("hidden", !showTranscript || (!this.finalText && !this.previewText));
+        const hasTranscript = this.finalSegments.length > 0 || !!String(this.previewText || "").trim();
+        if (this.el.finalText) this.el.finalText.classList.toggle("hidden", !showTranscript || !hasTranscript);
 
         // Timer: visible in listening + paused
         const showTimer = phase === "listening" || phase === "paused";

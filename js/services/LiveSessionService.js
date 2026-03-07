@@ -227,13 +227,18 @@ export class LiveSessionService {
         return await r.json();
     }
 
+    async fetchUiSettings() {
+        const r = await fetch(getApiUrl("/api/ui/settings"), {
+            cache: "no-store",
+        });
+        if (!r.ok) throw new Error(`Fetch UI settings failed: ${r.status}`);
+        return await r.json();
+    }
+
     getTranscriptDownloadUrl(kind, sessionId) {
         const sid = String(sessionId || this.getSessionId() || "").trim();
         if (!sid) return "";
         const normalized = String(kind || "").trim().toLowerCase();
-        if (normalized === "txt") {
-            return getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}/transcript.txt`);
-        }
         if (normalized === "srt") {
             return getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}/transcript.srt`);
         }
