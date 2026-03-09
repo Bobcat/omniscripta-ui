@@ -83,8 +83,6 @@ export class LiveView {
         this.lastStatsSummary = "";
 
         this.awaitingLiveResult = false;
-        this.resultPollTimerId = null;
-        this.resultPollInFlight = false;
         this.resultEnvelope = null;
         this.resultCanExportSrt = false;
         this.resultCanExportWav = false;
@@ -212,7 +210,6 @@ export class LiveView {
 
           <!-- Session card -->
           <div class="live-card live-controls">
-            <div class="live-section-kicker">Session</div>
 
             <div class="live-session-row">
               <div class="muted">Session ID</div>
@@ -232,19 +229,10 @@ export class LiveView {
               <button id="liveRunFixturePlayBtn" type="button">Play fixture</button>
               <button id="liveRunFixtureInjectBtn" type="button">Inject fixture</button>
             </div>
-
-            <div class="live-dev-toggle-row">
-              <div>
-                <div class="live-dev-toggle-label">Speaker Labels In Transcript</div>
-                <div class="live-dev-toggle-help">Show labels only at paragraph starts (never inline in running text).</div>
-              </div>
-              <button id="liveSpeakerLabelsToggleBtn" class="live-dev-toggle-btn" type="button">Off</button>
-            </div>
           </div>
 
           <!-- Run/Benchmark card -->
           <div class="live-card live-run-panels">
-            <div class="live-section-kicker">Run / Benchmark</div>
 
             <div class="live-partial-row">
               <div class="live-label">Status / processing</div>
@@ -290,7 +278,6 @@ export class LiveView {
         }
 
         this.stopRecordingTimer({ reset: true });
-        this.stopResultPolling();
         this.sessionService = null;
         return {};
     }
@@ -303,14 +290,47 @@ export class LiveView {
                     this.updateControls();
                 },
                 onClose: (ev) => {
+                    const remoteStateBeforeClose = String(this.remoteState || "").toLowerCase();
+                    const awaitingResultBeforeClose = !!this.awaitingLiveResult;
                     this.cancelFixtureRun("session_socket_closed");
                     this.appendLog(`Socket closed (code=${ev && ev.code !== undefined ? ev.code : "?"}, reason=${ev && ev.reason ? ev.reason : "none"})`);
                     this.stopAudioCapture({ quiet: true });
                     this.stopRecordingTimer({ reset: false });
+                    const hasRenderedTranscript = this.el.finalText
+                        ? !!String(this.el.finalText.innerText || "").trim()
+                        : false;
+                    const hasFinalTranscript = (
+                        this.finalSegments.length > 0
+                        || !!String(this.previewText || "").trim()
+                        || hasRenderedTranscript
+                    );
+                    const closeNearFinalization = (
+                        awaitingResultBeforeClose
+                        || remoteStateBeforeClose === "finalizing"
+                        || remoteStateBeforeClose === "ended"
+                        || remoteStateBeforeClose === "ready"
+                    );
+                    const keepFinishedState = (
+                        (this.resultEnvelope && this.resultEnvelope.ready)
+                        || remoteStateBeforeClose === "ended"
+                        || (closeNearFinalization && hasFinalTranscript)
+                    );
+                    if (keepFinishedState) {
+                        this.awaitingLiveResult = false;
+                        this.remoteState = "ready";
+                        this.setStatus("ready", "Transcript ready. Download TXT, SRT, or WAV.");
+                        this.updateControls();
+                        return;
+                    }
+                    if (awaitingResultBeforeClose || remoteStateBeforeClose === "finalizing") {
+                        this.remoteState = "finalizing";
+                        this.setStatus("finalizing", "Connection closed during finalizing.");
+                        this.updateControls();
+                        return;
+                    }
                     this.remoteState = "disconnected";
                     if (this.awaitingLiveResult) {
-                        this.setStatus("finalizing", "Connection closed. Transcript is still being processed...");
-                        this.startResultPolling({ immediate: true, intervalMs: 1000 });
+                        this.setStatus("disconnected", "Connection closed before final transcript was received.");
                     } else {
                         this.setStatus("disconnected", "Disconnected");
                     }
@@ -814,7 +834,7 @@ export class LiveView {
             this.el.finalTextPreview.textContent = previewSuffix;
             this.el.finalTextPreview.classList.toggle("hidden", !previewSuffix);
         }
-        
+
         // Only auto-scroll if user was already at bottom
         // If user scrolled back to read, respect that and don't jump
         if (wasAtBottom && this.el.finalText) {
@@ -1012,9 +1032,6 @@ export class LiveView {
             `ASR pipeline time: ${asrPipelineTimeS.toFixed(2)}s`
             + (asrPipelinePct !== null && Number.isFinite(asrPipelinePct) ? ` (${asrPipelinePct.toFixed(1)}% of recording)` : "")
         );
-        if (asrRtf !== null && Number.isFinite(asrRtf)) {
-            lines.push(`ASR real-time factor: ${asrRtf.toFixed(3)}x`);
-        }
         lines.push(`Finalization: ${finalizationState || "unknown"}`);
         return lines.join("\n");
     }
@@ -1186,7 +1203,6 @@ export class LiveView {
                 this.remoteState = "ready";
                 this.setStatus("ready", "Transcript ready. Download TXT, SRT, or WAV.");
             }
-            this.stopResultPolling();
             const rev = Number(result.transcript_revision || 0);
             const qualityAlreadyLoaded = (
                 this.qualityLoadedSessionId === String(sid || "")
@@ -1200,7 +1216,6 @@ export class LiveView {
                 this.awaitingLiveResult = false;
                 this.remoteState = "error";
                 this.setStatus("error", "Transcript processing failed.");
-                this.stopResultPolling();
             } else if (this.awaitingLiveResult || this.remoteState === "ended" || this.remoteState === "disconnected") {
                 this.remoteState = "finalizing";
                 this.setStatus("finalizing", "Transcript is being processed in chunks...");
@@ -1208,51 +1223,6 @@ export class LiveView {
         }
 
         this.updateControls();
-    }
-
-    async refreshLiveResult(options = {}) {
-        const quiet = options.quiet === true;
-        const sid = this.getCurrentSessionId();
-        if (!sid || !this.sessionService) return false;
-        if (this.resultPollInFlight) return false;
-
-        this.resultPollInFlight = true;
-        this.updateControls();
-        try {
-            const envelope = await this.sessionService.fetchResult(sid);
-            this.applyLiveResultEnvelope(envelope);
-            return true;
-        } catch (err) {
-            if (!quiet) {
-                const msg = err && err.message ? err.message : String(err);
-                this.appendLog(`Result poll failed: ${msg}`);
-            }
-            return false;
-        } finally {
-            this.resultPollInFlight = false;
-            this.updateControls();
-        }
-    }
-
-    startResultPolling(options = {}) {
-        const intervalMs = 250;
-        const immediate = options.immediate !== false;
-
-        this.stopResultPolling();
-        if (immediate) {
-            void this.refreshLiveResult({ quiet: true });
-        }
-        this.resultPollTimerId = window.setInterval(() => {
-            void this.refreshLiveResult({ quiet: true });
-        }, intervalMs);
-        this.updateControls();
-    }
-
-    stopResultPolling() {
-        if (this.resultPollTimerId !== null) {
-            window.clearInterval(this.resultPollTimerId);
-            this.resultPollTimerId = null;
-        }
     }
 
     downloadLiveTranscript(kind) {
@@ -1437,11 +1407,9 @@ export class LiveView {
 
         try {
             await this.sessionService.connect();
-            this.stopResultPolling();
             this.resetLiveResultState();
             this.currentFixtureMeta = null;
             this.awaitingLiveResult = false;
-            void this.refreshLiveResult({ quiet: true });
             this.updateQualityPlaceholder();
             this.updateControls();
             return true;
@@ -1551,7 +1519,6 @@ export class LiveView {
             this.remoteState = "listening";
             this.startRecordingTimer();
             this.sessionService.sendControl("start");
-            this.startResultPolling({ immediate: true, intervalMs: 1500 });
             this.setStatus("listening", "Recording in progress.");
             this.updatePartialPlaceholder();
         } catch (err) {
@@ -1575,7 +1542,6 @@ export class LiveView {
         this.remoteState = "paused";
         this.stopRecordingTimer({ reset: false });
         this.sessionService && this.sessionService.sendControl("pause");
-        this.startResultPolling({ immediate: false, intervalMs: 1500 });
         this.setStatus("paused", "Recording paused. Resume to continue.");
         this.updatePartialPlaceholder();
         this.updateControls();
@@ -1589,7 +1555,6 @@ export class LiveView {
         this.remoteState = "listening";
         this.startRecordingTimer();
         this.sessionService && this.sessionService.sendControl("resume");
-        this.startResultPolling({ immediate: false, intervalMs: 1500 });
         this.setStatus("listening", "Recording in progress.");
         this.updatePartialPlaceholder();
         this.updateControls();
@@ -1882,7 +1847,6 @@ export class LiveView {
             this.awaitingLiveResult = false;
             this.remoteState = "listening";
             this.sessionService.sendControl("start");
-            this.startResultPolling({ immediate: true, intervalMs: 1500 });
             this.setStatus("listening", "Fixture inject in progress.");
             this.updatePartialPlaceholder();
 
@@ -1952,7 +1916,6 @@ export class LiveView {
 
         this.awaitingLiveResult = true;
         this.remoteState = "finalizing";
-        this.startResultPolling({ immediate: true, intervalMs: 1000 });
         this.setStatus("finalizing", "Recording stopped. Processing final chunks...");
         this.updatePartialPlaceholder();
         this.updateQualityPlaceholder();
@@ -1975,7 +1938,6 @@ export class LiveView {
         this.cancelFixtureRun(`cleanup:${reason}`);
         this.stopAudioCapture({ quiet: true });
         this.stopRecordingTimer({ reset: true });
-        this.stopResultPolling();
         this.awaitingLiveResult = false;
 
         if (this.sessionService) {
@@ -2100,7 +2062,8 @@ export class LiveView {
         if (t === "ready") {
             this.remoteState = "ready";
             this.setStatus("ready", "Ready. Start recording; transcript will appear in chunks.");
-            void this.refreshLiveResult({ quiet: true });
+        } else if (t === "result") {
+            this.applyLiveResultEnvelope(payload);
         } else if (t === "control_ack") {
             this.remoteState = String(payload.state || this.remoteState || "connected");
             const ctl = String(payload.control_type || "").toLowerCase();
@@ -2111,7 +2074,6 @@ export class LiveView {
             } else if (ctl === "stop") {
                 this.awaitingLiveResult = true;
                 this.remoteState = "finalizing";
-                this.startResultPolling({ immediate: true, intervalMs: 1000 });
                 this.setStatus("finalizing", "Finalizing recording. Processing final chunks...");
             } else {
                 this.setStatus(this.remoteState || "connected", `Control received: ${ctl || "ack"}`);
@@ -2128,16 +2090,12 @@ export class LiveView {
                 `Stats: ${b} bytes, ${f} frames, ${s.toFixed(2)}s, decode ${decodeMs.toFixed(2)}ms, rtf ${rtf.toFixed(3)}\n\n${this.formatStatsPayload(payload)}`
             );
         } else if (t === "partial") {
-            // WhisperLive preview is intentionally de-emphasized in live UX.
-        } else if (t === "final") {
-            // Final transcript for the user comes from live result polling (/result).
         } else if (t === "ended") {
             this.stopAudioCapture({ quiet: true });
             this.stopRecordingTimer({ reset: false });
-            this.awaitingLiveResult = true;
-            this.remoteState = "finalizing";
-            this.startResultPolling({ immediate: true, intervalMs: 1000 });
-            this.setStatus("finalizing", `Recording finished (${payload.reason || "unknown"}). Transcript is being processed...`);
+            this.awaitingLiveResult = false;
+            this.remoteState = "ended";
+            this.setStatus("ready", `Recording finished (${payload.reason || "unknown"}).`);
             this.updatePartialPlaceholder();
         } else if (t === "error") {
             const msg = String(payload.message || "Live error");
@@ -2145,9 +2103,6 @@ export class LiveView {
             if (payload.fatal) {
                 this.stopAudioCapture({ quiet: true });
                 this.stopRecordingTimer({ reset: false });
-                if (this.awaitingLiveResult) {
-                    this.startResultPolling({ immediate: true, intervalMs: 1000 });
-                }
             }
             if (this.app && typeof this.app.showAlert === "function") {
                 this.app.showAlert("Live session error", msg);
