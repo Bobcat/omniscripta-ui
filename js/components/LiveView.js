@@ -259,6 +259,7 @@ export class LiveView {
         this.bindUi();
         this.setSpeakerLabelsEnabled(this.devSpeakerLabelsEnabled);
         void this.loadUiSettings();
+        this.renderTranscriptText();
         this.updateDurationDisplay();
         this.updatePartialPlaceholder();
         this.updateQualityPlaceholder();
@@ -266,6 +267,12 @@ export class LiveView {
     }
 
     unmount() {
+        if (this.shouldPreserveSessionOnUnmount()) {
+            // Keep a running live flow alive when users switch views.
+            this.el = {};
+            this.updateControls();
+            return {};
+        }
         this.cleanupSession("view_unmount", { sendStop: false });
 
         if (this.audioService) {
@@ -279,7 +286,23 @@ export class LiveView {
 
         this.stopRecordingTimer({ reset: true });
         this.sessionService = null;
+        this.el = {};
+        this.updateControls();
         return {};
+    }
+
+    shouldPreserveSessionOnUnmount() {
+        return !!(this.audioStreaming || this.awaitingLiveResult || this.fixtureRunActive);
+    }
+
+    isRecordingActive() {
+        return !!this.audioStreaming;
+    }
+
+    syncAppLiveNavState() {
+        if (this.app && typeof this.app.syncLiveNavState === "function") {
+            this.app.syncLiveNavState();
+        }
     }
 
     initServices() {
@@ -1343,6 +1366,7 @@ export class LiveView {
             const sid = this.sessionService ? this.sessionService.getSessionId() : "";
             this.el.sessionId.textContent = sid || "(none)";
         }
+        this.syncAppLiveNavState();
     }
 
     setUiPhase(phase) {

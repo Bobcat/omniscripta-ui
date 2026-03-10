@@ -20,6 +20,12 @@ class App {
         this.sidebar = document.getElementById('app-sidebar');
         this.menuToggle = document.getElementById('menu-toggle');
         this.navLinks = document.querySelectorAll('.nav-links li[data-action]');
+        this.liveNavLink = document.querySelector('.nav-links li[data-action="live"]');
+        this.liveNavText = this.liveNavLink ? this.liveNavLink.querySelector('.link-text') : null;
+        this.liveNavBaseText = this.liveNavText
+            ? String(this.liveNavText.textContent || 'Live recording').trim()
+            : 'Live recording';
+        this.liveNavRecording = false;
 
         this.views = {
             upload: new UploadView(this),
@@ -88,6 +94,7 @@ class App {
         this.checkDevice();
         this.renderProjects(); // Initial render
         this.render();
+        this.syncLiveNavState();
 
         // Handle browser back/forward if we decide to use history API later
         // window.onpopstate = ...
@@ -351,6 +358,7 @@ class App {
         // Mount new
         this.container.innerHTML = ''; // Clear
         this.views[viewName].mount(this.container, viewData);
+        this.syncLiveNavState();
 
     }
 
@@ -366,6 +374,23 @@ class App {
 
     refreshProjects() {
         this.renderProjects();
+    }
+
+    syncLiveNavState() {
+        if (!this.liveNavLink || !this.liveNavText) return;
+        const liveView = this.views && this.views.live;
+        const recordingActive = !!(
+            liveView
+            && typeof liveView.isRecordingActive === 'function'
+            && liveView.isRecordingActive()
+        );
+        if (recordingActive === this.liveNavRecording) return;
+        this.liveNavRecording = recordingActive;
+        const nextLabel = recordingActive
+            ? `${this.liveNavBaseText} (recording)`
+            : this.liveNavBaseText;
+        this.liveNavText.textContent = nextLabel;
+        this.liveNavLink.title = nextLabel;
     }
 
     initDeleteProjectModal() {
