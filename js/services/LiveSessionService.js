@@ -131,8 +131,12 @@ export class LiveSessionService {
         if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return false;
 
         const shouldLog = options.log !== false;
+        const payload = options && typeof options.payload === "object"
+            ? { ...options.payload }
+            : {};
+        payload.type = msgType;
         try {
-            this.socket.send(JSON.stringify({ type: msgType }));
+            this.socket.send(JSON.stringify(payload));
             if (shouldLog) this.log(`Client -> ${msgType}`);
             return true;
         } catch (err) {

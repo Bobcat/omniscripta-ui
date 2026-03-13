@@ -31,6 +31,7 @@ Read this first, then follow the detailed runbook:
 | `transcribe-asr-pool-dev.service` | `:18090` | ASR Pool — warm WhisperX runners |
 | `transcribe-worker-live-dev@1.service` | — | Worker daemon (live mode) |
 | `transcribe-worker-upload-dev@1.service` | — | Worker daemon (upload mode) |
+| `transcribe-demo-jobs-janitor-dev.timer` | — | Periodic janitor for `data/demo_jobs` live chunks |
 
 ### Live services (system-level, `sudo systemctl`)
 
@@ -40,6 +41,7 @@ Read this first, then follow the detailed runbook:
 | `transcribe-asr-pool.service` | `:8090` | ASR Pool — warm WhisperX runners |
 | `transcribe-worker-live.service` | — | Worker daemon (live mode) |
 | `transcribe-worker-upload.service` | — | Worker daemon (upload mode) |
+| `transcribe-demo-jobs-janitor.timer` | — | Periodic janitor for `/srv/transcribe/data/demo_jobs` live chunks |
 | `transcribe-tabby-tunnel.service` | `:5001` | SSH tunnel to Tabby LLM on PC1 |
 
 Live frontend is served by nginx (no separate systemd service).

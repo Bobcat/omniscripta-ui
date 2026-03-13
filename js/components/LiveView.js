@@ -1,5 +1,6 @@
 import { LiveAudioService, downsampleBuffer, float32ToPcm16LeBuffer } from "../services/LiveAudioService.js";
 import { LiveSessionService } from "../services/LiveSessionService.js";
+import { TRANSCRIPT_LANGUAGES } from "../constants/languages.js";
 
 const STATUS_LABELS = {
     idle: "Idle",
@@ -52,6 +53,7 @@ const DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES = {
     blockMinChars: 220,
     blockMinWords: 35,
 };
+const LIVE_LANGUAGE_STORAGE_KEY = "omniscripta_live_language_v1";
 
 export class LiveView {
     constructor(app) {
@@ -104,6 +106,7 @@ export class LiveView {
         this.fixtureWatchdogTimerId = null;
         this.fixtureRunLabel = "";
         this.selectedFixtureKey = DEV_LIVE_FIXTURE_OPTIONS[0] ? DEV_LIVE_FIXTURE_OPTIONS[0].value : "panel120v1";
+        this.selectedLanguage = this.loadPreferredLanguage();
         this.devSpeakerLabelsEnabled = true;
         this.liveTranscriptFormatRules = { ...DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES };
 
@@ -111,6 +114,10 @@ export class LiveView {
     }
 
     getHtml() {
+        const langOptions = [
+            "<option value=\"\">🌐 Auto (server default)</option>",
+            ...TRANSCRIPT_LANGUAGES.map((l) => (`<option value=\"${String(l.code || "")}\">${String(l.flag || "")} ${String(l.name || l.code || "")}</option>`)),
+        ].join("");
         return `
       <div class="live-wrap">
 
@@ -155,9 +162,15 @@ export class LiveView {
         <!-- Fixed Bottom Controls -->
         <div class="live-bottom-bar" id="liveControlsFloat">
 
-          <!-- Left: Timer -->
+          <!-- Left: Timer + Language -->
           <div class="controls-left">
             <div class="timer hidden" id="liveDurationText">00:00</div>
+            <div class="live-language-picker" id="liveLanguagePicker">
+              <select id="liveLanguageSelect" class="live-select live-language-select" title="Auto is recommended unless you are sure about the spoken language.">
+                ${langOptions}
+              </select>
+              <div class="live-language-help">Auto is recommended for unknown or mixed-language speech.</div>
+            </div>
           </div>
 
           <!-- Center: Actions -->
@@ -434,6 +447,8 @@ export class LiveView {
 
     captureElements() {
         this.el.statusBadge = document.getElementById("liveStatusBadge");
+        this.el.languagePicker = document.getElementById("liveLanguagePicker");
+        this.el.languageSelect = document.getElementById("liveLanguageSelect");
         this.el.durationText = document.getElementById("liveDurationText");
         this.el.durationTextTop = document.getElementById("liveDurationTextTop");
         this.el.sessionId = document.getElementById("liveSessionId");
@@ -467,6 +482,22 @@ export class LiveView {
     }
 
     bindUi() {
+        if (this.el.languageSelect) {
+            this.el.languageSelect.addEventListener("change", () => {
+                const next = this.normalizeLanguageCode(this.el.languageSelect.value);
+                this.selectedLanguage = next;
+                this.persistPreferredLanguage(next);
+                this.syncLanguageSelectUi();
+                if (this.sessionService && this.sessionService.isOpen()) {
+                    this.sessionService.sendControl("set_language", {
+                        payload: {
+                            language: this.getRequestedSessionLanguage() || "auto",
+                        },
+                        log: false,
+                    });
+                }
+            });
+        }
         if (this.el.startBtn) {
             this.el.startBtn.addEventListener("click", () => this.startMic());
         }
@@ -549,6 +580,46 @@ export class LiveView {
             this.el.speakerLabelsToggleBtn.setAttribute("aria-pressed", this.devSpeakerLabelsEnabled ? "true" : "false");
         }
         this.renderTranscriptText();
+    }
+
+    normalizeLanguageCode(value) {
+        const code = String(value || "").trim().toLowerCase();
+        if (!code) return "";
+        for (let i = 0; i < TRANSCRIPT_LANGUAGES.length; i += 1) {
+            const known = String(TRANSCRIPT_LANGUAGES[i] && TRANSCRIPT_LANGUAGES[i].code || "").trim().toLowerCase();
+            if (known === code) return known;
+        }
+        return "";
+    }
+
+    loadPreferredLanguage() {
+        try {
+            const raw = window.localStorage.getItem(LIVE_LANGUAGE_STORAGE_KEY);
+            return this.normalizeLanguageCode(raw);
+        } catch {
+            return "";
+        }
+    }
+
+    persistPreferredLanguage(code) {
+        try {
+            const normalized = this.normalizeLanguageCode(code);
+            window.localStorage.setItem(LIVE_LANGUAGE_STORAGE_KEY, normalized);
+        } catch {
+            // ignore persistence issues
+        }
+    }
+
+    syncLanguageSelectUi() {
+        if (!this.el.languageSelect) return;
+        const normalized = this.normalizeLanguageCode(this.selectedLanguage);
+        this.selectedLanguage = normalized;
+        this.el.languageSelect.value = normalized;
+    }
+
+    getRequestedSessionLanguage() {
+        const normalized = this.normalizeLanguageCode(this.selectedLanguage);
+        return normalized || null;
     }
 
     clearOutput() {
@@ -1315,6 +1386,7 @@ export class LiveView {
 
     updateControls() {
         const wsConnecting = !!(this.sessionService && this.sessionService.isConnecting());
+        const wsOpen = !!(this.sessionService && this.sessionService.isOpen());
 
         // Determine UI phase
         let phase = "idle";
@@ -1333,6 +1405,10 @@ export class LiveView {
         }
 
         this.setUiPhase(phase);
+
+        if (this.el.languageSelect) {
+            this.syncLanguageSelectUi();
+        }
 
         // Dev fixture controls
         if (this.el.fixtureSelect) {
@@ -1401,6 +1477,10 @@ export class LiveView {
 
         // Timer: visible in listening + paused
         const showTimer = phase === "listening" || phase === "paused";
+        const showLanguagePicker = phase === "idle" || phase === "connecting" || phase === "listening" || phase === "paused";
+        const compactLanguagePicker = phase === "listening" || phase === "paused";
+        if (this.el.languagePicker) this.el.languagePicker.classList.toggle("hidden", !showLanguagePicker);
+        if (this.el.languagePicker) this.el.languagePicker.classList.toggle("is-compact", compactLanguagePicker);
         if (this.el.durationText) this.el.durationText.classList.toggle("hidden", !showTimer);
         if (this.el.durationTextTop) this.el.durationTextTop.classList.toggle("hidden", !showTimer);
 
@@ -1430,7 +1510,9 @@ export class LiveView {
         this.updateControls();
 
         try {
-            await this.sessionService.connect();
+            await this.sessionService.connect({
+                language: this.getRequestedSessionLanguage(),
+            });
             this.resetLiveResultState();
             this.currentFixtureMeta = null;
             this.awaitingLiveResult = false;

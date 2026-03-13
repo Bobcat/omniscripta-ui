@@ -60,6 +60,10 @@ export async function createLiveSession(options = {}) {
     if (options && options.ttlSeconds !== undefined && options.ttlSeconds !== null && String(options.ttlSeconds).trim() !== "") {
         qs.set("ttl_s", String(options.ttlSeconds).trim());
     }
+    if (options && options.language !== undefined && options.language !== null) {
+        const lang = String(options.language).trim();
+        if (lang) qs.set("language", lang);
+    }
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
     const r = await fetch(getApiUrl(`/api/demo/live/sessions${suffix}`), {
         method: "POST",
