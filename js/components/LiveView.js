@@ -1031,10 +1031,10 @@ export class LiveView {
             : {};
         const pollErrors = Number(run.poll_error_count || 0);
         const chunkErrors = Number(run.chunk_error_count || 0);
-        const asrTranscribeTimeS = run.asr_transcribe_time_total_s == null ? null : Number(run.asr_transcribe_time_total_s);
-        const asrPipelineTimeS = run.asr_pipeline_time_total_s == null ? null : Number(run.asr_pipeline_time_total_s);
-        const asrTranscribePct = run.asr_transcribe_pct_of_recording == null ? null : Number(run.asr_transcribe_pct_of_recording);
-        const asrPipelinePct = run.asr_pipeline_pct_of_recording == null ? null : Number(run.asr_pipeline_pct_of_recording);
+        const gpuProxyTranscribeTimeS = run.gpu_proxy_transcribe_total_s == null ? null : Number(run.gpu_proxy_transcribe_total_s);
+        const gpuProxyPipelineTimeS = run.gpu_proxy_pipeline_total_s == null ? null : Number(run.gpu_proxy_pipeline_total_s);
+        const gpuProxyTranscribePct = run.gpu_proxy_transcribe_pct_of_recording == null ? null : Number(run.gpu_proxy_transcribe_pct_of_recording);
+        const gpuProxyPipelinePct = run.gpu_proxy_pipeline_pct_of_recording == null ? null : Number(run.gpu_proxy_pipeline_pct_of_recording);
 
         const lines = [];
         if (Number.isFinite(uploadScore)) {
@@ -1057,16 +1057,16 @@ export class LiveView {
         if (reasonPairs.length) {
             lines.push(`Chunk reasons: ${reasonPairs.map(([k, v]) => `${k}=${v}`).join(", ")}`);
         }
-        if (asrTranscribeTimeS !== null && Number.isFinite(asrTranscribeTimeS)) {
+        if (gpuProxyTranscribeTimeS !== null && Number.isFinite(gpuProxyTranscribeTimeS)) {
             lines.push(
-                `ASR transcribe time: ${asrTranscribeTimeS.toFixed(2)}s`
-                + (asrTranscribePct !== null && Number.isFinite(asrTranscribePct) ? ` (${asrTranscribePct.toFixed(1)}% of recording)` : "")
+                `GPU proxy transcribe time: ${gpuProxyTranscribeTimeS.toFixed(2)}s`
+                + (gpuProxyTranscribePct !== null && Number.isFinite(gpuProxyTranscribePct) ? ` (${gpuProxyTranscribePct.toFixed(1)}% of recording)` : "")
             );
         }
-        if (asrPipelineTimeS !== null && Number.isFinite(asrPipelineTimeS)) {
+        if (gpuProxyPipelineTimeS !== null && Number.isFinite(gpuProxyPipelineTimeS)) {
             lines.push(
-                `ASR pipeline time: ${asrPipelineTimeS.toFixed(2)}s`
-                + (asrPipelinePct !== null && Number.isFinite(asrPipelinePct) ? ` (${asrPipelinePct.toFixed(1)}% of recording)` : "")
+                `GPU proxy pipeline time: ${gpuProxyPipelineTimeS.toFixed(2)}s`
+                + (gpuProxyPipelinePct !== null && Number.isFinite(gpuProxyPipelinePct) ? ` (${gpuProxyPipelinePct.toFixed(1)}% of recording)` : "")
             );
         }
         lines.push(
@@ -1091,22 +1091,12 @@ export class LiveView {
             : {};
         const finalizationState = String(r.finalization_state || "").trim();
 
-        let asrTranscribeTimeS = 0;
-        let asrPipelineTimeS = 0;
-        const chunkRows = Array.isArray(r.chunk_results) ? r.chunk_results : [];
-        for (let i = 0; i < chunkRows.length; i += 1) {
-            const row = chunkRows[i] && typeof chunkRows[i] === "object" ? chunkRows[i] : {};
-            if (String(row.state || "") !== "ready") continue;
-            const transcribe = Number(row.asr_transcribe_time_s);
-            if (Number.isFinite(transcribe) && transcribe > 0) asrTranscribeTimeS += transcribe;
-            const pipeline = Number(row.asr_pipeline_time_s);
-            if (Number.isFinite(pipeline) && pipeline > 0) asrPipelineTimeS += pipeline;
-        }
+        const gpuProxyTranscribeTimeS = Number(r.gpu_proxy_transcribe_s || 0);
+        const gpuProxyPipelineTimeS = Number(r.gpu_proxy_pipeline_s || 0);
 
         const recordingS = recMs > 0 ? recMs / 1000 : 0;
-        const asrTranscribePct = recordingS > 0 ? (asrTranscribeTimeS / recordingS) * 100 : null;
-        const asrPipelinePct = recordingS > 0 ? (asrPipelineTimeS / recordingS) * 100 : null;
-        const asrRtf = recordingS > 0 ? (asrTranscribeTimeS / recordingS) : null;
+        const gpuProxyTranscribePct = recordingS > 0 ? (gpuProxyTranscribeTimeS / recordingS) * 100 : null;
+        const gpuProxyPipelinePct = recordingS > 0 ? (gpuProxyPipelineTimeS / recordingS) * 100 : null;
 
         const lines = [];
         lines.push(
@@ -1119,12 +1109,12 @@ export class LiveView {
             lines.push(`Chunk reasons: ${reasonPairs.map(([k, v]) => `${k}=${v}`).join(", ")}`);
         }
         lines.push(
-            `ASR transcribe time: ${asrTranscribeTimeS.toFixed(2)}s`
-            + (asrTranscribePct !== null && Number.isFinite(asrTranscribePct) ? ` (${asrTranscribePct.toFixed(1)}% of recording)` : "")
+            `GPU proxy transcribe time: ${gpuProxyTranscribeTimeS.toFixed(2)}s`
+            + (gpuProxyTranscribePct !== null && Number.isFinite(gpuProxyTranscribePct) ? ` (${gpuProxyTranscribePct.toFixed(1)}% of recording)` : "")
         );
         lines.push(
-            `ASR pipeline time: ${asrPipelineTimeS.toFixed(2)}s`
-            + (asrPipelinePct !== null && Number.isFinite(asrPipelinePct) ? ` (${asrPipelinePct.toFixed(1)}% of recording)` : "")
+            `GPU proxy pipeline time: ${gpuProxyPipelineTimeS.toFixed(2)}s`
+            + (gpuProxyPipelinePct !== null && Number.isFinite(gpuProxyPipelinePct) ? ` (${gpuProxyPipelinePct.toFixed(1)}% of recording)` : "")
         );
         lines.push(`Finalization: ${finalizationState || "unknown"}`);
         return lines.join("\n");
