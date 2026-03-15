@@ -97,6 +97,7 @@ export class LiveView {
         this.qualitySummaryText = "";
         this.runMetricsSummaryText = "";
         this.qualityTimelineEntries = [];
+        this.cadenceStats = this.createCadenceStats();
         this.currentFixtureMeta = null;
 
         this.fixtureRunActive = false;
@@ -253,6 +254,11 @@ export class LiveView {
             </div>
 
             <div class="live-partial-row">
+              <div class="live-label">Cadence / snappiness</div>
+              <div class="live-partial-text live-quality-report" id="liveCadenceText" data-placeholder="Cadence indicator appears once the visible transcript starts updating."></div>
+            </div>
+
+            <div class="live-partial-row">
               <div class="live-label">Run metrics / benchmark</div>
               <div class="live-partial-text live-quality-report" id="liveQualityText" data-placeholder="Quality score appears here for fixture runs."></div>
             </div>
@@ -275,6 +281,7 @@ export class LiveView {
         this.renderTranscriptText();
         this.updateDurationDisplay();
         this.updatePartialPlaceholder();
+        this.updateCadenceIndicator();
         this.updateQualityPlaceholder();
         this.updateControls();
     }
@@ -465,6 +472,7 @@ export class LiveView {
         this.el.downloadTxtBtn = document.getElementById("liveDownloadTxtBtn");
         this.el.downloadSrtBtn = document.getElementById("liveDownloadSrtBtn");
         this.el.qualityText = document.getElementById("liveQualityText");
+        this.el.cadenceText = document.getElementById("liveCadenceText");
         this.el.devToggleBtn = document.getElementById("liveDevToggleBtn");
         this.el.devSection = document.getElementById("liveDevSection");
         this.el.speakerLabelsToggleBtn = document.getElementById("liveSpeakerLabelsToggleBtn");
@@ -632,9 +640,11 @@ export class LiveView {
 
         this.renderTranscriptText();
         if (this.el.partialText) this.el.partialText.textContent = "";
+        if (this.el.cadenceText) this.el.cadenceText.textContent = "";
         if (this.el.qualityText) this.el.qualityText.textContent = "";
 
         this.updatePartialPlaceholder();
+        this.updateCadenceIndicator();
         this.updateQualityPlaceholder();
         this.setUiPhase("idle");
         this.updateControls();
@@ -688,6 +698,36 @@ export class LiveView {
         this.previewSeq = -1;
         this.finalSegments = [];
         this.finalSegmentsSignature = "";
+        this.cadenceStats = this.createCadenceStats();
+    }
+
+    createCadenceStats() {
+        return {
+            startedAtMs: 0,
+            firstVisibleUpdateAtMs: 0,
+            lastVisibleUpdateAtMs: 0,
+            visibleUpdateCount: 0,
+            previewChangeCount: 0,
+            finalChangeCount: 0,
+            gapMs: [],
+            lastVisibleSignature: "",
+        };
+    }
+
+    ensureCadenceStats() {
+        if (!this.cadenceStats || typeof this.cadenceStats !== "object") {
+            this.cadenceStats = this.createCadenceStats();
+        }
+        return this.cadenceStats;
+    }
+
+    ensureCadenceStarted(atMs = Date.now()) {
+        const stats = this.ensureCadenceStats();
+        const startedAtMs = Number(atMs);
+        if (stats.startedAtMs <= 0 && Number.isFinite(startedAtMs) && startedAtMs > 0) {
+            stats.startedAtMs = startedAtMs;
+        }
+        return stats;
     }
 
     _normalizeSegmentText(value) {
@@ -707,6 +747,145 @@ export class LiveView {
             rows.push(`${t0}:${t1}:${text}`);
         }
         return rows.join("|");
+    }
+
+    _buildVisibleTranscriptState(finalSegments, previewText) {
+        const diarizePresentation = this._formatSegmentBlocksDiarizeHardPresentation(finalSegments);
+        const finalValue = (diarizePresentation && diarizePresentation.text)
+            ? String(diarizePresentation.text)
+            : "";
+        const previewSuffix = this._formatPreviewSuffixText(finalValue, previewText);
+        return {
+            finalText: finalValue,
+            previewSuffix,
+            signature: `${finalValue}\n@@preview@@${previewSuffix}`,
+        };
+    }
+
+    _percentile(values, fraction) {
+        const rows = Array.isArray(values)
+            ? values.filter((value) => Number.isFinite(value) && value >= 0).sort((a, b) => a - b)
+            : [];
+        if (!rows.length) return null;
+        if (rows.length === 1) return rows[0];
+        const clamped = Math.max(0, Math.min(1, Number(fraction)));
+        const pos = (rows.length - 1) * clamped;
+        const lower = Math.floor(pos);
+        const upper = Math.ceil(pos);
+        if (lower === upper) return rows[lower];
+        const weight = pos - lower;
+        return rows[lower] + ((rows[upper] - rows[lower]) * weight);
+    }
+
+    _formatCadenceDuration(ms) {
+        const value = Number(ms);
+        if (!Number.isFinite(value) || value < 0) return "n/a";
+        if (value < 1000) return `${Math.round(value)}ms`;
+        return `${(value / 1000).toFixed(2)}s`;
+    }
+
+    recordCadenceVisibleUpdate({ finalChanged = false, previewChanged = false } = {}) {
+        const stats = this.ensureCadenceStarted(this.recordingStartedAtMs > 0 ? this.recordingStartedAtMs : Date.now());
+        const visibleState = this._buildVisibleTranscriptState(this.finalSegments, this.previewText);
+        const signature = String(visibleState.signature || "");
+        if (!signature || signature === String(stats.lastVisibleSignature || "")) {
+            return false;
+        }
+
+        const nowMs = Date.now();
+        if (stats.firstVisibleUpdateAtMs <= 0) {
+            stats.firstVisibleUpdateAtMs = nowMs;
+        }
+        if (stats.lastVisibleUpdateAtMs > 0) {
+            stats.gapMs.push(Math.max(0, nowMs - stats.lastVisibleUpdateAtMs));
+        }
+        stats.lastVisibleUpdateAtMs = nowMs;
+        stats.lastVisibleSignature = signature;
+        stats.visibleUpdateCount += 1;
+        if (previewChanged) stats.previewChangeCount += 1;
+        if (finalChanged) stats.finalChangeCount += 1;
+        return true;
+    }
+
+    formatCadenceSummary() {
+        const stats = this.ensureCadenceStats();
+        const startMs = stats.startedAtMs > 0
+            ? stats.startedAtMs
+            : (this.recordingStartedAtMs > 0 ? this.recordingStartedAtMs : 0);
+        const nowMs = Date.now();
+
+        if (stats.visibleUpdateCount <= 0) {
+            if (startMs > 0) {
+                return [
+                    "Waiting for first visible transcript update...",
+                    `Elapsed since start: ${this._formatCadenceDuration(Math.max(0, nowMs - startMs))}`,
+                ].join("\n");
+            }
+            return "";
+        }
+
+        const firstLatencyMs = (startMs > 0 && stats.firstVisibleUpdateAtMs > 0)
+            ? Math.max(0, stats.firstVisibleUpdateAtMs - startMs)
+            : null;
+        const medianGapMs = this._percentile(stats.gapMs, 0.5);
+        const p95GapMs = this._percentile(stats.gapMs, 0.95);
+        const sampleEndMs = stats.lastVisibleUpdateAtMs > 0 ? stats.lastVisibleUpdateAtMs : nowMs;
+        const elapsedForRateMs = (startMs > 0 && sampleEndMs > startMs) ? (sampleEndMs - startMs) : 0;
+        const updatesPerMin = elapsedForRateMs > 0
+            ? (stats.visibleUpdateCount / (elapsedForRateMs / 60000))
+            : null;
+        const currentGapMs = stats.lastVisibleUpdateAtMs > 0
+            ? Math.max(0, nowMs - stats.lastVisibleUpdateAtMs)
+            : null;
+
+        const lines = [];
+        const medianText = medianGapMs !== null ? this._formatCadenceDuration(medianGapMs) : "n/a";
+        const p95Text = p95GapMs !== null ? this._formatCadenceDuration(p95GapMs) : "n/a";
+        lines.push(`Median visible gap: ${medianText} | p95 ${p95Text}`);
+
+        const firstLineParts = [];
+        if (firstLatencyMs !== null) {
+            firstLineParts.push(`First visible update: ${this._formatCadenceDuration(firstLatencyMs)}`);
+        }
+        if (
+            currentGapMs !== null
+            && (this.audioStreaming || this.awaitingLiveResult || this.fixtureRunActive)
+        ) {
+            firstLineParts.push(`Current gap: ${this._formatCadenceDuration(currentGapMs)}`);
+        }
+        if (firstLineParts.length) {
+            lines.push(firstLineParts.join(" | "));
+        }
+
+        lines.push(
+            `Visible updates: ${stats.visibleUpdateCount}`
+            + (updatesPerMin !== null && Number.isFinite(updatesPerMin) ? ` (${updatesPerMin.toFixed(1)}/min)` : "")
+        );
+        lines.push(`Preview changes: ${stats.previewChangeCount} | final growth: ${stats.finalChangeCount}`);
+        return lines.join("\n");
+    }
+
+    updateCadenceIndicator() {
+        if (!this.el.cadenceText) return;
+
+        const text = String(this.formatCadenceSummary() || "").trim();
+        if (text) {
+            this.el.cadenceText.textContent = text;
+            this.el.cadenceText.setAttribute("data-empty", "0");
+            this.el.cadenceText.setAttribute("data-placeholder", "");
+            return;
+        }
+
+        this.el.cadenceText.textContent = "";
+        this.el.cadenceText.setAttribute("data-empty", "1");
+
+        let placeholder = "Cadence indicator is measured client-side from visible transcript updates.";
+        if (this.audioStreaming || this.fixtureRunActive || this.awaitingLiveResult || this.remoteState === "finalizing") {
+            placeholder = "Cadence indicator appears after the first visible transcript update.";
+        } else if (this.resultEnvelope && this.resultEnvelope.ready) {
+            placeholder = "No cadence data captured for this run in this browser session.";
+        }
+        this.el.cadenceText.setAttribute("data-placeholder", placeholder);
     }
 
     _stripSpeakerTagsFromText(text) {
@@ -1246,7 +1425,8 @@ export class LiveView {
         const previewSeq = Number(preview.preview_seq ?? -1);
         let transcriptChanged = false;
         const nextSegmentsSignature = this._segmentsSignature(finalSegments);
-        if (this.finalSegmentsSignature !== nextSegmentsSignature) {
+        const finalChanged = this.finalSegmentsSignature !== nextSegmentsSignature;
+        if (finalChanged) {
             this.finalSegments = finalSegments.map((seg) => (
                 seg && typeof seg === "object" ? seg : {}
             ));
@@ -1254,7 +1434,8 @@ export class LiveView {
             transcriptChanged = true;
         }
         const nextPreviewText = previewText;
-        if (this.previewText !== nextPreviewText) {
+        const previewChanged = this.previewText !== nextPreviewText;
+        if (previewChanged) {
             this.previewText = nextPreviewText;
             transcriptChanged = true;
         }
@@ -1263,11 +1444,13 @@ export class LiveView {
         }
         if (transcriptChanged) {
             this.renderTranscriptText();
+            this.recordCadenceVisibleUpdate({ finalChanged, previewChanged });
         }
 
         this.partialText = this.formatLiveSummary(result);
         this.runMetricsSummaryText = this.formatRunMetricsSummaryFromResult(result);
         this.updatePartialPlaceholder();
+        this.updateCadenceIndicator();
         this.currentFixtureMeta = String(result.fixture_id || "").trim()
             ? {
                 fixture_id: String(result.fixture_id || "").trim(),
@@ -2065,6 +2248,7 @@ export class LiveView {
     startRecordingTimer() {
         if (this.recordingStartedAtMs <= 0) {
             this.recordingStartedAtMs = Date.now();
+            this.ensureCadenceStarted(this.recordingStartedAtMs);
         }
         if (this.recordingTimerId !== null) return;
 
@@ -2088,6 +2272,7 @@ export class LiveView {
             this.recordingElapsedMs = 0;
         }
         this.updateDurationDisplay();
+        this.updateCadenceIndicator();
     }
 
     getRecordingElapsedMs() {
@@ -2099,7 +2284,10 @@ export class LiveView {
     }
 
     updateDurationDisplay() {
-        if (!this.el.durationText && !this.el.durationTextTop) return;
+        if (!this.el.durationText && !this.el.durationTextTop) {
+            this.updateCadenceIndicator();
+            return;
+        }
         const totalSeconds = Math.floor(this.getRecordingElapsedMs() / 1000);
         const hours = Math.floor(totalSeconds / 3600);
         const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -2112,6 +2300,7 @@ export class LiveView {
             : `${mm}:${ss}`;
         if (this.el.durationText) this.el.durationText.textContent = display;
         if (this.el.durationTextTop) this.el.durationTextTop.textContent = display;
+        this.updateCadenceIndicator();
     }
 
     updatePartialPlaceholder() {
