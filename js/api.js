@@ -1,4 +1,8 @@
 const SETTINGS_KEY = 'transcript_editor_settings_v1';
+const UI_SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000;
+let uiSettingsCacheValue = null;
+let uiSettingsCacheAtMs = 0;
+let uiSettingsInFlight = null;
 
 export function getApiUrl(path) {
     return path.startsWith('/') ? path : `/${path}`;
@@ -52,6 +56,47 @@ export async function fetchServiceSettings() {
     const r = await fetch(getApiUrl("/api/demo/settings"), { cache: "no-store" });
     if (!r.ok) throw new Error(`Fetch settings failed: ${r.status}`);
     return await r.json();
+}
+
+export function clearUiSettingsCache() {
+    uiSettingsCacheValue = null;
+    uiSettingsCacheAtMs = 0;
+}
+
+export async function fetchUiSettings(options = {}) {
+    const forceRefresh = !!(options && options.forceRefresh === true);
+    const rawMaxAge = options && options.maxAgeMs;
+    const maxAgeMs = Number.isFinite(rawMaxAge)
+        ? Math.max(0, Number(rawMaxAge))
+        : UI_SETTINGS_CACHE_TTL_MS;
+
+    const now = Date.now();
+    const hasFreshCache = (
+        uiSettingsCacheValue !== null
+        && maxAgeMs > 0
+        && (now - uiSettingsCacheAtMs) <= maxAgeMs
+    );
+
+    if (!forceRefresh && hasFreshCache) {
+        return uiSettingsCacheValue;
+    }
+    if (!forceRefresh && uiSettingsInFlight) {
+        return uiSettingsInFlight;
+    }
+
+    uiSettingsInFlight = (async () => {
+        const r = await fetch(getApiUrl("/api/ui/settings"), { cache: "no-store" });
+        if (!r.ok) throw new Error(`Fetch ui settings failed: ${r.status}`);
+        const payload = await r.json();
+        uiSettingsCacheValue = payload;
+        uiSettingsCacheAtMs = Date.now();
+        return payload;
+    })();
+    try {
+        return await uiSettingsInFlight;
+    } finally {
+        uiSettingsInFlight = null;
+    }
 }
 
 

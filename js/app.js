@@ -2,19 +2,23 @@ import { UploadView } from "./components/UploadView.js";
 import { EditorView } from "./components/EditorView.js";
 import { SettingsView } from "./components/SettingsView.js";
 import { LiveView } from "./components/LiveView.js";
+import { IntroView } from "./components/IntroView.js";
 import { ProjectService } from "./services/ProjectService.js";
 import { FileHandleService } from "./services/FileHandleService.js";
-import { fetchJobStatus } from "./api.js";
+import { fetchJobStatus, fetchUiSettings } from "./api.js";
 
 class App {
     constructor() {
         this.state = {
-            currentView: 'upload', // 'upload' | 'editor' | 'settings' | 'live'
+            currentView: null, // set in init()
             sidebarOpen: true, // Desktop default
             activeJob: null, // { id, filename, progress, status }
             activeUpload: null, // { filename, language, speakers, progress, ... } before job_id is returned
             activeProjectId: null // ID of currently open project
         };
+
+        this.uiSettings = null;
+        this.hasInitialRender = false;
 
         this.container = document.getElementById('main-view');
         this.sidebar = document.getElementById('app-sidebar');
@@ -31,7 +35,8 @@ class App {
             upload: new UploadView(this),
             editor: new EditorView(this),
             settings: new SettingsView(this),
-            live: new LiveView(this)
+            live: new LiveView(this),
+            intro: new IntroView(this)
         };
 
         this.projectActionMenu = null;
@@ -85,7 +90,31 @@ class App {
         }
     }
 
-    init() {
+    async init() {
+        try {
+            this.uiSettings = await fetchUiSettings();
+        } catch (err) {
+            console.error("Failed to load ui_settings.json", err);
+            this.uiSettings = {};
+        }
+
+        const showQuickStart = this.uiSettings.show_quick_start === true;
+
+        // Hide sidebar link if disabled
+        const introLink = document.querySelector('.nav-links li[data-action="intro"]');
+        if (introLink && !showQuickStart) {
+            introLink.style.display = 'none';
+        }
+
+        // Figure out startup view
+        let initialView = localStorage.getItem('omniscripta_last_view');
+        if (!initialView) {
+            initialView = showQuickStart ? 'intro' : 'upload';
+        } else if (initialView === 'intro' && !showQuickStart) {
+            initialView = 'upload';
+        }
+        this.state.currentView = initialView;
+
         this.bindEvents();
         this.createMobileToggle(); // Floating hamburger for mobile
         this.initDeleteProjectModal();
@@ -96,8 +125,12 @@ class App {
         this.render();
         this.syncLiveNavState();
 
-        // Handle browser back/forward if we decide to use history API later
-        // window.onpopstate = ...
+        // Handle browser back/forward
+        window.addEventListener('popstate', (event) => {
+            if (event.state && event.state.view) {
+                this.navigateTo(event.state.view, event.state.data, true);
+            }
+        });
     }
 
     bindEvents() {
@@ -178,6 +211,12 @@ class App {
                     this.navigateTo('settings');
 
                     // On mobile, close sidebar after selection
+                    if (this.isMobile()) {
+                        this.toggleSidebar(false);
+                    }
+                } else if (action === 'intro') {
+                    this.navigateTo('intro');
+
                     if (this.isMobile()) {
                         this.toggleSidebar(false);
                     }
@@ -313,11 +352,35 @@ class App {
     }
 
     render() {
-        this.navigateTo(this.state.currentView);
+        let startView = this.state.currentView;
+        let viewData = null;
+
+        const hash = window.location.hash.replace('#', '');
+        if (hash) {
+            const parts = hash.split('-');
+            if (this.views[parts[0]]) {
+                startView = parts[0];
+                if (parts.length > 1) {
+                    viewData = { section: parts.slice(1).join('-') };
+                }
+            } else if (this.views[hash]) {
+                startView = hash;
+            }
+        }
+        window.history.replaceState({ view: startView, data: viewData }, '', '#' + (hash || startView));
+        this.navigateTo(startView, viewData, true);
     }
 
-    navigateTo(viewName, data = null) {
+    navigateTo(viewName, data = null, isPopState = false) {
         if (!this.views[viewName]) return;
+
+        // Prevent full remount if navigating internally within the same view
+        if (this.hasInitialRender && this.state.currentView === viewName && isPopState && data && data.section) {
+            if (typeof this.views[viewName].scrollToSection === 'function') {
+                this.views[viewName].scrollToSection(data.section);
+                return;
+            }
+        }
 
         // Unmount current view and save state if applicable
         if (this.state.currentView && this.views[this.state.currentView]) {
@@ -333,6 +396,11 @@ class App {
         }
 
         this.state.currentView = viewName;
+        localStorage.setItem('omniscripta_last_view', viewName);
+
+        if (!isPopState) {
+            window.history.pushState({ view: viewName, data: data }, '', '#' + viewName);
+        }
 
         let viewData = data;
 
@@ -358,6 +426,7 @@ class App {
         // Mount new
         this.container.innerHTML = ''; // Clear
         this.views[viewName].mount(this.container, viewData);
+        this.hasInitialRender = true;
         this.syncLiveNavState();
 
     }

@@ -1,4 +1,4 @@
-import { createLiveSession, getApiUrl } from "../api.js";
+import { createLiveSession, getApiUrl, fetchUiSettings as fetchUiSettingsEnvelope } from "../api.js";
 
 export class LiveSessionService {
     constructor(options = {}) {
@@ -221,12 +221,8 @@ export class LiveSessionService {
         return await r.json();
     }
 
-    async fetchUiSettings() {
-        const r = await fetch(getApiUrl("/api/ui/settings"), {
-            cache: "no-store",
-        });
-        if (!r.ok) throw new Error(`Fetch UI settings failed: ${r.status}`);
-        return await r.json();
+    async fetchUiSettings(options = {}) {
+        return await fetchUiSettingsEnvelope(options);
     }
 
     getTranscriptDownloadUrl(kind, sessionId) {
