@@ -2,6 +2,7 @@ export class IntroView {
     constructor(app) {
         this.app = app;
         this.container = null;
+        this.observer = null;
     }
 
     mount(container, data) {
@@ -18,6 +19,10 @@ export class IntroView {
     }
 
     unmount() {
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
         if (this.container) {
             this.container.innerHTML = '';
         }
@@ -138,6 +143,39 @@ export class IntroView {
         if (btnLive) btnLive.addEventListener('click', (e) => { e.preventDefault(); this.app.navigateTo('live'); });
         if (btnEditor) btnEditor.addEventListener('click', (e) => { e.preventDefault(); this.app.navigateTo('upload'); });
         if (btnDocument) btnDocument.addEventListener('click', (e) => { e.preventDefault(); this.app.navigateTo('upload'); });
+
+        // Scroll spy: update active tab based on visible section
+        this.setupScrollSpy();
+    }
+
+    setupScrollSpy() {
+        const sections = this.container.querySelectorAll('.intro-section');
+        
+        this.observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const sectionId = entry.target.id;
+                    this.updateActiveTab(sectionId);
+                }
+            });
+        }, {
+            threshold: 0.5,  // Trigger when 50% of section is visible
+            root: this.container  // Use the scrollable container as viewport
+        });
+
+        sections.forEach(section => {
+            this.observer.observe(section);
+        });
+    }
+
+    updateActiveTab(sectionId) {
+        const tabs = this.container.querySelectorAll('.intro-tab');
+        tabs.forEach(tab => {
+            tab.classList.remove('active');
+            if (tab.dataset.target === sectionId) {
+                tab.classList.add('active');
+            }
+        });
     }
 
     scrollToSection(targetId, performScroll = true) {

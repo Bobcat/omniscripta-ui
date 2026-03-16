@@ -3788,6 +3788,8 @@
       flex-direction: column;
       gap: 80px;
       /* Lots of whitespace between sections */
+      padding-bottom: 40px;
+      /* Breathing room at the bottom of the page */
     }
 
     .intro-section {
@@ -3893,6 +3895,96 @@
       font-size: 0.8rem;
       color: var(--text-secondary);
       margin: 0;
+    }
+
+    /* Mobile optimizations for intro page */
+    @media (max-width: 600px) {
+      .intro-view {
+        padding: 20px 16px 0;
+        max-width: 100%;
+      }
+
+      .intro-hero {
+        padding: 20px 0 16px;
+        margin-bottom: 24px;
+      }
+
+      .intro-hero h1 {
+        font-size: 1.75rem;
+        margin: 0 0 12px 0;
+      }
+
+      .intro-subtitle {
+        font-size: 0.95rem;
+        padding: 0 8px;
+      }
+
+      .intro-tabs-container {
+        padding: 0 16px;
+        margin: 0 -16px 24px -16px;
+        /* Visual hint for scrollable tabs */
+        position: relative;
+      }
+
+      .intro-tabs-container::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 40px;
+        background: linear-gradient(to right, transparent, rgba(255,255,255,0.95));
+        pointer-events: none;
+      }
+
+      .intro-tab {
+        padding: 12px 12px;
+        font-size: 0.85rem;
+      }
+
+      .intro-content {
+        gap: 48px;
+        padding-bottom: 24px;
+      }
+
+      .intro-section {
+        padding-top: 16px;
+        scroll-margin-top: 60px;
+      }
+
+      .intro-text h2 {
+        font-size: 1.25rem;
+        margin: 0 0 12px 0;
+      }
+
+      .intro-text p {
+        font-size: 0.95rem;
+        line-height: 1.5;
+        margin: 0 0 16px 0;
+      }
+
+      .intro-media {
+        margin-top: 8px;
+      }
+
+      .intro-screenshot-placeholder {
+        aspect-ratio: 16 / 10;
+        padding: 16px;
+      }
+
+      .intro-media-caption {
+        font-size: 0.85rem;
+        flex-wrap: wrap;
+        justify-content: center;
+        text-align: center;
+      }
+
+      .intro-hint {
+        display: block;
+        width: 100%;
+        margin-top: 4px;
+        margin-left: 0 !important;
+      }
     }
 
     @media (min-width: 768px) {
