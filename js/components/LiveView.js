@@ -1,6 +1,7 @@
 import { LiveAudioService, downsampleBuffer, float32ToPcm16LeBuffer } from "../services/LiveAudioService.js";
 import { LiveSessionService } from "../services/LiveSessionService.js";
 import { TRANSCRIPT_LANGUAGES } from "../constants/languages.js";
+import { createMouseDragController } from "../editorDrag.js";
 
 const STATUS_LABELS = {
     idle: "Idle",
@@ -15,6 +16,16 @@ const STATUS_LABELS = {
     disconnected: "Disconnected",
     error: "Error",
 };
+
+const LIVE_VAD_PHASE_LABELS = {
+    speech: "Speech detected",
+    hangover: "",
+    silence: "",
+    disabled: "",
+    unknown: "",
+};
+const LIVE_VAD_SPEECH_BADGE_MAX_AGE_MS = 220;
+const LIVE_VAD_SPEECH_BADGE_HOLD_MS = 900;
 
 const DEV_LIVE_FIXTURES = {
     panel120v1: {
@@ -71,6 +82,7 @@ export class LiveView {
         this.previewSeq = -1;
         this.partialText = "";
         this.developerToolsOpen = false;
+        this.vadState = this.createVadState();
 
         this.audioStreaming = false;
         this.audioPaused = false;
@@ -108,6 +120,15 @@ export class LiveView {
         this.fixtureRunLabel = "";
         this.selectedFixtureKey = DEV_LIVE_FIXTURE_OPTIONS[0] ? DEV_LIVE_FIXTURE_OPTIONS[0].value : "panel120v1";
         this.selectedLanguage = this.loadPreferredLanguage();
+        this.languageSelectMeasureCanvas = null;
+        this.audioSettingsPanelOpen = false;
+        this.audioSettingsDrag = null;
+        this.audioSettingsUi = {
+            preGain: 1.0,
+            noiseSuppression: false,
+            autoGainControl: false,
+            echoCancellation: false,
+        };
         this.devSpeakerLabelsEnabled = true;
         this.liveTranscriptFormatRules = { ...DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES };
 
@@ -116,7 +137,7 @@ export class LiveView {
 
     getHtml() {
         const langOptions = [
-            "<option value=\"\">🌐 Auto (server default)</option>",
+            "<option value=\"\">Auto detect</option>",
             ...TRANSCRIPT_LANGUAGES.map((l) => (`<option value=\"${String(l.code || "")}\">${String(l.flag || "")} ${String(l.name || l.code || "")}</option>`)),
         ].join("");
         return `
@@ -131,6 +152,7 @@ export class LiveView {
             <span class="live-status-badge status-idle" id="liveStatusBadge">Ready</span>
           </div>
           <div class="header-right">
+            <span class="live-vad-badge hidden" id="liveVadBadge" aria-live="polite">Listening...</span>
             <div class="timer timer-top hidden" id="liveDurationTextTop">00:00</div>
           </div>
         </header>
@@ -167,10 +189,20 @@ export class LiveView {
           <div class="controls-left">
             <div class="timer hidden" id="liveDurationText">00:00</div>
             <div class="live-language-picker" id="liveLanguagePicker">
+              <button
+                id="liveAudioSettingsBtn"
+                class="live-audio-settings-btn"
+                type="button"
+                title="Advanced audio options"
+                aria-label="Advanced audio options"
+                aria-expanded="false"
+              >
+                <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+              </button>
               <select id="liveLanguageSelect" class="live-select live-language-select" title="Auto is recommended unless you are sure about the spoken language.">
                 ${langOptions}
               </select>
-              <div class="live-language-help">Auto is recommended for unknown or mixed-language speech.</div>
+              <div class="live-language-help" id="liveLanguageHelp">Auto is recommended for unknown or mixed-language speech.</div>
             </div>
           </div>
 
@@ -217,6 +249,57 @@ export class LiveView {
 
         </div>
         <!-- /live-main -->
+
+        <!-- Modeless advanced audio panel -->
+        <div class="live-audio-panel hidden" id="liveAudioPanel" role="dialog" aria-modal="false" aria-label="Advanced audio options">
+          <div class="live-audio-panel-card" id="liveAudioPanelCard">
+            <div class="live-audio-panel-topbar" id="liveAudioPanelDragHandle" title="Drag to move">
+              <div class="live-audio-panel-title">Advanced audio</div>
+              <div class="live-audio-panel-grip" aria-hidden="true">⋮⋮</div>
+            </div>
+            <div class="live-audio-panel-body">
+              <div class="live-audio-panel-hint">UX only for now. Values on the right are read from the current browser mic track.</div>
+
+              <div class="live-audio-pregain">
+                <div class="live-audio-pregain-head">
+                  <label for="liveAudioPreGain">Mic pre-gain</label>
+                  <span class="live-audio-ui-value" id="liveAudioPreGainUiValue">1.0x</span>
+                </div>
+                <input id="liveAudioPreGain" type="range" min="0.5" max="3.0" step="0.1" value="1.0" />
+              </div>
+
+              <div class="live-audio-toggles">
+                <label class="live-audio-toggle">
+                  <input id="liveAudioNoiseSuppression" type="checkbox" />
+                  <span>Noise suppression</span>
+                </label>
+                <label class="live-audio-toggle">
+                  <input id="liveAudioAutoGainControl" type="checkbox" />
+                  <span>Auto gain control</span>
+                </label>
+                <label class="live-audio-toggle">
+                  <input id="liveAudioEchoCancellation" type="checkbox" />
+                  <span>Echo cancellation</span>
+                </label>
+              </div>
+
+              <div class="live-audio-sep"></div>
+
+              <div class="live-audio-kv"><span class="muted">Current noise suppression</span><span id="liveAudioCurrentNoiseSuppression">Start recording to read</span></div>
+              <div class="live-audio-kv"><span class="muted">Current auto gain control</span><span id="liveAudioCurrentAutoGainControl">Start recording to read</span></div>
+              <div class="live-audio-kv"><span class="muted">Current echo cancellation</span><span id="liveAudioCurrentEchoCancellation">Start recording to read</span></div>
+              <div class="live-audio-kv"><span class="muted">Device</span><span id="liveAudioCurrentDevice">Start recording to read</span></div>
+              <div class="live-audio-kv"><span class="muted">Input sample rate</span><span id="liveAudioCurrentSampleRate">Start recording to read</span></div>
+              <div class="live-audio-kv"><span class="muted">Channel count</span><span id="liveAudioCurrentChannelCount">Start recording to read</span></div>
+              <div class="live-audio-kv"><span class="muted">Capture engine</span><span id="liveAudioCurrentEngine">idle</span></div>
+              <div class="live-audio-kv"><span class="muted">Chunk cadence</span><span id="liveAudioCurrentChunkMs">40 ms</span></div>
+
+              <div class="live-audio-panel-actions">
+                <button class="mini live-audio-panel-close" id="liveAudioPanelCloseBtn" type="button">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
 
 
         <!-- Dev section (hidden by default) -->
@@ -289,10 +372,14 @@ export class LiveView {
     unmount() {
         if (this.shouldPreserveSessionOnUnmount()) {
             // Keep a running live flow alive when users switch views.
+            if (this.audioSettingsDrag) this.audioSettingsDrag.onUp();
+            this.audioSettingsPanelOpen = false;
             this.el = {};
             this.updateControls();
             return {};
         }
+        if (this.audioSettingsDrag) this.audioSettingsDrag.onUp();
+        this.audioSettingsPanelOpen = false;
         this.cleanupSession("view_unmount", { sendStop: false });
 
         if (this.audioService) {
@@ -454,8 +541,28 @@ export class LiveView {
 
     captureElements() {
         this.el.statusBadge = document.getElementById("liveStatusBadge");
+        this.el.vadBadge = document.getElementById("liveVadBadge");
         this.el.languagePicker = document.getElementById("liveLanguagePicker");
         this.el.languageSelect = document.getElementById("liveLanguageSelect");
+        this.el.languageHelp = document.getElementById("liveLanguageHelp");
+        this.el.audioSettingsBtn = document.getElementById("liveAudioSettingsBtn");
+        this.el.audioPanel = document.getElementById("liveAudioPanel");
+        this.el.audioPanelCard = document.getElementById("liveAudioPanelCard");
+        this.el.audioPanelDragHandle = document.getElementById("liveAudioPanelDragHandle");
+        this.el.audioPanelCloseBtn = document.getElementById("liveAudioPanelCloseBtn");
+        this.el.audioPreGain = document.getElementById("liveAudioPreGain");
+        this.el.audioPreGainUiValue = document.getElementById("liveAudioPreGainUiValue");
+        this.el.audioNoiseSuppression = document.getElementById("liveAudioNoiseSuppression");
+        this.el.audioAutoGainControl = document.getElementById("liveAudioAutoGainControl");
+        this.el.audioEchoCancellation = document.getElementById("liveAudioEchoCancellation");
+        this.el.audioCurrentNoiseSuppression = document.getElementById("liveAudioCurrentNoiseSuppression");
+        this.el.audioCurrentAutoGainControl = document.getElementById("liveAudioCurrentAutoGainControl");
+        this.el.audioCurrentEchoCancellation = document.getElementById("liveAudioCurrentEchoCancellation");
+        this.el.audioCurrentDevice = document.getElementById("liveAudioCurrentDevice");
+        this.el.audioCurrentSampleRate = document.getElementById("liveAudioCurrentSampleRate");
+        this.el.audioCurrentChannelCount = document.getElementById("liveAudioCurrentChannelCount");
+        this.el.audioCurrentEngine = document.getElementById("liveAudioCurrentEngine");
+        this.el.audioCurrentChunkMs = document.getElementById("liveAudioCurrentChunkMs");
         this.el.durationText = document.getElementById("liveDurationText");
         this.el.durationTextTop = document.getElementById("liveDurationTextTop");
         this.el.sessionId = document.getElementById("liveSessionId");
@@ -506,6 +613,38 @@ export class LiveView {
                 }
             });
         }
+        if (this.el.audioSettingsBtn) {
+            this.el.audioSettingsBtn.addEventListener("click", () => {
+                this.toggleAudioSettingsPanel();
+            });
+        }
+        if (this.el.audioPanelCloseBtn) {
+            this.el.audioPanelCloseBtn.addEventListener("click", () => this.toggleAudioSettingsPanel(false));
+        }
+        if (this.el.audioPreGain) {
+            this.el.audioPreGain.addEventListener("input", () => {
+                const raw = Number(this.el.audioPreGain.value);
+                this.audioSettingsUi.preGain = Number.isFinite(raw) ? Math.max(0.5, Math.min(3.0, raw)) : 1.0;
+                this.refreshAudioSettingsPanel({ readCurrent: false });
+            });
+        }
+        if (this.el.audioNoiseSuppression) {
+            this.el.audioNoiseSuppression.addEventListener("change", () => {
+                this.audioSettingsUi.noiseSuppression = !!this.el.audioNoiseSuppression.checked;
+            });
+        }
+        if (this.el.audioAutoGainControl) {
+            this.el.audioAutoGainControl.addEventListener("change", () => {
+                this.audioSettingsUi.autoGainControl = !!this.el.audioAutoGainControl.checked;
+            });
+        }
+        if (this.el.audioEchoCancellation) {
+            this.el.audioEchoCancellation.addEventListener("change", () => {
+                this.audioSettingsUi.echoCancellation = !!this.el.audioEchoCancellation.checked;
+            });
+        }
+        this.initAudioSettingsDrag();
+        this.refreshAudioSettingsPanel({ readCurrent: true });
         if (this.el.startBtn) {
             this.el.startBtn.addEventListener("click", () => this.startMic());
         }
@@ -623,6 +762,171 @@ export class LiveView {
         const normalized = this.normalizeLanguageCode(this.selectedLanguage);
         this.selectedLanguage = normalized;
         this.el.languageSelect.value = normalized;
+        this.updateLanguageHelpVisibility();
+        this.fitLanguageSelectToSelectedOption();
+    }
+
+    updateLanguageHelpVisibility() {
+        if (!this.el.languageHelp) return;
+        const isAutoSelected = !this.normalizeLanguageCode(this.selectedLanguage);
+        this.el.languageHelp.classList.toggle("hidden", isAutoSelected);
+    }
+
+    fitLanguageSelectToSelectedOption() {
+        const select = this.el.languageSelect;
+        if (!select) return;
+        const selectedIndex = Number.isFinite(select.selectedIndex) ? select.selectedIndex : 0;
+        const option = select.options && select.options.length > 0
+            ? select.options[Math.max(0, selectedIndex)]
+            : null;
+        const text = String(option && option.text ? option.text : "Auto detect").trim();
+        if (!text) return;
+        if (typeof window === "undefined" || typeof window.getComputedStyle !== "function") return;
+        try {
+            if (!this.languageSelectMeasureCanvas && typeof document !== "undefined") {
+                this.languageSelectMeasureCanvas = document.createElement("canvas");
+            }
+            const canvas = this.languageSelectMeasureCanvas;
+            const ctx = canvas && typeof canvas.getContext === "function" ? canvas.getContext("2d") : null;
+            if (!ctx) return;
+            const computed = window.getComputedStyle(select);
+            const fontStyle = String(computed.fontStyle || "normal");
+            const fontWeight = String(computed.fontWeight || "400");
+            const fontSize = String(computed.fontSize || "14px");
+            const fontFamily = String(computed.fontFamily || "system-ui");
+            ctx.font = `${fontStyle} ${fontWeight} ${fontSize} ${fontFamily}`;
+            const textWidth = Math.ceil(ctx.measureText(text).width);
+            const targetWidthPx = Math.max(86, Math.min(220, textWidth + 40));
+            select.style.width = `${targetWidthPx}px`;
+        } catch {
+            // Keep CSS fallback sizing when measuring is unavailable.
+        }
+    }
+
+    initAudioSettingsDrag() {
+        if (!this.el.audioPanelCard || !this.el.audioPanelDragHandle) return;
+        if (!this.audioSettingsDrag) {
+            this.audioSettingsDrag = createMouseDragController((x, y) => {
+                if (!this.el.audioPanelCard) return;
+                this.el.audioPanelCard.style.setProperty("--drag-x", `${x}px`);
+                this.el.audioPanelCard.style.setProperty("--drag-y", `${y}px`);
+            });
+        }
+        this.el.audioPanelDragHandle.addEventListener("mousedown", this.audioSettingsDrag.onMouseDown);
+    }
+
+    toggleAudioSettingsPanel(forceOpen) {
+        const next = typeof forceOpen === "boolean" ? forceOpen : !this.audioSettingsPanelOpen;
+        this.audioSettingsPanelOpen = !!next;
+        if (this.el.audioSettingsBtn) {
+            this.el.audioSettingsBtn.setAttribute("aria-expanded", this.audioSettingsPanelOpen ? "true" : "false");
+        }
+        if (this.el.audioPanel) {
+            this.el.audioPanel.classList.toggle("hidden", !this.audioSettingsPanelOpen);
+        }
+        if (!this.audioSettingsPanelOpen) {
+            if (this.audioSettingsDrag) {
+                this.audioSettingsDrag.onUp();
+            }
+            return;
+        }
+        this.refreshAudioSettingsPanel({ readCurrent: true });
+    }
+
+    formatAudioBool(value) {
+        if (value === true) return "On";
+        if (value === false) return "Off";
+        return "Not reported";
+    }
+
+    readCurrentAudioTrackState() {
+        const state = {
+            hasActiveTrack: false,
+            noiseSuppression: null,
+            autoGainControl: null,
+            echoCancellation: null,
+            sampleRate: null,
+            channelCount: null,
+            deviceLabel: "",
+            engine: String((this.audioService && this.audioService.mode) || "idle"),
+            chunkMs: Number(this.audioService && this.audioService.chunkMs) || 0,
+        };
+        const svc = this.audioService;
+        if (!svc || !svc.mediaStream) {
+            if ((Number(svc && svc.inputSampleRate) || 0) > 0) {
+                state.sampleRate = Number(svc.inputSampleRate);
+            }
+            return state;
+        }
+        const tracks = typeof svc.mediaStream.getAudioTracks === "function" ? svc.mediaStream.getAudioTracks() : [];
+        const track = tracks && tracks.length ? tracks[0] : null;
+        if (!track) {
+            if ((Number(svc.inputSampleRate) || 0) > 0) {
+                state.sampleRate = Number(svc.inputSampleRate);
+            }
+            return state;
+        }
+        state.hasActiveTrack = true;
+        const settings = typeof track.getSettings === "function" ? (track.getSettings() || {}) : {};
+        const constraints = typeof track.getConstraints === "function" ? (track.getConstraints() || {}) : {};
+        const pickBool = (sKey, cKey) => {
+            if (Object.prototype.hasOwnProperty.call(settings, sKey)) return settings[sKey] === true;
+            if (Object.prototype.hasOwnProperty.call(constraints, cKey)) return constraints[cKey] === true;
+            return null;
+        };
+        state.noiseSuppression = pickBool("noiseSuppression", "noiseSuppression");
+        state.autoGainControl = pickBool("autoGainControl", "autoGainControl");
+        state.echoCancellation = pickBool("echoCancellation", "echoCancellation");
+        const sr = Number(settings.sampleRate || constraints.sampleRate || svc.inputSampleRate || 0);
+        const ch = Number(settings.channelCount || constraints.channelCount || 0);
+        state.sampleRate = Number.isFinite(sr) && sr > 0 ? sr : null;
+        state.channelCount = Number.isFinite(ch) && ch > 0 ? ch : null;
+        state.deviceLabel = String(track.label || settings.deviceId || "").trim();
+        return state;
+    }
+
+    refreshAudioSettingsPanel(options = {}) {
+        const readCurrent = options.readCurrent !== false;
+        if (this.el.audioPreGain) {
+            this.el.audioPreGain.value = String(this.audioSettingsUi.preGain);
+        }
+        if (this.el.audioPreGainUiValue) {
+            this.el.audioPreGainUiValue.textContent = `${this.audioSettingsUi.preGain.toFixed(1)}x`;
+        }
+        if (this.el.audioNoiseSuppression) this.el.audioNoiseSuppression.checked = !!this.audioSettingsUi.noiseSuppression;
+        if (this.el.audioAutoGainControl) this.el.audioAutoGainControl.checked = !!this.audioSettingsUi.autoGainControl;
+        if (this.el.audioEchoCancellation) this.el.audioEchoCancellation.checked = !!this.audioSettingsUi.echoCancellation;
+
+        if (!readCurrent) return;
+        const now = this.readCurrentAudioTrackState();
+        const inactiveText = "Start recording to read";
+        const fromTrack = !!now.hasActiveTrack;
+        if (this.el.audioCurrentNoiseSuppression) this.el.audioCurrentNoiseSuppression.textContent = this.formatAudioBool(now.noiseSuppression);
+        if (this.el.audioCurrentAutoGainControl) this.el.audioCurrentAutoGainControl.textContent = this.formatAudioBool(now.autoGainControl);
+        if (this.el.audioCurrentEchoCancellation) this.el.audioCurrentEchoCancellation.textContent = this.formatAudioBool(now.echoCancellation);
+        if (this.el.audioCurrentDevice) this.el.audioCurrentDevice.textContent = fromTrack ? (now.deviceLabel || "Not reported") : inactiveText;
+        if (this.el.audioCurrentSampleRate) {
+            this.el.audioCurrentSampleRate.textContent = fromTrack
+                ? ((Number.isFinite(now.sampleRate) && now.sampleRate > 0)
+                ? `${Math.round(now.sampleRate)} Hz`
+                : "Not reported")
+                : inactiveText;
+        }
+        if (this.el.audioCurrentChannelCount) {
+            this.el.audioCurrentChannelCount.textContent = fromTrack
+                ? ((Number.isFinite(now.channelCount) && now.channelCount > 0)
+                ? `${Math.round(now.channelCount)}`
+                : "Not reported")
+                : inactiveText;
+        }
+        if (this.el.audioCurrentEngine) {
+            this.el.audioCurrentEngine.textContent = now.engine || "idle";
+        }
+        if (this.el.audioCurrentChunkMs) {
+            this.el.audioCurrentChunkMs.textContent = (Number.isFinite(now.chunkMs) && now.chunkMs > 0)
+                ? `${Math.round(now.chunkMs)} ms`
+                : "Not reported";
+        }
     }
 
     getRequestedSessionLanguage() {
@@ -680,6 +984,157 @@ export class LiveView {
         }
     }
 
+    createVadState() {
+        return {
+            enabled: false,
+            phase: "disabled",
+            label: "",
+            speechHintUntilMs: 0,
+            lastSpeechAgeMs: null,
+            hangoverMs: null,
+            checks: 0,
+            speechAllows: 0,
+            hangoverAllows: 0,
+            silenceSkips: 0,
+        };
+    }
+
+    _normalizeVadPhase(value) {
+        const v = String(value || "").trim().toLowerCase();
+        if (v === "speech" || v === "hangover" || v === "silence") return v;
+        if (v === "disabled") return "disabled";
+        return "unknown";
+    }
+
+    _vadLabelForPhase(phase) {
+        const p = this._normalizeVadPhase(phase);
+        return LIVE_VAD_PHASE_LABELS[p] || LIVE_VAD_PHASE_LABELS.unknown;
+    }
+
+    _extractEngineState(result) {
+        const r = result && typeof result === "object" ? result : {};
+        const runtime = r.engine_runtime && typeof r.engine_runtime === "object" ? r.engine_runtime : {};
+        const engineState = runtime.engine_state && typeof runtime.engine_state === "object"
+            ? runtime.engine_state
+            : runtime;
+        return engineState && typeof engineState === "object" ? engineState : {};
+    }
+
+    applyVadStateFromResult(result) {
+        const nowMs = Date.now();
+        const state = this.vadState && typeof this.vadState === "object" ? this.vadState : this.createVadState();
+        const engineState = this._extractEngineState(result);
+        const vad = engineState.vad && typeof engineState.vad === "object" ? engineState.vad : null;
+        if (!vad || vad.enabled !== true) {
+            this.vadState = {
+                ...state,
+                enabled: false,
+                phase: "disabled",
+                label: "",
+                speechHintUntilMs: 0,
+            };
+            this.updateVadIndicator();
+            return;
+        }
+
+        const cfg = vad.config && typeof vad.config === "object" ? vad.config : {};
+        const st = vad.state && typeof vad.state === "object" ? vad.state : {};
+        const ageRaw = Number(st.last_speech_age_ms);
+        const ageMs = Number.isFinite(ageRaw) && ageRaw >= 0 ? ageRaw : null;
+        const hangoverRaw = Number(cfg.hangover_ms);
+        const hangoverMs = Number.isFinite(hangoverRaw) && hangoverRaw >= 0 ? hangoverRaw : null;
+        const phase = (ageMs !== null && ageMs <= LIVE_VAD_SPEECH_BADGE_MAX_AGE_MS) ? "speech" : "silence";
+        const speechHintUntilMs = phase === "speech"
+            ? Math.max(Number(state.speechHintUntilMs || 0), nowMs + LIVE_VAD_SPEECH_BADGE_HOLD_MS)
+            : 0;
+        this.vadState = {
+            ...state,
+            enabled: true,
+            phase,
+            label: this._vadLabelForPhase(phase),
+            speechHintUntilMs,
+            lastSpeechAgeMs: ageMs,
+            hangoverMs,
+            checks: Number.isFinite(Number(st.checks)) ? Number(st.checks) : state.checks,
+            speechAllows: Number.isFinite(Number(st.speech_checks)) ? Number(st.speech_checks) : state.speechAllows,
+            hangoverAllows: Number.isFinite(Number(st.hangover_allows)) ? Number(st.hangover_allows) : state.hangoverAllows,
+            silenceSkips: Number.isFinite(Number(st.silence_checks)) ? Number(st.silence_checks) : state.silenceSkips,
+        };
+        this.updateVadIndicator();
+    }
+
+    applyVadStateFromStats(payload) {
+        const nowMs = Date.now();
+        const p = payload && typeof payload === "object" ? payload : {};
+        const g = p.rolling_guardrails && typeof p.rolling_guardrails === "object" ? p.rolling_guardrails : null;
+        if (!g) return;
+
+        const nextChecks = Number(g.vad_checks);
+        const nextSpeech = Number(g.vad_speech_allows);
+        const nextHangover = Number(g.vad_hangover_allows);
+        const nextSilence = Number(g.vad_silence_skips);
+        if (
+            !Number.isFinite(nextChecks)
+            || !Number.isFinite(nextSpeech)
+            || !Number.isFinite(nextHangover)
+            || !Number.isFinite(nextSilence)
+        ) {
+            return;
+        }
+
+        const state = this.vadState && typeof this.vadState === "object" ? this.vadState : this.createVadState();
+        const seemsEnabled = !!state.enabled || nextChecks > 0 || nextSpeech > 0 || nextHangover > 0 || nextSilence > 0;
+        if (!seemsEnabled) return;
+        const prevChecks = Number(state.checks || 0);
+        const prevSpeech = Number(state.speechAllows || 0);
+        const prevHangover = Number(state.hangoverAllows || 0);
+        const prevSilence = Number(state.silenceSkips || 0);
+        let phase = this._normalizeVadPhase(state.phase);
+        let speechHintUntilMs = Number(state.speechHintUntilMs || 0);
+        if (nextSpeech > prevSpeech) {
+            phase = "speech";
+            speechHintUntilMs = nowMs + LIVE_VAD_SPEECH_BADGE_HOLD_MS;
+        } else if (nextSilence > prevSilence) {
+            phase = "silence";
+            speechHintUntilMs = 0;
+        } else if (nextChecks > prevChecks && phase === "unknown") {
+            phase = "silence";
+            speechHintUntilMs = 0;
+        } else if (nextHangover > prevHangover) {
+            phase = "silence";
+            speechHintUntilMs = 0;
+        }
+
+        this.vadState = {
+            ...state,
+            enabled: true,
+            phase,
+            label: this._vadLabelForPhase(phase),
+            speechHintUntilMs,
+            checks: nextChecks,
+            speechAllows: nextSpeech,
+            hangoverAllows: nextHangover,
+            silenceSkips: nextSilence,
+        };
+        this.updateVadIndicator();
+    }
+
+    updateVadIndicator() {
+        if (!this.el.vadBadge) return;
+        const phase = this._normalizeVadPhase(this.vadState && this.vadState.phase);
+        const enabled = !!(this.vadState && this.vadState.enabled);
+        const speechHintUntilMs = Number(this.vadState && this.vadState.speechHintUntilMs || 0);
+        const nowMs = Date.now();
+        const speechActive = phase === "speech" && speechHintUntilMs > nowMs;
+        const sessionActive = this.audioStreaming || this.remoteState === "listening";
+        const show = enabled && sessionActive && speechActive;
+        this.el.vadBadge.classList.toggle("hidden", !show);
+        this.el.vadBadge.classList.remove("vad-speech", "vad-hangover", "vad-silence");
+        if (!show) return;
+        this.el.vadBadge.classList.add("vad-speech");
+        this.el.vadBadge.textContent = this._vadLabelForPhase("speech");
+    }
+
     resetLiveResultState() {
         this.awaitingLiveResult = false;
         this.resultEnvelope = null;
@@ -699,6 +1154,8 @@ export class LiveView {
         this.finalSegments = [];
         this.finalSegmentsSignature = "";
         this.cadenceStats = this.createCadenceStats();
+        this.vadState = this.createVadState();
+        this.updateVadIndicator();
     }
 
     createCadenceStats() {
@@ -1156,6 +1613,41 @@ export class LiveView {
             `Chunks ${done}/${total} (pending ${pending}, failed ${failed})`,
             `Transcript rev ${rev}`,
         ];
+
+        const engineState = this._extractEngineState(r);
+        const vadObj = engineState.vad && typeof engineState.vad === "object" ? engineState.vad : null;
+        if (vadObj && vadObj.enabled === true) {
+            const vadCfg = vadObj.config && typeof vadObj.config === "object" ? vadObj.config : {};
+            const vadState = vadObj.state && typeof vadObj.state === "object" ? vadObj.state : {};
+            const lastSpeechAgeMsRaw = Number(vadState.last_speech_age_ms);
+            const hangoverMsRaw = Number(vadCfg.hangover_ms);
+            const checksRaw = Number(vadState.checks);
+            const speechRaw = Number(vadState.speech_checks);
+            const hangoverRaw = Number(vadState.hangover_allows);
+            const silenceRaw = Number(vadState.silence_checks);
+            let vadPhase = "silence";
+            if (Number.isFinite(lastSpeechAgeMsRaw) && lastSpeechAgeMsRaw >= 0) {
+                if (lastSpeechAgeMsRaw <= 250) {
+                    vadPhase = "speech";
+                } else if (Number.isFinite(hangoverMsRaw) && hangoverMsRaw > 0 && lastSpeechAgeMsRaw <= hangoverMsRaw) {
+                    vadPhase = "hangover";
+                }
+            }
+            parts.push(`VAD: ${this._vadLabelForPhase(vadPhase)}`);
+            if (
+                Number.isFinite(checksRaw)
+                || Number.isFinite(speechRaw)
+                || Number.isFinite(hangoverRaw)
+                || Number.isFinite(silenceRaw)
+            ) {
+                parts.push(
+                    `VAD counters: checks=${Number.isFinite(checksRaw) ? checksRaw : "?"}`
+                    + ` speech=${Number.isFinite(speechRaw) ? speechRaw : "?"}`
+                    + ` hangover=${Number.isFinite(hangoverRaw) ? hangoverRaw : "?"}`
+                    + ` silence=${Number.isFinite(silenceRaw) ? silenceRaw : "?"}`
+                );
+            }
+        }
         if (durMs > 0) {
             parts.push(`Recording ${(durMs / 1000).toFixed(1)}s`);
         }
@@ -1449,6 +1941,7 @@ export class LiveView {
 
         this.partialText = this.formatLiveSummary(result);
         this.runMetricsSummaryText = this.formatRunMetricsSummaryFromResult(result);
+        this.applyVadStateFromResult(result);
         this.updatePartialPlaceholder();
         this.updateCadenceIndicator();
         this.currentFixtureMeta = String(result.fixture_id || "").trim()
@@ -1544,6 +2037,21 @@ export class LiveView {
             `rec_ms=${num("live_recording_duration_ms")} chunks=${num("live_commits_done")}/${num("live_commits_total")} failed=${num("live_commits_failed")}`,
             `jobs pending=${num("live_jobs_pending")} inflight=${boolish("live_inflight")}`,
         ];
+        const g = p.rolling_guardrails && typeof p.rolling_guardrails === "object" ? p.rolling_guardrails : null;
+        if (g) {
+            const checks = Number(g.vad_checks);
+            const speech = Number(g.vad_speech_allows);
+            const hangover = Number(g.vad_hangover_allows);
+            const silence = Number(g.vad_silence_skips);
+            if (Number.isFinite(checks) || Number.isFinite(speech) || Number.isFinite(hangover) || Number.isFinite(silence)) {
+                lines.push(
+                    `vad checks=${Number.isFinite(checks) ? checks : "?"}`
+                    + ` speech=${Number.isFinite(speech) ? speech : "?"}`
+                    + ` hangover=${Number.isFinite(hangover) ? hangover : "?"}`
+                    + ` silence=${Number.isFinite(silence) ? silence : "?"}`
+                );
+            }
+        }
 
         const extra = Object.keys(p)
             .filter((k) => k !== "type" && k !== "session_id" && k !== "seq")
@@ -1615,6 +2123,9 @@ export class LiveView {
             const sid = this.sessionService ? this.sessionService.getSessionId() : "";
             this.el.sessionId.textContent = sid || "(none)";
         }
+        if (this.audioSettingsPanelOpen) {
+            this.refreshAudioSettingsPanel({ readCurrent: true });
+        }
         this.syncAppLiveNavState();
     }
 
@@ -1669,6 +2180,7 @@ export class LiveView {
                 this.el.processingText.textContent = phase === "connecting" ? "Connecting..." : "Processing recording...";
             }
         }
+        this.updateVadIndicator();
     }
 
 
@@ -2371,6 +2883,7 @@ export class LiveView {
             const s = Number(payload.uptime_s || 0);
             const decodeMs = Number(payload.decode_ms_last || 0);
             const rtf = Number(payload.rtf || 0);
+            this.applyVadStateFromStats(payload);
             this.setDevStats(
                 `Stats: ${b} bytes, ${f} frames, ${s.toFixed(2)}s, decode ${decodeMs.toFixed(2)}ms, rtf ${rtf.toFixed(3)}\n\n${this.formatStatsPayload(payload)}`
             );
