@@ -139,16 +139,21 @@ export class SettingsView {
         const parseOk = !!src.parse_ok;
         const dataText = parseOk ? JSON.stringify(src.data ?? {}, null, 2) : "";
         const errorText = src.error ? String(src.error) : "";
+        const missingText = !exists
+            ? "This file is optional and currently not present. No local overrides are active for this source."
+            : "";
 
         panel.innerHTML = `
+      ${exists ? `
       <div class="svc-settings-meta">
         <div><strong>Path:</strong> <code>${escHtml(src.path || "")}</code></div>
-        <div><strong>Exists:</strong> ${exists ? "yes" : "no"}</div>
+        <div><strong>Exists:</strong> yes</div>
         <div><strong>Parse OK:</strong> ${parseOk ? "yes" : "no"}</div>
         <div><strong>Size:</strong> ${src.size_bytes != null ? `${Number(src.size_bytes)} bytes` : "—"}</div>
         <div><strong>Modified (UTC):</strong> ${escHtml(fmtUtcOrDash(src.mtime_utc))}</div>
-      </div>
-      ${errorText ? `<div class="svc-settings-error">${escHtml(errorText)}</div>` : ""}
+      </div>` : ""}
+      ${!exists ? `<div class="svc-settings-empty">${escHtml(missingText)}</div>` : ""}
+      ${exists && errorText ? `<div class="svc-settings-error">${escHtml(errorText)}</div>` : ""}
       ${parseOk ? `<pre class="svc-settings-json">${escHtml(dataText)}</pre>` : ""}
     `;
     }

@@ -9,6 +9,8 @@ import { fetchJobStatus, fetchUiSettings } from "./api.js";
 
 class App {
     constructor() {
+        this.LAST_VIEW_KEY = 'omniscripta_last_view';
+        this.LAST_EDITOR_PROJECT_KEY = 'omniscripta_last_editor_project_id';
         this.state = {
             currentView: null, // set in init()
             sidebarOpen: true, // Desktop default
@@ -107,7 +109,7 @@ class App {
         }
 
         // Figure out startup view
-        let initialView = localStorage.getItem('omniscripta_last_view');
+        let initialView = localStorage.getItem(this.LAST_VIEW_KEY);
         if (!initialView) {
             initialView = showQuickStart ? 'intro' : 'upload';
         } else if (initialView === 'intro' && !showQuickStart) {
@@ -367,6 +369,12 @@ class App {
                 startView = hash;
             }
         }
+        if (startView === 'editor' && (!viewData || !viewData.jobId)) {
+            const lastEditorProjectId = localStorage.getItem(this.LAST_EDITOR_PROJECT_KEY);
+            if (lastEditorProjectId) {
+                viewData = { ...(viewData || {}), jobId: lastEditorProjectId };
+            }
+        }
         window.history.replaceState({ view: startView, data: viewData }, '', '#' + (hash || startView));
         this.navigateTo(startView, viewData, true);
     }
@@ -396,7 +404,7 @@ class App {
         }
 
         this.state.currentView = viewName;
-        localStorage.setItem('omniscripta_last_view', viewName);
+        localStorage.setItem(this.LAST_VIEW_KEY, viewName);
 
         if (!isPopState) {
             window.history.pushState({ view: viewName, data: data }, '', '#' + viewName);
@@ -408,6 +416,7 @@ class App {
         if (viewName === 'editor') {
             if (data && data.jobId) {
                 this.state.activeProjectId = data.jobId;
+                localStorage.setItem(this.LAST_EDITOR_PROJECT_KEY, data.jobId);
 
                 // Load saved position
                 const projects = this.projectService.getProjects();
