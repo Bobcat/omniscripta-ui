@@ -1,0 +1,173 @@
+    * {
+      box-sizing: border-box;
+    }
+
+    /* fixes modal input overflow */
+
+    :root {
+      --ui-font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Liberation Sans", sans-serif;
+      --border: #e2e8f0;
+      --border-strong: #ddd;
+      --meta: #1f7a3b;
+      --muted: #666;
+      --bg: #fff;
+      --panel: #fafafa;
+      --mode-active: #e5e7eb;
+      --active: #d0e7ff;
+      --primary: #1f6feb;
+      --done-bg: #f1f5f9;
+      --done-bar: #cbd5e1;
+      --color-slate-900: #0f172a;
+      --color-slate-800: #1e293b;
+      --color-slate-700: #334155;
+      --color-slate-600: #475569;
+      --color-slate-500: #64748b;
+      --color-slate-400: #94a3b8;
+      --color-slate-300: #cbd5e1;
+      --color-slate-200: #e2e8f0;
+      --color-sky-100: #dbeafe;
+      --color-blue-500: #3b82f6;
+      --color-blue-600: #2563eb;
+      --color-red-500: #ef4444;
+      --color-border-soft: #dbe2ea;
+      --color-error-text: #a11;
+      --color-error-bg: #fff2f2;
+      --color-error-border: #ffd5d5;
+      --color-danger-strong: #b00020;
+      --color-danger-text: #b91c1c;
+      --color-danger-bg: #fef2f2;
+      --color-danger-border: #fecaca;
+      --color-danger-bg-hover: #fee2e2;
+      --color-danger-border-hover: #fca5a5;
+      --color-warning-bg: #fff7e6;
+      --color-warning-border: #ffd7a8;
+      --color-warning-text: #8a4b00;
+      --color-black: #000;
+      --color-white: #fff;
+      --color-ink-900: #111;
+      --color-ink-700: #333;
+      --color-ink-500: #888;
+      --color-border-100: #eee;
+      --color-border-200: #e0e0e0;
+      --color-border-300: #d1d5db;
+      --color-border-subtle: #e8edf3;
+      --color-border-focus-soft: #cfd8e3;
+      --color-active-border: #9ac2ff;
+      --color-active-border-strong: #9ac6f6;
+      --color-surface-25: #fcfcfc;
+      --color-surface-50: #fafafa;
+      --color-surface-100: #f5f5f5;
+      --color-surface-upload: #fcfdfe;
+      --color-surface-upload-hover: #f8faff;
+      --color-surface-upload-active: #eff6ff;
+      --color-muted-400: #8b8f98;
+      --color-gray-500: #999;
+      --color-gray-700: #555;
+      --color-gray-600: #4b5563;
+      --color-gray-550: #6b7280;
+      --color-gray-700: #374151;
+      --color-ink-950: #111827;
+      --color-danger-700: #991b1b;
+      --color-warning-700: #854d0e;
+      --color-warning-800: #92400e;
+      --color-warning-bg-soft: #fef9c3;
+      --color-warning-bg-strong: #fef3c7;
+      --color-success-text: #166534;
+      --color-success-text-strong: #065f46;
+      --color-success-bg: #dcfce7;
+      --color-success-bg-strong: #d1fae5;
+      --color-success-accent: #22c55e;
+      --color-paused-bg: #ede9fe;
+      --color-paused-text: #5b21b6;
+      --color-finished-bg: #e0e7ff;
+      --color-finished-text: #3730a3;
+      --color-info-text: #1d4ed8;
+      --color-log-bg: #111827;
+      --color-log-border: #1f2937;
+      --color-log-text: #dbeafe;
+      --color-surface-200: #f3f4f6;
+      --color-warm-divider: #e8e5dd;
+      --color-warm-border-200: #e7dfcf;
+      --color-warm-border-300: #e5decf;
+      --color-warm-border-400: #ddd6c7;
+      --color-warm-surface-50: #fbfaf7;
+      --color-warm-text-800: #44403c;
+      --color-warm-text-700: #57534e;
+      --color-warm-text-600: #78716c;
+      --color-warm-partial-border: #eadfc9;
+      --color-warm-partial-bg: #f7f1e4;
+      --color-zinc-700: #3f3f46;
+      --color-warm-focus: #d6c6a2;
+      --color-vad-idle-border: #e7dfd0;
+      --color-vad-idle-bg: #fcfaf5;
+      --color-vad-idle-text: #8a806b;
+      --color-vad-speech-border: #b7e8c9;
+      --color-vad-speech-bg: #f2fbf6;
+      --color-vad-speech-text: #3f7253;
+      --color-vad-hangover-border: #ecdcb2;
+      --color-vad-hangover-bg: #fbf8ef;
+      --color-vad-hangover-text: #7b6740;
+      /* Shared chrome (header bars across views) */
+      --chrome-bg: #f8fafc;
+      --chrome-border: var(--border);
+      --chrome-font-size: 0.86rem;
+      --chrome-padding-v: 8px;
+      --chrome-padding-h: 12px;
+
+      /* Phase 0 tokens (no visual change): dialog foundations */
+      --dialog-overlay-bg: rgba(0, 0, 0, 0.38);
+      --dialog-overlay-padding: 16px;
+      --dialog-card-radius: 14px;
+      --dialog-card-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+      --dialog-card-max-height: calc(100vh - 24px);
+      --dialog-card-padding: 0;
+      --dialog-topbar-gap: 10px;
+      --dialog-topbar-padding: 8px 10px;
+      --dialog-topbar-bg: rgba(255, 255, 255, 0.92);
+      --dialog-topbar-blur: blur(6px);
+      --dialog-body-padding: 10px;
+      --dialog-drag-x: 0px;
+      --dialog-drag-y: 0px;
+
+      /* Phase 0.5 tokens (no visual change): controls */
+      --control-border: 1px solid var(--border-strong);
+      --control-bg: var(--panel);
+      --control-radius-md: 10px;
+      --control-pad-y: 6px;
+      --control-pad-x: 10px;
+      --control-height-md: 30px;
+      --control-focus-ring: 0 0 0 2px rgba(31, 111, 235, 0.18);
+
+      --input-border: 1px solid var(--border);
+      --input-radius-md: 10px;
+      --input-height-md: 30px;
+      --input-pad-inline: 10px;
+    }
+
+    body {
+      font-family: var(--ui-font);
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background: var(--bg);
+    }
+
+    input,
+    textarea,
+    button,
+    select {
+      font-family: inherit;
+    }
+
+
+    header,
+    .live-header {
+      padding: var(--chrome-padding-v) var(--chrome-padding-h);
+      border-bottom: 1px solid var(--chrome-border);
+      position: sticky;
+      top: 0;
+      z-index: 1200;
+      background: var(--chrome-bg);
+      font-size: var(--chrome-font-size);
+    }

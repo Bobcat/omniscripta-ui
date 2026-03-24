@@ -39,20 +39,27 @@ $ESBUILD "$APP_DIR/js/app.js" \
   --minify \
   --target=es2020
 
-# 3. Copy CSS (Flattened)
-echo "🎨 Deploying CSS..."
-cp "$APP_DIR/css/style.css" "$TARGET_DIR/style.css"
+# 3. Build CSS bundle
+echo "🎨 Bundling CSS..."
+$ESBUILD "$APP_DIR/css/style.css" \
+  --bundle \
+  --outfile="$TARGET_DIR/style.css" \
+  --minify \
+  --target=es2020
+
+# 4. Copy standalone CSS files
+echo "🎨 Deploying standalone CSS..."
 cp "$APP_DIR/css/layout.css" "$TARGET_DIR/layout.css"
 cp "$APP_DIR/css/upload.css" "$TARGET_DIR/upload.css"
 
-# 4. Deploy HTML (SPA Shell)
+# 5. Deploy HTML (SPA Shell)
 echo "📄 Deploying HTML..."
 
 # Replace module script with bundle reference and update CSS paths
 # We use a temp file to avoid modifying source
 cp "$APP_DIR/index.html" "$TARGET_DIR/index.html"
 
-# 4b. Deploy dev fixtures (optional)
+# 5b. Deploy dev fixtures (optional)
 if [ -d "$APP_DIR/dev-fixtures" ]; then
     echo "🧪 Deploying dev fixtures..."
     cp -r "$APP_DIR/dev-fixtures" "$TARGET_DIR/dev-fixtures"

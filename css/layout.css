@@ -86,10 +86,8 @@ body {
 /* Collapsed state needs centering */
 .sidebar:not(.expanded) .sidebar-header {
     justify-content: center;
-    padding: 0;
-    /* Remove padding strictly */
+    padding: 12px 0;
     height: 48px;
-    /* Maintain height */
     width: 100%;
 }
 
@@ -140,19 +138,6 @@ body {
     padding: 12px;
     display: flex;
     flex-direction: column;
-}
-
-.build-stamp {
-    padding: 8px 16px 4px;
-    font-size: 0.72rem;
-    color: var(--text-secondary);
-    opacity: 0.75;
-    letter-spacing: 0.02em;
-    user-select: none;
-}
-
-.sidebar:not(.expanded) .build-stamp {
-    display: none;
 }
 
 /* Ensure projects list takes available space and scrolls */
@@ -247,18 +232,13 @@ body {
     display: none !important;
 }
 
-.sidebar:not(.expanded) .sidebar-header {
-    justify-content: center;
-    padding: 12px 0;
-}
-
 /* --- Main Content --- */
 .main-content {
     flex: 1;
     overflow: auto;
     /* Handle both vertical and horizontal overflow */
     height: 100vh;
-    background-color: #fff;
+    background-color: var(--bg);
     /* Optional: add some padding if needed, but views might handle their own */
 }
 
@@ -324,28 +304,12 @@ body {
        "not expanded" means hidden. 
     */
 
-    /* Overlay for mobile when sidebar is open */
-    .app-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.3);
-        z-index: 99;
-        display: none;
-    }
-
-    body.sidebar-open .app-overlay {
-        display: block;
-    }
-
     /* Show floating toggle on mobile when sidebar is NOT open */
     #mobile-menu-toggle {
         display: flex;
     }
 
-    /* Hide floating toggle when sidebar is expanded (sidebar's own toggle takes over) */
+    /* Hide floating toggle when sidebar is open to avoid covering sidebar button */
     body.sidebar-open #mobile-menu-toggle {
         display: none;
     }
@@ -434,7 +398,7 @@ body {
     padding: 0;
 
     border-radius: 50%;
-    color: #444746;
+    color: var(--text-color);
 
     display: none;
     align-items: center;
@@ -450,7 +414,7 @@ body {
 
 .project-menu-btn:hover {
     background-color: #cfd6e0;
-    color: #111827;
+    color: var(--color-slate-900);
 }
 
 /* Reset margin on the icon inside the delete button 
@@ -481,7 +445,7 @@ body.mobile .projects-list .project-menu-btn {
 .project-action-menu {
     position: fixed;
     min-width: 148px;
-    background: #fff;
+    background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 10px;
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
@@ -498,7 +462,7 @@ body.mobile .projects-list .project-menu-btn {
     background: transparent;
     border-radius: 8px;
     padding: 10px 10px;
-    color: #111827;
+    color: var(--color-slate-900);
     font-size: 0.9rem;
     cursor: pointer;
 }
@@ -510,7 +474,7 @@ body.mobile .projects-list .project-menu-btn {
 
 .project-action-item.delete:hover {
     background: #f3f4f6;
-    color: #111827;
+    color: var(--color-slate-900);
 }
 
 .project-action-sheet-backdrop {
@@ -530,7 +494,7 @@ body.mobile .projects-list .project-menu-btn {
 
 .project-action-sheet {
     width: 100%;
-    background: #fff;
+    background: var(--bg);
     border-radius: 16px 16px 0 0;
     border-top: 1px solid var(--border);
     padding: 8px 12px calc(12px + env(safe-area-inset-bottom));
@@ -547,7 +511,7 @@ body.mobile .projects-list .project-menu-btn {
     width: 44px;
     height: 5px;
     border-radius: 999px;
-    background: #cbd5e1;
+    background: var(--color-slate-300);
     margin: 0 auto 10px;
 }
 
