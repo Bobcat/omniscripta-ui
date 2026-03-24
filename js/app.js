@@ -421,7 +421,7 @@ class App {
         }
 
         this.updateNavHighlight(viewName);
-        this.refreshProjects(); // Re-render sidebar to update project highlights
+        this.renderProjects(); // Re-render sidebar to update project highlights
 
         // Mount new
         this.container.innerHTML = ''; // Clear
@@ -439,10 +439,6 @@ class App {
                 link.classList.remove('active');
             }
         });
-    }
-
-    refreshProjects() {
-        this.renderProjects();
     }
 
     syncLiveNavState() {
@@ -583,7 +579,7 @@ class App {
         if (this.state.activeProjectId === project.id) {
             this.state.activeProjectId = null;
         }
-        this.refreshProjects();
+        this.renderProjects();
         this.hideDeleteProjectDialog();
     }
 

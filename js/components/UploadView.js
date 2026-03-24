@@ -273,7 +273,7 @@ export class UploadView {
             progress: 0,
             status: "queued",
           };
-          this.app.refreshProjects();
+          this.app.renderProjects();
 
           poll(jobId);
         } catch (e) {
@@ -393,8 +393,6 @@ export class UploadView {
 
     const onJobReady = (jobId) => {
       stopPolling();
-      // startUploadBtn.textContent = "Opening editor…"; // Button might be hidden if we restored state?
-      // Just rely on the redirect
       setLine("done", "ready", "Opening editor...");
 
       setTimeout(() => {
@@ -429,7 +427,7 @@ export class UploadView {
           progress: p,
           status: st.state
         };
-        this.app.refreshProjects();
+        this.app.renderProjects();
 
         if (st.state === "done") {
           clearActiveUpload();
