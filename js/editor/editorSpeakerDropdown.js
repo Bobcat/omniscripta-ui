@@ -82,8 +82,8 @@ export function createSpeakerDropdownController({
         seg.speaker = after;
         input.dataset.before = after;
         scheduleDirtyCheck();
-        try { forceVisibleIfFilteredOut([seg.id], 'Edited speaker moved segment outside the current filter.'); } catch { }
-        try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
+        forceVisibleIfFilteredOut([seg.id], 'Edited speaker moved segment outside the current filter.');
+        scheduleApplyFilters();
 
         if (before !== after) {
             const id = seg.id;
@@ -93,9 +93,9 @@ export function createSpeakerDropdownController({
                 if (!s) return;
                 s.speaker = val;
                 updateRowBySegId(id);
-                try { scheduleDirtyCheck(); } catch { }
-                try { forceVisibleIfFilteredOut([id], 'Edited speaker moved segment outside the current filter.'); } catch { }
-                try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
+                scheduleDirtyCheck();
+                forceVisibleIfFilteredOut([id], 'Edited speaker moved segment outside the current filter.');
+                scheduleApplyFilters();
             };
 
             pushHistory({

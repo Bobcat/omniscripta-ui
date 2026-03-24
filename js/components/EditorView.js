@@ -1,5 +1,5 @@
 
-import { mountEditor, unmountEditor } from "../editor.js";
+import { mountEditor, unmountEditor } from "../editor/editor.js";
 
 export class EditorView {
   constructor(app) {

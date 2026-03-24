@@ -10,10 +10,10 @@ export function setupHistoryModal({
     function openHistoryModal() {
         if (!historyModal) return;
         try { player.pause(); } catch { }
-        try { clearSelection(); } catch { }
+        clearSelection();
         if (detailsEl) detailsEl.textContent = '(click an item)';
         historyModal.classList.remove('hidden');
-        try { renderHistory(); } catch { }
+        renderHistory();
     }
 
     function closeHistoryModal() {
@@ -86,14 +86,14 @@ export function setupSettingsModal({
     function openSettingsModal() {
         flushPendingText();
         try { player.pause(); } catch { }
-        try { resetSettingsDrag(); } catch { }
-        try { loadSettings(); } catch { }
+        resetSettingsDrag();
+        loadSettings();
         syncSettingsUI();
         if (settingsModal) settingsModal.classList.remove('hidden');
     }
 
     function closeSettingsModal() {
-        try { onSettingsDragUp(); } catch { }
+        onSettingsDragUp();
         if (settingsModal) settingsModal.classList.add('hidden');
     }
 

@@ -149,15 +149,13 @@ export function wirePlaybackLoopEvents({
         playRaf = 0;
         if (player.paused) return;
 
-        try {
-            const bounds = getEffectiveLoopBounds();
-            if (bounds) {
-                const time = player.currentTime;
-                if (time >= bounds.end - 0.01 || time < bounds.start - 0.01) {
-                    player.currentTime = bounds.start;
-                }
+        const bounds = getEffectiveLoopBounds();
+        if (bounds) {
+            const time = player.currentTime;
+            if (time >= bounds.end - 0.01 || time < bounds.start - 0.01) {
+                player.currentTime = bounds.start;
             }
-        } catch { }
+        }
 
         if (Date.now() >= getSuppressTimeSyncUntil()) {
             const jumped = enforceFilteredPlayback();
@@ -176,8 +174,8 @@ export function wirePlaybackLoopEvents({
     }
 
     const onPlay = () => {
-        try { clampToLoopStartIfNeeded(); } catch { }
-        try { snapToVisibleIfNeeded(); } catch { }
+        clampToLoopStartIfNeeded();
+        snapToVisibleIfNeeded();
 
         const currentSegmentIndex = getCurrentSegmentIndex();
         if (currentSegmentIndex >= 0) {
@@ -188,12 +186,15 @@ export function wirePlaybackLoopEvents({
     };
 
     const onPause = () => {
-        if (playRaf) { try { cancelAnimationFrame(playRaf); } catch { } playRaf = 0; }
+        if (playRaf) {
+            cancelAnimationFrame(playRaf);
+            playRaf = 0;
+        }
     };
 
     const onSeeked = () => {
-        try { clampToLoopStartIfNeeded(); } catch { }
-        try { snapToVisibleIfNeeded(); } catch { }
+        clampToLoopStartIfNeeded();
+        snapToVisibleIfNeeded();
     };
 
     player.addEventListener('play', onPlay);
@@ -201,10 +202,10 @@ export function wirePlaybackLoopEvents({
     player.addEventListener('seeked', onSeeked);
 
     return () => {
-        try { player.removeEventListener('play', onPlay); } catch { }
-        try { player.removeEventListener('pause', onPause); } catch { }
-        try { player.removeEventListener('seeked', onSeeked); } catch { }
-        if (playRaf) { try { cancelAnimationFrame(playRaf); } catch { } }
+        player.removeEventListener('play', onPlay);
+        player.removeEventListener('pause', onPause);
+        player.removeEventListener('seeked', onSeeked);
+        if (playRaf) cancelAnimationFrame(playRaf);
         playRaf = 0;
     };
 }

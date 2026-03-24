@@ -104,11 +104,9 @@ export function wireEditorHotkeys({
         const isEditing = tag === 'INPUT' || tag === 'TEXTAREA';
 
         if (e.ctrlKey && !e.altKey && !e.metaKey) {
-            try {
-                if (isEditing && e.target && e.target.classList && e.target.classList.contains('time-input')) {
-                    return;
-                }
-            } catch { }
+            if (isEditing && e.target && e.target.classList && e.target.classList.contains('time-input')) {
+                return;
+            }
             const key = e.key.toLowerCase();
             if (key === 'z') {
                 e.preventDefault();
@@ -208,7 +206,7 @@ export function wireEditorHotkeys({
                 }
 
                 if (idx !== -1) setActiveSegment(idx, 'auto');
-                try { snapToVisibleIfNeeded(); } catch { }
+                snapToVisibleIfNeeded();
                 player.play();
             } else {
                 player.pause();
@@ -222,40 +220,36 @@ export function wireEditorHotkeys({
             const doneSegIds = getDoneSegIds();
             const ae = document.activeElement;
             let idx = getCurrentSegmentIndex();
-            try {
-                if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
-                    const row = ae.closest && ae.closest('.segment');
-                    if (row && row.dataset && row.dataset.id) {
-                        const i2 = findIndexById(row.dataset.id);
-                        if (i2 !== -1) idx = i2;
-                    }
+            if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+                const row = ae.closest && ae.closest('.segment');
+                if (row && row.dataset && row.dataset.id) {
+                    const i2 = findIndexById(row.dataset.id);
+                    if (i2 !== -1) idx = i2;
                 }
-            } catch { }
+            }
             if (idx >= 0 && idx < segments.length) {
                 const seg = segments[idx];
                 if (doneSegIds.has(seg.id)) doneSegIds.delete(seg.id);
                 else doneSegIds.add(seg.id);
 
-                try { forceVisibleIfFilteredOut([seg.id], 'Updated done status moved segment outside the current filter.'); } catch { }
-                try { if (matchesFilterNow(seg)) forcedVisibleIds.delete(seg.id); } catch { }
-                try { pruneForcedVisibleNow(); } catch { }
+                forceVisibleIfFilteredOut([seg.id], 'Updated done status moved segment outside the current filter.');
+                if (matchesFilterNow(seg)) forcedVisibleIds.delete(seg.id);
+                pruneForcedVisibleNow();
 
-                try {
-                    const rowById = getRowById();
-                    const row = rowById.get(seg.id) || segmentsDiv.querySelector(`.segment[data-id="${seg.id}"]`);
-                    if (row) {
-                        row.classList.toggle('done', doneSegIds.has(seg.id));
-                        const btn = row.querySelector('.done-btn');
-                        if (btn) {
-                            btn.textContent = doneSegIds.has(seg.id) ? '☑' : '☐';
-                            btn.setAttribute('aria-pressed', doneSegIds.has(seg.id) ? 'true' : 'false');
-                        }
+                const rowById = getRowById();
+                const row = rowById.get(seg.id) || segmentsDiv.querySelector(`.segment[data-id="${seg.id}"]`);
+                if (row) {
+                    row.classList.toggle('done', doneSegIds.has(seg.id));
+                    const btn = row.querySelector('.done-btn');
+                    if (btn) {
+                        btn.textContent = doneSegIds.has(seg.id) ? '☑' : '☐';
+                        btn.setAttribute('aria-pressed', doneSegIds.has(seg.id) ? 'true' : 'false');
                     }
-                } catch { }
+                }
 
                 updateDonePill();
                 saveDoneToStorage();
-                try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
+                scheduleApplyFilters();
             }
             return;
         }
@@ -268,35 +262,29 @@ export function wireEditorHotkeys({
         if (e.key === 'F2') {
             e.preventDefault();
             const segments = getSegments();
-            const wasPaused = (() => { try { return !!(player && player.paused); } catch { return true; } })();
+            const wasPaused = !!(player && player.paused);
             if (wasPaused) {
-                try { if (!ensureAudioLoadedForPlay()) return; } catch { }
+                if (!ensureAudioLoadedForPlay()) return;
             }
 
             const ae = document.activeElement;
-            const isPlaying = (() => {
-                try { return player && !player.paused && !player.ended; } catch { return false; }
-            })();
+            const isPlaying = !!(player && !player.paused && !player.ended);
 
             let idx = getCurrentSegmentIndex();
             if (!isPlaying) {
-                try {
-                    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
-                        const row = ae.closest?.('.segment');
-                        const di = row ? parseInt(row.dataset.index, 10) : NaN;
-                        if (Number.isFinite(di)) idx = di;
-                    }
-                } catch { }
+                if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+                    const row = ae.closest?.('.segment');
+                    const di = row ? parseInt(row.dataset.index, 10) : NaN;
+                    if (Number.isFinite(di)) idx = di;
+                }
             }
 
             if (idx >= 0 && idx < segments.length) {
-                try { setActiveSegment(idx, 'auto', 'center'); } catch { }
+                setActiveSegment(idx, 'auto', 'center');
                 toggleRepeatSeg(idx);
-                try {
-                    if (wasPaused && repeatSegState && repeatSegState.active) {
-                        if (player && player.paused) player.play();
-                    }
-                } catch { }
+                if (wasPaused && repeatSegState && repeatSegState.active) {
+                    if (player && player.paused) player.play();
+                }
             }
             return;
         }
@@ -305,17 +293,15 @@ export function wireEditorHotkeys({
             e.preventDefault();
             const ae = document.activeElement;
             let idx = getCurrentSegmentIndex();
-            try {
-                if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
-                    const row = ae.closest?.('.segment');
-                    const sid = row?.dataset?.id || null;
-                    flushPendingText(sid);
-                    const di = row ? parseInt(row.dataset.index, 10) : NaN;
-                    if (Number.isFinite(di)) idx = di;
-                } else {
-                    flushPendingText();
-                }
-            } catch { }
+            if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+                const row = ae.closest?.('.segment');
+                const sid = row?.dataset?.id || null;
+                flushPendingText(sid);
+                const di = row ? parseInt(row.dataset.index, 10) : NaN;
+                if (Number.isFinite(di)) idx = di;
+            } else {
+                flushPendingText();
+            }
             if (idx >= 0) joinWithPrevious(idx);
             return;
         }
@@ -325,23 +311,21 @@ export function wireEditorHotkeys({
             const ae = document.activeElement;
             let idx = getCurrentSegmentIndex();
             let ta = null;
-            try {
-                if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
-                    const row = ae.closest?.('.segment');
-                    const sid = row?.dataset?.id || null;
-                    flushPendingText(sid);
-                    const di = row ? parseInt(row.dataset.index, 10) : NaN;
-                    if (Number.isFinite(di)) idx = di;
-                    if (ae.tagName === 'TEXTAREA' && ae.classList && ae.classList.contains('text-input')) {
-                        ta = ae;
-                    }
-                } else {
-                    flushPendingText();
+            if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+                const row = ae.closest?.('.segment');
+                const sid = row?.dataset?.id || null;
+                flushPendingText(sid);
+                const di = row ? parseInt(row.dataset.index, 10) : NaN;
+                if (Number.isFinite(di)) idx = di;
+                if (ae.tagName === 'TEXTAREA' && ae.classList && ae.classList.contains('text-input')) {
+                    ta = ae;
                 }
-            } catch { }
+            } else {
+                flushPendingText();
+            }
 
             if (idx >= 0) {
-                try { setActiveSegment(idx, 'auto', 'center'); } catch { }
+                setActiveSegment(idx, 'auto', 'center');
                 splitSegment(idx, ta);
             }
             return;
@@ -351,13 +335,11 @@ export function wireEditorHotkeys({
             e.preventDefault();
             let idx = getCurrentSegmentIndex();
             const ae = document.activeElement;
-            try {
-                if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
-                    const row = ae.closest?.('.segment');
-                    const di = row ? parseInt(row.dataset.index, 10) : NaN;
-                    if (Number.isFinite(di)) idx = di;
-                }
-            } catch { }
+            if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+                const row = ae.closest?.('.segment');
+                const di = row ? parseInt(row.dataset.index, 10) : NaN;
+                if (Number.isFinite(di)) idx = di;
+            }
             if (idx >= 0) handleLoopHotkey(idx);
             return;
         }
@@ -369,7 +351,7 @@ export function wireEditorHotkeys({
                 const rows = segmentsDiv ? segmentsDiv.querySelectorAll('.segment') : null;
                 if (rows && rows.length) {
                     const isVisible = (i) => {
-                        try { return !!rows[i] && !rows[i].classList.contains('filtered-out'); } catch { return false; }
+                        return !!rows[i] && !rows[i].classList.contains('filtered-out');
                     };
                     const nextVisible = (fromIdx, dir) => {
                         let i = fromIdx;
@@ -385,10 +367,8 @@ export function wireEditorHotkeys({
                     let idx = getCurrentSegmentIndex();
                     if (!(idx >= 0 && idx < rows.length) || !isVisible(idx)) {
                         idx = -1;
-                        try {
-                            const ti = findSegmentIndexAtTime(player ? player.currentTime : 0);
-                            if (ti !== -1 && isVisible(ti)) idx = ti;
-                        } catch { }
+                        const ti = findSegmentIndexAtTime(player ? player.currentTime : 0);
+                        if (ti !== -1 && isVisible(ti)) idx = ti;
                         if (idx === -1) idx = nextVisible(-1, +1);
                         if (idx === -1) return;
                     }
@@ -435,14 +415,12 @@ export function wireEditorHotkeys({
 
                     if (newIdx !== idx || k === 'Home' || k === 'End') {
                         e.preventDefault();
-                        try { if (player && !player.paused) player.pause(); } catch { }
-                        try { if (player && segments[newIdx] && Number.isFinite(segments[newIdx].start)) player.currentTime = segments[newIdx].start; } catch { }
+                        if (player && !player.paused) player.pause();
+                        if (player && segments[newIdx] && Number.isFinite(segments[newIdx].start)) player.currentTime = segments[newIdx].start;
                         const behavior = 'auto';
-                        try {
-                            if ((k === 'Home' || k === 'End') && segmentsDiv) {
-                                segmentsDiv.scrollTop = (k === 'Home') ? 0 : segmentsDiv.scrollHeight;
-                            }
-                        } catch { }
+                        if ((k === 'Home' || k === 'End') && segmentsDiv) {
+                            segmentsDiv.scrollTop = (k === 'Home') ? 0 : segmentsDiv.scrollHeight;
+                        }
                         setActiveSegment(newIdx, behavior, block, forceScroll || !!e.repeat);
                         return;
                     }
@@ -471,7 +449,7 @@ export function wireEditorHotkeys({
                     }
 
                     if (idx !== -1) setActiveSegment(idx, 'auto');
-                    try { snapToVisibleIfNeeded(); } catch { }
+                    snapToVisibleIfNeeded();
                     player.play();
                 } else {
                     player.pause();
@@ -492,6 +470,6 @@ export function wireEditorHotkeys({
 
     document.addEventListener('keydown', onKeydown);
     return () => {
-        try { document.removeEventListener('keydown', onKeydown); } catch { }
+        document.removeEventListener('keydown', onKeydown);
     };
 }

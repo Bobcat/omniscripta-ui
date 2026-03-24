@@ -1,7 +1,7 @@
 import { LiveAudioService, downsampleBuffer, float32ToPcm16LeBuffer } from "../services/LiveAudioService.js";
 import { LiveSessionService } from "../services/LiveSessionService.js";
 import { TRANSCRIPT_LANGUAGES } from "../constants/languages.js";
-import { createMouseDragController } from "../editorDrag.js";
+import { createMouseDragController } from "../editor/editorDrag.js";
 
 const STATUS_LABELS = {
     idle: "Idle",
@@ -285,9 +285,6 @@ export class LiveView {
 
               <div class="live-audio-sep"></div>
 
-              <div class="live-audio-kv"><span class="muted">Current noise suppression</span><span id="liveAudioCurrentNoiseSuppression">Start recording to read</span></div>
-              <div class="live-audio-kv"><span class="muted">Current auto gain control</span><span id="liveAudioCurrentAutoGainControl">Start recording to read</span></div>
-              <div class="live-audio-kv"><span class="muted">Current echo cancellation</span><span id="liveAudioCurrentEchoCancellation">Start recording to read</span></div>
               <div class="live-audio-kv"><span class="muted">Device</span><span id="liveAudioCurrentDevice">Start recording to read</span></div>
               <div class="live-audio-kv"><span class="muted">Input sample rate</span><span id="liveAudioCurrentSampleRate">Start recording to read</span></div>
               <div class="live-audio-kv"><span class="muted">Channel count</span><span id="liveAudioCurrentChannelCount">Start recording to read</span></div>
@@ -555,9 +552,6 @@ export class LiveView {
         this.el.audioNoiseSuppression = document.getElementById("liveAudioNoiseSuppression");
         this.el.audioAutoGainControl = document.getElementById("liveAudioAutoGainControl");
         this.el.audioEchoCancellation = document.getElementById("liveAudioEchoCancellation");
-        this.el.audioCurrentNoiseSuppression = document.getElementById("liveAudioCurrentNoiseSuppression");
-        this.el.audioCurrentAutoGainControl = document.getElementById("liveAudioCurrentAutoGainControl");
-        this.el.audioCurrentEchoCancellation = document.getElementById("liveAudioCurrentEchoCancellation");
         this.el.audioCurrentDevice = document.getElementById("liveAudioCurrentDevice");
         this.el.audioCurrentSampleRate = document.getElementById("liveAudioCurrentSampleRate");
         this.el.audioCurrentChannelCount = document.getElementById("liveAudioCurrentChannelCount");
@@ -833,12 +827,6 @@ export class LiveView {
         this.refreshAudioSettingsPanel({ readCurrent: true });
     }
 
-    formatAudioBool(value) {
-        if (value === true) return "On";
-        if (value === false) return "Off";
-        return "Not reported";
-    }
-
     readCurrentAudioTrackState() {
         const state = {
             hasActiveTrack: false,
@@ -901,9 +889,6 @@ export class LiveView {
         const now = this.readCurrentAudioTrackState();
         const inactiveText = "Start recording to read";
         const fromTrack = !!now.hasActiveTrack;
-        if (this.el.audioCurrentNoiseSuppression) this.el.audioCurrentNoiseSuppression.textContent = this.formatAudioBool(now.noiseSuppression);
-        if (this.el.audioCurrentAutoGainControl) this.el.audioCurrentAutoGainControl.textContent = this.formatAudioBool(now.autoGainControl);
-        if (this.el.audioCurrentEchoCancellation) this.el.audioCurrentEchoCancellation.textContent = this.formatAudioBool(now.echoCancellation);
         if (this.el.audioCurrentDevice) this.el.audioCurrentDevice.textContent = fromTrack ? (now.deviceLabel || "Not reported") : inactiveText;
         if (this.el.audioCurrentSampleRate) {
             this.el.audioCurrentSampleRate.textContent = fromTrack
@@ -1633,7 +1618,10 @@ export class LiveView {
                     vadPhase = "hangover";
                 }
             }
-            parts.push(`VAD: ${this._vadLabelForPhase(vadPhase)}`);
+            const vadLabel = this._vadLabelForPhase(vadPhase);
+            if (vadLabel) {
+                parts.push(`VAD: ${vadLabel}`);
+            }
             if (
                 Number.isFinite(checksRaw)
                 || Number.isFinite(speechRaw)
@@ -2887,7 +2875,6 @@ export class LiveView {
             this.setDevStats(
                 `Stats: ${b} bytes, ${f} frames, ${s.toFixed(2)}s, decode ${decodeMs.toFixed(2)}ms, rtf ${rtf.toFixed(3)}\n\n${this.formatStatsPayload(payload)}`
             );
-        } else if (t === "partial") {
         } else if (t === "ended") {
             this.stopAudioCapture({ quiet: true });
             this.stopRecordingTimer({ reset: false });

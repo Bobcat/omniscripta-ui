@@ -4,7 +4,7 @@
  * Functions receive a `ctx` object for shared editor state.
  * Pure utility functions take explicit parameters.
  */
-import { secondsToTimecodeWhole } from "./utils.js";
+import { secondsToTimecodeWhole } from "../utils.js";
 import { secondsToSrtTimecode } from "./editorSave.js";
 
 // ========================
@@ -127,9 +127,9 @@ export function applySegStartNoHistory(ctx, segId, newStart, opts = {}) {
     }
 
     // filtering: keep edits visible even if they fall outside the active filter
-    try { ctx.scheduleDirtyCheck(); } catch { }
-    try { ctx.forceVisibleIfFilteredOut([segId], 'Edited timestamp moved segment outside the current filter.'); } catch { }
-    try { ctx.scheduleApplyFilters(); } catch { }
+    ctx.scheduleDirtyCheck();
+    ctx.forceVisibleIfFilteredOut([segId], 'Edited timestamp moved segment outside the current filter.');
+    ctx.scheduleApplyFilters();
 
     return newIndex;
 }
@@ -179,15 +179,15 @@ export function applyJoinNoHistory(ctx, prevId, currId, prevTextAfter, opts = {}
     ctx.updateRowBySegId(prevId);
     reindexAllRows(ctx);
     // Refresh Join button state for neighbors (indices may have changed)
-    try { ctx.updateRowBySegId(prevId); } catch { }
+    ctx.updateRowBySegId(prevId);
     const _nextAfterJoin = ctx.segments[prevIdx + 1];
-    if (_nextAfterJoin) { try { ctx.updateRowBySegId(_nextAfterJoin.id); } catch { } }
+    if (_nextAfterJoin) ctx.updateRowBySegId(_nextAfterJoin.id);
     ctx.scheduleDirtyCheck();
 
     // Keep join result visible even if it no longer matches the active filter
-    try { ctx.recomputeChangedSegIds(); } catch { }
-    try { ctx.forceVisibleIfFilteredOut([prevId], 'Join moved segment outside the current filter.'); } catch { }
-    try { ctx.scheduleApplyFilters(); } catch { }
+    ctx.recomputeChangedSegIds();
+    ctx.forceVisibleIfFilteredOut([prevId], 'Join moved segment outside the current filter.');
+    ctx.scheduleApplyFilters();
 
     if (preserveScroll && prevScroll !== null) ctx.segmentsDiv.scrollTop = prevScroll;
 
@@ -253,15 +253,15 @@ export function undoJoinNoHistory(ctx, prevId, prevTextBefore, prevEndBefore, cu
 
     reindexAllRows(ctx);
     // Refresh Join button state for neighbors after restoring a row
-    try { ctx.updateRowBySegId(prevId); } catch { }
-    try { ctx.updateRowBySegId(snap.id); } catch { }
+    ctx.updateRowBySegId(prevId);
+    ctx.updateRowBySegId(snap.id);
     const _nextAfterUndoJoin = ctx.segments[currIdx + 1];
-    if (_nextAfterUndoJoin) { try { ctx.updateRowBySegId(_nextAfterUndoJoin.id); } catch { } }
+    if (_nextAfterUndoJoin) ctx.updateRowBySegId(_nextAfterUndoJoin.id);
     ctx.scheduleDirtyCheck();
 
-    try { ctx.recomputeChangedSegIds(); } catch { }
-    try { ctx.forceVisibleIfFilteredOut([prevId, snap.id], 'Undo restored a segment outside the current filter.'); } catch { }
-    try { ctx.scheduleApplyFilters(); } catch { }
+    ctx.recomputeChangedSegIds();
+    ctx.forceVisibleIfFilteredOut([prevId, snap.id], 'Undo restored a segment outside the current filter.');
+    ctx.scheduleApplyFilters();
 
     if (preserveScroll && prevScroll !== null) ctx.segmentsDiv.scrollTop = prevScroll;
 
@@ -315,8 +315,8 @@ export function joinWithPrevious(ctx, idx) {
     const currId = currSeg.id;
 
     // Commit pending debounced edits on both rows before joining
-    try { ctx.flushPendingText(prevId); } catch { }
-    try { ctx.flushPendingText(currId); } catch { }
+    ctx.flushPendingText(prevId);
+    ctx.flushPendingText(currId);
 
     const prevTextBefore = prevSeg.text || '';
     const prevEndBefore = prevSeg.end;
@@ -483,8 +483,8 @@ export function applySplitNoHistory(ctx, seg1Id, seg1TextAfter, seg2Snapshot, op
     ctx.scheduleDirtyCheck();
 
     // filtering: keep split results visible even if they fall outside the active filter
-    try { ctx.forceVisibleIfFilteredOut([seg1Id, seg2Snapshot.id], 'Split created segments outside the current filter.'); } catch { }
-    try { ctx.scheduleApplyFilters(); } catch { }
+    ctx.forceVisibleIfFilteredOut([seg1Id, seg2Snapshot.id], 'Split created segments outside the current filter.');
+    ctx.scheduleApplyFilters();
 
     if (preserveScroll && prevScroll !== null) ctx.segmentsDiv.scrollTop = prevScroll;
 
@@ -530,9 +530,8 @@ export function undoSplitNoHistory(ctx, seg1Id, seg1TextBefore, seg2Id, seg1EndB
     ctx.updateRowBySegId(seg1Id);
     reindexAllRows(ctx);
     ctx.scheduleDirtyCheck();
-    try { ctx.forceVisibleIfFilteredOut([seg1Id], 'Undo created a segment outside the current filter.'); } catch { }
-
-    try { ctx.scheduleApplyFilters(); } catch { }
+    ctx.forceVisibleIfFilteredOut([seg1Id], 'Undo created a segment outside the current filter.');
+    ctx.scheduleApplyFilters();
 
     if (preserveScroll && prevScroll !== null) ctx.segmentsDiv.scrollTop = prevScroll;
 }
@@ -545,7 +544,7 @@ export function splitSegment(ctx, idx, textAreaEl) {
     const seg1Id = seg.id;
 
     // Commit any pending debounced edits on this row before splitting
-    try { ctx.flushPendingText(seg1Id); } catch { }
+    ctx.flushPendingText(seg1Id);
 
     const hasFocus = (textAreaEl && document.activeElement === textAreaEl);
 

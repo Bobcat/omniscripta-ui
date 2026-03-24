@@ -4,7 +4,7 @@
  * Functions receive a `ctx` object for shared editor state.
  * DOM elements are looked up via ctx or getElementById.
  */
-import { safePreview } from "./utils.js";
+import { safePreview } from "../utils.js";
 
 // ========================
 // Pure utilities (no ctx)
@@ -119,11 +119,9 @@ export function getVisibleSegmentIndices(ctx) {
         for (let i = 0; i < ctx.segments.length; i++) out[i] = i;
         return out;
     }
-    try {
-        const usesChanged = (ctx.filterState && (ctx.filterState.changedMode !== 'all')) || (ctx.forcedVisibleIds && ctx.forcedVisibleIds.size);
-        if (usesChanged) ctx.recomputeChangedSegIds();
-    } catch { }
-    try { ctx.pruneForcedVisibleIds(); } catch { }
+    const usesChanged = (ctx.filterState && (ctx.filterState.changedMode !== 'all')) || (ctx.forcedVisibleIds && ctx.forcedVisibleIds.size);
+    if (usesChanged) ctx.recomputeChangedSegIds();
+    ctx.pruneForcedVisibleIds();
 
     const out = [];
     for (let i = 0; i < ctx.segments.length; i++) {
@@ -321,9 +319,9 @@ export function replaceCurrent(ctx) {
             ctx.pendingTextEdits.delete(id);
         }
         ctx.updateRowBySegId(id);
-        try { ctx.scheduleDirtyCheck(); } catch { }
-        try { ctx.forceVisibleIfFilteredOut([id], 'Edit moved segment outside the current filter.'); } catch { }
-        try { ctx.scheduleApplyFilters(); } catch { }
+        ctx.scheduleDirtyCheck();
+        ctx.forceVisibleIfFilteredOut([id], 'Edit moved segment outside the current filter.');
+        ctx.scheduleApplyFilters();
     };
 
     apply(after);
@@ -412,11 +410,9 @@ export function doReplaceAllConfirmed(ctx) {
     for (const c of changes) ctx.updateRowBySegId(c.segId);
     ctx.scheduleDirtyCheck();
 
-    try {
-        const ids = Array.from(new Set(changes.map(c => c.segId)));
-        ctx.forceVisibleIfFilteredOut(ids, 'Replace all created changes outside the current filter.');
-    } catch { }
-    try { ctx.scheduleApplyFilters(); } catch { }
+    const ids = Array.from(new Set(changes.map(c => c.segId)));
+    ctx.forceVisibleIfFilteredOut(ids, 'Replace all created changes outside the current filter.');
+    ctx.scheduleApplyFilters();
 
     const applyAll = (toAfter) => {
         for (const c of changes) {
@@ -433,11 +429,8 @@ export function doReplaceAllConfirmed(ctx) {
             ctx.updateRowBySegId(c.segId);
         }
         ctx.scheduleDirtyCheck();
-        try {
-            const ids = Array.from(new Set(changes.map(c => c.segId)));
-            ctx.forceVisibleIfFilteredOut(ids, 'Replace all created changes outside the current filter.');
-        } catch { }
-        try { ctx.scheduleApplyFilters(); } catch { }
+        ctx.forceVisibleIfFilteredOut(ids, 'Replace all created changes outside the current filter.');
+        ctx.scheduleApplyFilters();
     };
 
     ctx.pushHistory({

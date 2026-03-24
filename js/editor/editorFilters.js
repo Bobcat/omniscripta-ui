@@ -1,4 +1,4 @@
-import { normSpeaker } from "./utils.js";
+import { normSpeaker } from "../utils.js";
 
 export function isFilterActive(filterState) {
     return (filterState.speakers.size > 0) || (filterState.changedMode !== 'all') || (filterState.doneMode !== 'all');
@@ -53,7 +53,7 @@ export function clearFilterState({
     forcedVisibleIds.clear();
     hideFilterNotice();
     syncFilterUIFromState();
-    try { syncModeButtons(); } catch { }
+    syncModeButtons();
     scheduleApplyFilters();
 }
 
@@ -184,7 +184,7 @@ function makeChip(label, onClose) {
     closeBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        try { onClose && onClose(); } catch { }
+        if (onClose) onClose();
     });
 
     chip.appendChild(textEl);
@@ -329,15 +329,11 @@ export function syncFilterUIFromState({
 }) {
     rebuildFilterSpeakerOptions();
 
-    try {
-        const radios = document.querySelectorAll('input[name="changedMode"]');
-        radios.forEach(r => r.checked = (r.value === filterState.changedMode));
-    } catch { }
+    const radios = document.querySelectorAll('input[name="changedMode"]');
+    radios.forEach(r => r.checked = (r.value === filterState.changedMode));
 
-    try {
-        const doneRadios = document.querySelectorAll('input[name="doneMode"]');
-        doneRadios.forEach(r => r.checked = (r.value === filterState.doneMode));
-    } catch { }
+    const doneRadios = document.querySelectorAll('input[name="doneMode"]');
+    doneRadios.forEach(r => r.checked = (r.value === filterState.doneMode));
 
     if (playFilteredToggle) playFilteredToggle.checked = !!filterState.playbackFiltered;
 }
@@ -367,14 +363,10 @@ export function applyFilterFromModalControls({
     playFilteredToggle,
     scheduleApplyFilters,
 }) {
-    try {
-        const changedRadio = document.querySelector('input[name="changedMode"]:checked');
-        setChangedMode(filterState, changedRadio ? changedRadio.value : 'all');
-    } catch { }
-    try {
-        const doneRadio = document.querySelector('input[name="doneMode"]:checked');
-        setDoneMode(filterState, doneRadio ? doneRadio.value : 'all');
-    } catch { }
+    const changedRadio = document.querySelector('input[name="changedMode"]:checked');
+    setChangedMode(filterState, changedRadio ? changedRadio.value : 'all');
+    const doneRadio = document.querySelector('input[name="doneMode"]:checked');
+    setDoneMode(filterState, doneRadio ? doneRadio.value : 'all');
     if (playFilteredToggle) filterState.playbackFiltered = !!playFilteredToggle.checked;
     scheduleApplyFilters();
 }
@@ -483,7 +475,7 @@ export function createFilterApplyScheduler({
         const active = isFilterActive();
         const usesChanged = (filterState.changedMode !== 'all') || forcedVisibleIds.size;
         if (usesChanged) {
-            try { recomputeChangedSegIds(); } catch { }
+            recomputeChangedSegIds();
         }
 
         pruneForcedVisibleNow();
@@ -543,9 +535,7 @@ export function createFilterApplyScheduler({
             setVisibleResults(newVisStarts, newVisIds);
             updateFilterBarUI(visibleCount, total);
 
-            try {
-                if (getEditorMode() === 'text') renderTextView();
-            } catch { }
+            if (getEditorMode() === 'text') renderTextView();
 
             filterApplying = false;
             if (filterApplyPending) scheduleApplyFilters();

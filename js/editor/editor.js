@@ -1,8 +1,8 @@
-import { loadSettings as apiLoadSettings, saveSettings as apiSaveSettings, fetchJobStatus as apiFetchJobStatus, fetchSrt as apiFetchSrt, getApiUrl } from "./api.js";
-import { safePreview, normSpeaker, secondsToTimecodeWhole, hashString, _parseSrt, extractMetadata } from "./utils.js";
-import { TextView } from "./components/TextView.js";
-import { TopicsView } from "./components/TopicsView.js";
-import { AudioPlayer } from "./components/AudioPlayer.js";
+import { loadSettings as apiLoadSettings, saveSettings as apiSaveSettings, fetchJobStatus as apiFetchJobStatus, fetchSrt as apiFetchSrt, getApiUrl } from "../api.js";
+import { safePreview, normSpeaker, secondsToTimecodeWhole, hashString, _parseSrt, extractMetadata } from "../utils.js";
+import { TextView } from "../components/TextView.js";
+import { TopicsView } from "../components/TopicsView.js";
+import { AudioPlayer } from "../components/AudioPlayer.js";
 import {
   secondsToSrtTimecode,
   suggestSrtName as _suggestSrtName,
@@ -16,14 +16,11 @@ import {
   getTranscriptSelectionText as _getTranscriptSelectionText,
 } from "./editorFind.js";
 import {
-  joinTextsForJoin as _joinTextsForJoin,
   getRowBySegId as _getRowBySegId, reindexAllRows as _reindexAllRows,
   insertRowAtIndex as _insertRowAtIndex, removeRowBySegId as _removeRowBySegId,
   moveRowBySegIdToIndex as _moveRowBySegIdToIndex, applySegStartNoHistory as _applySegStartNoHistory,
-  canJoinAtIndex as _canJoinAtIndex, applyJoinNoHistory as _applyJoinNoHistory,
-  undoJoinNoHistory as _undoJoinNoHistory, joinWithPrevious as _joinWithPrevious,
-  askForSplitTimeWhole as _askForSplitTimeWhole, applySplitNoHistory as _applySplitNoHistory,
-  undoSplitNoHistory as _undoSplitNoHistory, splitSegment as _splitSegment
+  canJoinAtIndex as _canJoinAtIndex, joinWithPrevious as _joinWithPrevious,
+  splitSegment as _splitSegment
 } from "./editorSegments.js";
 import { actionToDebugJson, timecodeToSeconds, nowHHMMSS } from "./editorHelpers.js";
 import { getEditorBootDom } from "./editorDom.js";
@@ -77,7 +74,6 @@ export function mountEditor(options = {}) {
     modeTextBtn,
     saveBtn,
     saveAsBtn,
-    exportDocBtn,
     historyBtn,
     historyModal,
     closeHistoryBtn,
@@ -194,6 +190,18 @@ export function mountEditor(options = {}) {
       topicsView.setActiveTime(player.currentTime);
     }
   });
+
+  function syncTopicsFromSrtText(srtText) {
+    const meta = extractMetadata(String(srtText || ''));
+    const topics = (meta && Array.isArray(meta.topics) && meta.topics.length > 0) ? meta.topics : [];
+    const splitter = document.getElementById('docViewSplitter');
+
+    topicsView.topics = topics;
+    topicsView.render();
+
+    if (topicsView.container) topicsView.container.classList.toggle('hidden', topics.length === 0);
+    if (splitter) splitter.classList.toggle('hidden', topics.length === 0);
+  }
 
   let historySelected = null; // {stack:'undo'|'redo', hid:number}
   let historyNextId = 1;
@@ -699,7 +707,7 @@ export function mountEditor(options = {}) {
   let visibleSegIds = [];
 
   function rebuildSegmentStarts() {
-    try { segmentStarts = segments.map(s => s.start); } catch { segmentStarts = []; }
+    segmentStarts = segments.map(s => s.start);
   }
 
   // --- Tiny toast ---
@@ -1047,9 +1055,9 @@ export function mountEditor(options = {}) {
             seg.text = to;
             updateRowBySegId(id);
             if (activeId) setActiveSegment(findIndexById(activeId), null);
-            try { scheduleDirtyCheck(); } catch { }
-            try { forceVisibleIfFilteredOut([id], 'Edited text moved segment outside the current filter.'); } catch { }
-            try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
+            scheduleDirtyCheck();
+            forceVisibleIfFilteredOut([id], 'Edited text moved segment outside the current filter.');
+            scheduleApplyFilters();
           },
           undo: () => {
             const seg = segments.find(s => s.id === id);
@@ -1057,15 +1065,15 @@ export function mountEditor(options = {}) {
             seg.text = from;
             updateRowBySegId(id);
             if (activeId) setActiveSegment(findIndexById(activeId), null);
-            try { scheduleDirtyCheck(); } catch { }
-            try { forceVisibleIfFilteredOut([id], 'Edited text moved segment outside the current filter.'); } catch { }
-            try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
+            scheduleDirtyCheck();
+            forceVisibleIfFilteredOut([id], 'Edited text moved segment outside the current filter.');
+            scheduleApplyFilters();
           }
         });
         const showNotice = (opts && opts.showFilterNotice !== false);
-        try { forceVisibleIfFilteredOut([id], 'Edited text moved segment outside the current filter.', { silent: !showNotice }); } catch { }
+        forceVisibleIfFilteredOut([id], 'Edited text moved segment outside the current filter.', { silent: !showNotice });
         if (showNotice && !isEditingText()) {
-          try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
+          scheduleApplyFilters();
         }
       }
     };
@@ -1160,47 +1168,41 @@ export function mountEditor(options = {}) {
   function canRedo() { return redoStack.length > 0; }
 
   function focusAfterHistoryAction(a) {
-    try {
-      if (!a) return;
-      // Prefer explicit segId; for bulk actions use firstSegId.
-      let targetId = (a.meta && (a.meta.segId || a.meta.firstSegId)) ? (a.meta.segId || a.meta.firstSegId) : null;
+    if (!a) return;
+    // Prefer explicit segId; for bulk actions use firstSegId.
+    let targetId = (a.meta && (a.meta.segId || a.meta.firstSegId)) ? (a.meta.segId || a.meta.firstSegId) : null;
 
-      // Special case: Split -> always focus the originally split segment
-      if (a.label === 'Split' && a.meta && a.meta.segId) targetId = a.meta.segId;
+    // Special case: Split -> always focus the originally split segment
+    if (a.label === 'Split' && a.meta && a.meta.segId) targetId = a.meta.segId;
 
-      if (!targetId) return;
-      const idx = findIndexById(targetId);
-      if (idx >= 0) {
-        setActiveSegment(idx, 'auto', 'center');
-        // Re-apply on next tick to avoid late events overriding the highlight (e.g. seek/timeupdate)
-        setTimeout(() => {
-          try {
-            const idx2 = findIndexById(targetId);
-            if (idx2 >= 0) setActiveSegment(idx2, 'auto', 'center');
-            const seg = segments[idx2];
-            if (seg && topicsView && typeof topicsView.setActiveTime === 'function') {
-              try { topicsView.setActiveTime(seg.start, true, 'auto'); } catch { }
-            }
-          } catch { }
-        }, 0);
-      }
-    } catch { }
+    if (!targetId) return;
+    const idx = findIndexById(targetId);
+    if (idx >= 0) {
+      setActiveSegment(idx, 'auto', 'center');
+      // Re-apply on next tick to avoid late events overriding the highlight (e.g. seek/timeupdate)
+      setTimeout(() => {
+        const idx2 = findIndexById(targetId);
+        if (idx2 >= 0) setActiveSegment(idx2, 'auto', 'center');
+        const seg = segments[idx2];
+        if (seg && topicsView && typeof topicsView.setActiveTime === 'function') {
+          topicsView.setActiveTime(seg.start, true, 'auto');
+        }
+      }, 0);
+    }
   }
 
 
 
   function affectedIdsFromHistoryAction(a) {
     const out = [];
-    try {
-      const m = a && a.meta ? a.meta : null;
-      if (!m) return out;
-      const add = (v) => { if (!v) return; if (!out.includes(v)) out.push(v); };
-      add(m.segId);
-      add(m.newSegId);
-      add(m.firstSegId);
-      if (Array.isArray(m.segIds)) for (const id of m.segIds) add(id);
-      if (Array.isArray(m.ids)) for (const id of m.ids) add(id);
-    } catch { }
+    const m = a && a.meta ? a.meta : null;
+    if (!m) return out;
+    const add = (v) => { if (!v) return; if (!out.includes(v)) out.push(v); };
+    add(m.segId);
+    add(m.newSegId);
+    add(m.firstSegId);
+    if (Array.isArray(m.segIds)) for (const id of m.segIds) add(id);
+    if (Array.isArray(m.ids)) for (const id of m.ids) add(id);
     return out;
   }
 
@@ -1210,13 +1212,11 @@ export function mountEditor(options = {}) {
     const a = undoStack.pop();
     a.undo();
     redoStack.push(a);
-    try {
-      const ids = affectedIdsFromHistoryAction(a);
-      if (ids && ids.length) {
-        forceVisibleIfFilteredOut(ids, 'Change moved segments outside the current filter.');
-        if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters();
-      }
-    } catch { }
+    const ids = affectedIdsFromHistoryAction(a);
+    if (ids && ids.length) {
+      forceVisibleIfFilteredOut(ids, 'Change moved segments outside the current filter.');
+      scheduleApplyFilters();
+    }
     scheduleDirtyCheck();
     focusAfterHistoryAction(a);
     renderHistory();
@@ -1228,13 +1228,11 @@ export function mountEditor(options = {}) {
     const a = redoStack.pop();
     a.do();
     undoStack.push(a);
-    try {
-      const ids = affectedIdsFromHistoryAction(a);
-      if (ids && ids.length) {
-        forceVisibleIfFilteredOut(ids, 'Change moved segments outside the current filter.');
-        if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters();
-      }
-    } catch { }
+    const ids = affectedIdsFromHistoryAction(a);
+    if (ids && ids.length) {
+      forceVisibleIfFilteredOut(ids, 'Change moved segments outside the current filter.');
+      scheduleApplyFilters();
+    }
     scheduleDirtyCheck();
     focusAfterHistoryAction(a);
     renderHistory();
@@ -1244,7 +1242,6 @@ export function mountEditor(options = {}) {
   // Suppress highlight-following from timeupdate for a brief period (used for undo/redo focus)
   let suppressTimeSyncUntil = 0;
   function suppressTimeSync(ms = 350) { suppressTimeSyncUntil = Date.now() + ms; }
-  const SETTINGS_KEY = 'transcript_editor_settings_v1';
   let keepCenteredDuringPlayback = true;
   let autoAssignSplitTs = false;
 
@@ -1259,8 +1256,16 @@ export function mountEditor(options = {}) {
   }
 
   // Load settings immediately so they affect behavior even before opening Settings.
-  try { loadSettings(); } catch { }
-  try { syncSettingsUI(); } catch { }
+  try {
+    loadSettings();
+  } catch (error) {
+    console.error('Failed to load editor settings', error);
+  }
+  try {
+    syncSettingsUI();
+  } catch (error) {
+    console.error('Failed to sync editor settings UI', error);
+  }
 
 
   function beginHistoryMutation() {
@@ -1435,7 +1440,7 @@ export function mountEditor(options = {}) {
       }
     }
 
-    try { if (typeof rebuildSegmentStarts === 'function') rebuildSegmentStarts(); } catch { }
+    if (typeof rebuildSegmentStarts === 'function') rebuildSegmentStarts();
   }
 
   // --- Dirty tracking via hash ---
@@ -1482,10 +1487,10 @@ export function mountEditor(options = {}) {
   function updateSegmentsChangedPill() {
     const pill = document.getElementById('segmentsChangedPill');
     if (!pill) return;
-    if (!segments.length) { pill.textContent = 'Segments changed: 0'; try { updateDonePill(); } catch { } return; }
+    if (!segments.length) { pill.textContent = 'Segments changed: 0'; updateDonePill(); return; }
     const count = changedSegIds.size;
     pill.textContent = `Segments changed: ${count}`;
-    try { updateDonePill(); } catch { }
+    updateDonePill();
   }
 
   function setCleanNow() { cleanHash = computeHash(); setBaselineNow(); updateHeaderUI(false); }
@@ -1504,7 +1509,7 @@ export function mountEditor(options = {}) {
 
       // Important: don't change filtered visibility while the user is actively typing in a textarea.
       if (!skipFilterApply && !isEditingText()) {
-        try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
+        scheduleApplyFilters();
       }
     }, 120);
   }
@@ -1570,33 +1575,31 @@ export function mountEditor(options = {}) {
 
     // Smart Scroll: Force 'auto' (instant) if jumping > 2 minutes (120s)
     let behavior = scrollBehavior;
-    try {
-      if (index >= 0 && segments[index]) {
-        const targetTime = segments[index].start;
-        let currentTime = 0;
-        // Use currentSegmentIndex to find previous time
-        if (currentSegmentIndex >= 0 && segments[currentSegmentIndex]) {
-          currentTime = segments[currentSegmentIndex].start;
-        }
-        // If starting from scratch (-1) assume 0. 
-        // This handles the "Resume Project" case (jumping from 0 to 15:00)
-
-        if (Math.abs(targetTime - currentTime) > 120) {
-          behavior = 'auto';
-        }
+    if (index >= 0 && segments[index]) {
+      const targetTime = segments[index].start;
+      let currentTime = 0;
+      // Use currentSegmentIndex to find previous time
+      if (currentSegmentIndex >= 0 && segments[currentSegmentIndex]) {
+        currentTime = segments[currentSegmentIndex].start;
       }
-    } catch (e) { }
+      // If starting from scratch (-1) assume 0.
+      // This handles the "Resume Project" case (jumping from 0 to 15:00)
+
+      if (Math.abs(targetTime - currentTime) > 120) {
+        behavior = 'auto';
+      }
+    }
 
     rows.forEach((el, idx) => el.classList.toggle('active', idx === index));
     currentSegmentIndex = index;
 
 
     // Mirror active highlight into Text View (if rendered)
-    try { textView.setActive(segments[index].id, behavior, forceScroll); } catch { }
+    textView.setActive(segments[index].id, behavior, forceScroll);
 
     // Mirror to Topics View as well (so it jumps if we jump)
     if (segments[index]) {
-      try { topicsView.setActiveTime(segments[index].start, true, behavior); } catch { }
+      topicsView.setActiveTime(segments[index].start, true, behavior);
     }
 
     // Only scroll if the active row is outside the visible area
@@ -1669,10 +1672,8 @@ export function mountEditor(options = {}) {
   function updateTextareaSizing() {
     // Schedule sizing for all textareas (chunked).
     // Safe to call often (e.g. after resize), it won't block the UI.
-    try {
-      const list = segmentsDiv.querySelectorAll('.text-input');
-      for (const el of list) queueTextareaSizing(el);
-    } catch { }
+    const list = segmentsDiv.querySelectorAll('.text-input');
+    for (const el of list) queueTextareaSizing(el);
   }
 
   /* Segment row management — delegated to editorSegments.js */
@@ -1717,14 +1718,14 @@ export function mountEditor(options = {}) {
       else doneSegIds.add(seg.id);
 
       // Soft filter behavior (consistent with other filters)
-      try { forceVisibleIfFilteredOut([seg.id], 'Updated done status moved segment outside the current filter.'); } catch { }
-      try { if (matchesFilterNow(seg)) forcedVisibleIds.delete(seg.id); } catch { }
-      try { pruneForcedVisibleNow(); } catch { }
+      forceVisibleIfFilteredOut([seg.id], 'Updated done status moved segment outside the current filter.');
+      if (matchesFilterNow(seg)) forcedVisibleIds.delete(seg.id);
+      pruneForcedVisibleNow();
 
       applyDoneUI();
       updateDonePill();
       saveDoneToStorage();
-      try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
+      scheduleApplyFilters();
     });
 
     // --- time input ---
@@ -1863,9 +1864,9 @@ export function mountEditor(options = {}) {
           if (!s) return;
           s.speaker = val;
           updateRowBySegId(segId);
-          try { scheduleDirtyCheck(); } catch { }
-          try { forceVisibleIfFilteredOut([segId], 'Edited speaker moved segment outside the current filter.'); } catch { }
-          try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
+          scheduleDirtyCheck();
+          forceVisibleIfFilteredOut([segId], 'Edited speaker moved segment outside the current filter.');
+          scheduleApplyFilters();
         };
 
         // Apply immediately (already reflected in the input, but this normalizes + triggers filter/dirty UI)
@@ -1927,12 +1928,13 @@ export function mountEditor(options = {}) {
       editingTextSegId = null;
 
       // Commit any pending grouped edit (may have been flushed silently by the debounce).
-      try { flushPendingText(id, { showFilterNotice: true }); } catch { }
+      flushPendingText(id, { showFilterNotice: true });
 
       // Ensure "outside filter" is evaluated on *your* blur, even if we already flushed history silently.
-      try { recomputeChangedSegIds(); updateSegmentsChangedPill(); } catch { }
-      try { forceVisibleIfFilteredOut([id], 'Edited text moved segment outside the current filter.'); } catch { }
-      try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
+      recomputeChangedSegIds();
+      updateSegmentsChangedPill();
+      forceVisibleIfFilteredOut([id], 'Edited text moved segment outside the current filter.');
+      scheduleApplyFilters();
     });
 
     textArea.addEventListener('focus', () => {
@@ -1973,16 +1975,14 @@ export function mountEditor(options = {}) {
     // If you press the split button while the text area is focused, treat it like a cursor-split.
     // (Click normally steals focus from the textarea before the click event, so we capture on pointerdown.)
     splitBtn.addEventListener('pointerdown', (e) => {
-      try {
-        if (document.activeElement === textArea) {
-          e.preventDefault();
-          e.stopPropagation();
-          splitBtn.dataset.skipClick = '1';
-          const i = getIdx();
-          setActiveSegment(i, 'auto', 'center');
-          splitSegment(i, textArea);
-        }
-      } catch { }
+      if (document.activeElement === textArea) {
+        e.preventDefault();
+        e.stopPropagation();
+        splitBtn.dataset.skipClick = '1';
+        const i = getIdx();
+        setActiveSegment(i, 'auto', 'center');
+        splitSegment(i, textArea);
+      }
     });
 
     splitBtn.addEventListener('click', (e) => {
@@ -2042,7 +2042,7 @@ export function mountEditor(options = {}) {
     updateHeaderUI();
     updateDonePill();
     updateLoopUI();
-    try { if (typeof scheduleApplyFilters === 'function') scheduleApplyFilters(); } catch { }
+    scheduleApplyFilters();
   }
 
 
@@ -2064,7 +2064,7 @@ export function mountEditor(options = {}) {
 
     // Save mode to project data if active
     if (options.jobId && typeof options.updateProject === 'function') {
-      try { options.updateProject(options.jobId, { lastViewMode: editorMode }); } catch (e) { }
+      options.updateProject(options.jobId, { lastViewMode: editorMode });
     }
 
     const cur = segments[currentSegmentIndex] || null;
@@ -2077,7 +2077,7 @@ export function mountEditor(options = {}) {
       }
       // Also sync topics view
       if (topicsView && typeof topicsView.setActiveTime === 'function') {
-        try { topicsView.setActiveTime(player.currentTime, true, 'auto'); } catch { }
+        topicsView.setActiveTime(player.currentTime, true, 'auto');
       }
     } else {
       if (cur) {
@@ -2215,14 +2215,7 @@ export function mountEditor(options = {}) {
     initDocViewSplitter();
   }
 
-
   /* Split/Join operations — delegated to editorSegments.js */
-  function askForSplitTimeWhole(seg, opts) { return _askForSplitTimeWhole(ctx, seg, opts); }
-  function applySplitNoHistory(seg1Id, seg1TextAfter, seg2Snapshot, opts) { return _applySplitNoHistory(ctx, seg1Id, seg1TextAfter, seg2Snapshot, opts); }
-  function undoSplitNoHistory(seg1Id, seg1TextBefore, seg2Id, seg1EndBefore, opts) { return _undoSplitNoHistory(ctx, seg1Id, seg1TextBefore, seg2Id, seg1EndBefore, opts); }
-  function joinTextsForJoin(aText, bText) { return _joinTextsForJoin(aText, bText); }
-  function applyJoinNoHistory(prevId, currId, prevTextAfter, opts) { return _applyJoinNoHistory(ctx, prevId, currId, prevTextAfter, opts); }
-  function undoJoinNoHistory(prevId, prevTextBefore, prevEndBefore, currSnapshot, opts) { return _undoJoinNoHistory(ctx, prevId, prevTextBefore, prevEndBefore, currSnapshot, opts); }
   function joinWithPrevious(idx) { return _joinWithPrevious(ctx, idx); }
   function splitSegment(idx, textAreaEl) { return _splitSegment(ctx, idx, textAreaEl); }
 
@@ -2233,7 +2226,7 @@ export function mountEditor(options = {}) {
   window.addEventListener('resize', () => {
     if (_resizeT) clearTimeout(_resizeT);
     _resizeT = setTimeout(() => {
-      try { updateTextareaSizing(); } catch { }
+      updateTextareaSizing();
     }, 120);
   });
 
@@ -2241,9 +2234,9 @@ export function mountEditor(options = {}) {
 
   // Load transcript (SRT)
   async function _loadTranscriptSrtText(srtText, displayName, { handle = null, sourceKind = 'disk' } = {}) {
-    try { setChosenFileLabel(transcriptBtnLabelEl, displayName, 'Choose transcript', 'transcript'); } catch { }
-    try { chosenTranscriptName = displayName || null; } catch { }
-    try { updateFileSummaryLabel(); } catch { }
+    setChosenFileLabel(transcriptBtnLabelEl, displayName, 'Choose transcript', 'transcript');
+    chosenTranscriptName = displayName || null;
+    updateFileSummaryLabel();
 
     loadedJsonFileName = displayName || null;
     exportFileName = (sourceKind === 'disk') ? (displayName || null) : null;
@@ -2253,33 +2246,15 @@ export function mountEditor(options = {}) {
     buildSegmentsFromSrtText(String(srtText || ''));
     loadDoneFromStorage();
     renderSegments();
-
-    // Try extracting embedded topics
-    const meta = extractMetadata(String(srtText || ''));
-    if (meta && meta.topics && Array.isArray(meta.topics) && meta.topics.length > 0) {
-      topicsView.topics = meta.topics;
-      topicsView.render();
-      if (topicsView.container) topicsView.container.classList.remove('hidden');
-      const _sp1 = document.getElementById('docViewSplitter');
-      if (_sp1) _sp1.classList.remove('hidden');
-    } else {
-      // Clear topics if none found in this file
-      topicsView.topics = [];
-      topicsView.render();
-      if (topicsView.container) topicsView.container.classList.add('hidden');
-      const _sp2 = document.getElementById('docViewSplitter');
-      if (_sp2) _sp2.classList.add('hidden');
-    }
+    syncTopicsFromSrtText(srtText);
 
     // After loading a transcript from disk/network, default the active highlight to the first segment
-    try {
-      if (segments && segments.length) {
-        currentSegmentIndex = 0;
-        setActiveSegment(0, 'auto', 'start', true);
-      } else {
-        currentSegmentIndex = -1;
-      }
-    } catch { }
+    if (segments && segments.length) {
+      currentSegmentIndex = 0;
+      setActiveSegment(0, 'auto', 'start', true);
+    } else {
+      currentSegmentIndex = -1;
+    }
 
     updateDonePill();
 
@@ -2343,7 +2318,6 @@ export function mountEditor(options = {}) {
 
   saveBtn.addEventListener('click', () => saveSrtLocally(false));
   if (saveAsBtn) saveAsBtn.addEventListener('click', () => saveSrtLocally(true));
-  exportDocBtn && exportDocBtn.addEventListener('click', () => showToast('Not yet implemented'));
 
   shortcutsWireEditorHotkeys({
     flushPendingText,
@@ -2403,8 +2377,6 @@ export function mountEditor(options = {}) {
     e.returnValue = '';
   });
 
-  try { loadSettings(); } catch { }
-  try { syncSettingsUI(); } catch { }
   updateHeaderUI(false);
 
   /* AUTOLOAD_FROM_QUERY_V1 */
@@ -2468,32 +2440,28 @@ export function mountEditor(options = {}) {
 
       // Audio autoload
       if (audioUrl) {
-        try {
-          player.src = audioUrl;
+        player.src = audioUrl;
 
-          const tail = (() => {
-            try { return decodeURIComponent(audioUrl.split("/").pop() || "audio"); }
-            catch { return (audioUrl.split("/").pop() || "audio"); }
-          })();
+        const tail = (() => {
+          try { return decodeURIComponent(audioUrl.split("/").pop() || "audio"); }
+          catch { return (audioUrl.split("/").pop() || "audio"); }
+        })();
 
-          const aName = audioName || tail;
-          setChosenFileLabel(audioBtnLabelEl, aName, "Choose audio", "audio");
-          chosenAudioName = aName;
-          updateFileSummaryLabel();
-        } catch { }
+        const aName = audioName || tail;
+        setChosenFileLabel(audioBtnLabelEl, aName, "Choose audio", "audio");
+        chosenAudioName = aName;
+        updateFileSummaryLabel();
       }
 
       if (srtContent) {
         // Local file content provided directly
         const tName = options.transcriptName || 'Local Project';
-        try {
-          setChosenFileLabel(transcriptBtnLabelEl, tName, "Choose transcript", "transcript");
-          chosenTranscriptName = tName;
-          loadedJsonFileName = tName;
-          srtSaveHandle = null;
-          exportFileName = null;
-          updateFileSummaryLabel();
-        } catch { }
+        setChosenFileLabel(transcriptBtnLabelEl, tName, "Choose transcript", "transcript");
+        chosenTranscriptName = tName;
+        loadedJsonFileName = tName;
+        srtSaveHandle = null;
+        exportFileName = null;
+        updateFileSummaryLabel();
 
         buildSegmentsFromSrtText(srtContent);
         loadDoneFromStorage(); // Works if based on content hash
@@ -2512,15 +2480,13 @@ export function mountEditor(options = {}) {
 
         const tName = transcriptName || tail;
 
-        try {
-          setChosenFileLabel(transcriptBtnLabelEl, tName, "Choose transcript", "transcript");
-          chosenTranscriptName = tName;
-          loadedJsonFileName = tName; // used for default Save-As name
-          // Server-loaded transcript: no write-back handle yet (design later)
-          srtSaveHandle = null;
-          exportFileName = null;
-          updateFileSummaryLabel();
-        } catch { }
+        setChosenFileLabel(transcriptBtnLabelEl, tName, "Choose transcript", "transcript");
+        chosenTranscriptName = tName;
+        loadedJsonFileName = tName; // used for default Save-As name
+        // Server-loaded transcript: no write-back handle yet (design later)
+        srtSaveHandle = null;
+        exportFileName = null;
+        updateFileSummaryLabel();
 
         buildSegmentsFromSrtText(srtText);
         loadDoneFromStorage();
@@ -2531,7 +2497,7 @@ export function mountEditor(options = {}) {
             const idx = findSegmentIndexAtTime(startTime);
             if (idx >= 0) setActiveSegment(idx, 'auto', 'center', true); // Use 'auto' for instant jump on load
             if (topicsView && typeof topicsView.setActiveTime === 'function') {
-              try { topicsView.setActiveTime(startTime, true, 'auto'); } catch { }
+              topicsView.setActiveTime(startTime, true, 'auto');
             }
           }, 100);
         }
@@ -2539,22 +2505,7 @@ export function mountEditor(options = {}) {
         setCleanNow();
 
         // Process embedded topics (now injected by server)
-        const meta = extractMetadata(srtText);
-        if (meta && meta.topics && Array.isArray(meta.topics) && meta.topics.length > 0) {
-          topicsView.topics = meta.topics;
-          topicsView.render();
-          if (topicsView.container) topicsView.container.classList.remove('hidden');
-          const _sp3 = document.getElementById('docViewSplitter');
-          if (_sp3) _sp3.classList.remove('hidden');
-        } else {
-          // Try legacy separate load if embedded missing (optional fallback, likely unneeded now)
-          // For now, assume server injection keeps it simple.
-          topicsView.topics = [];
-          topicsView.render();
-          if (topicsView.container) topicsView.container.classList.add('hidden');
-          const _sp4 = document.getElementById('docViewSplitter');
-          if (_sp4) _sp4.classList.add('hidden');
-        }
+        syncTopicsFromSrtText(srtText);
       }
     } catch (e) {
       console.error(e);
