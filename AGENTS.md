@@ -29,8 +29,8 @@ Read this first, then follow the detailed runbook:
 | `transcribe-frontend-dev.service` | `:8010` | Frontend proxy + static files |
 | `transcribe-api-dev.service` | `:8001` | Portal API (FastAPI/Uvicorn) |
 | `transcribe-asr-pool-dev.service` | `:18090` | ASR Pool — warm WhisperX runners |
-| `transcribe-worker-live-dev@1.service` | — | Worker daemon (live mode) |
-| `transcribe-worker-upload-dev@1.service` | — | Worker daemon (upload mode) |
+| `asr-worker-live-dev@1.service` | — | Worker daemon (live mode) |
+| `asr-worker-batch-dev@1.service` | — | Worker daemon (upload mode) |
 | `transcribe-demo-jobs-janitor-dev.timer` | — | Periodic janitor for `data/demo_jobs` live chunks |
 
 ### Live services (system-level, `sudo systemctl`)
