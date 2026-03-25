@@ -377,9 +377,9 @@ export class UploadView {
       pctEl.textContent = Math.round(p * 100) + "%";
     };
 
-    const setLine = (state, phase, message) => {
-      const left = [state, phase].filter(Boolean).join(" / ");
-      const right = message ? (" — " + message) : "";
+    const setLine = (state, ownerOrPhase, message) => {
+      const left = [state, ownerOrPhase].filter(Boolean).join(" / ");
+      const right = message ? (" - " + message) : "";
       statelineEl.textContent = (left || "") + right;
     };
 
@@ -413,7 +413,7 @@ export class UploadView {
         p = Math.max(lastProgress, clamp01(p));
         lastProgress = p;
         setProgress(p);
-        setLine(st.state, st.phase, st.message);
+        setLine(st.state, st.status_owner || st.phase, st.message);
 
         // Update Global State
         const prevJob = this.app.state.activeJob || {};
