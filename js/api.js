@@ -58,11 +58,6 @@ export async function fetchServiceSettings() {
     return await r.json();
 }
 
-export function clearUiSettingsCache() {
-    uiSettingsCacheValue = null;
-    uiSettingsCacheAtMs = 0;
-}
-
 export async function fetchUiSettings(options = {}) {
     const forceRefresh = !!(options && options.forceRefresh === true);
     const rawMaxAge = options && options.maxAgeMs;

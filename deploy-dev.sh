@@ -6,9 +6,9 @@ APP_DIR="/var/www/omniscripta-app"
 TARGET_DIR="/home/gunnar/projects/transcribe-dev/static"
 ESBUILD="$APP_DIR/node_modules/.bin/esbuild"
 VERSION_FILE="$APP_DIR/.version.dev"
+FOUNDATION_CORE_DIR="/home/gunnar/projects/spa-foundation/core"
 
-echo "🚀 Starting dev deployment to $TARGET_DIR..."
-
+echo "🚀 Starting deployment to: $TARGET_DIR"
 # 0. Handle Versioning
 if [ -f "$VERSION_FILE" ]; then
   VERSION=$(cat "$VERSION_FILE")
@@ -20,6 +20,17 @@ echo "$VERSION" > "$VERSION_FILE"
 echo "🔖 Version incremented to: $VERSION"
 
 mkdir -p "$TARGET_DIR"
+
+# 0b. Refresh local foundation packages (file: dependencies)
+echo "🔗 Refreshing local foundation packages..."
+if [ ! -d "$FOUNDATION_CORE_DIR" ]; then
+  echo "❌ Missing local spa-foundation package directories:"
+  echo "   $FOUNDATION_CORE_DIR"
+  exit 1
+fi
+rm -rf "$APP_DIR/node_modules/@spa-foundation/core"
+npm --prefix "$APP_DIR" install --no-audit --no-fund \
+  "@spa-foundation/core@file:$FOUNDATION_CORE_DIR" >/dev/null
 
 # 1. Clean legacy files
 echo "🧹 Cleaning target directory..."
@@ -39,6 +50,7 @@ echo "📦 Bundling JavaScript..."
   --bundle \
   --outfile="$TARGET_DIR/app.bundle.js" \
   --minify \
+  --log-level=error \
   --target=es2020
 
 # 3. Build CSS bundle
@@ -47,20 +59,18 @@ echo "🎨 Bundling CSS..."
   --bundle \
   --outfile="$TARGET_DIR/style.css" \
   --minify \
+  --log-level=error \
   --target=es2020
 
 # 4. Copy standalone CSS files
-echo "🎨 Deploying standalone CSS..."
 cp "$APP_DIR/css/layout.css" "$TARGET_DIR/layout.css"
 cp "$APP_DIR/css/upload.css" "$TARGET_DIR/upload.css"
 
 # 5. Deploy HTML (SPA Shell)
-echo "📄 Deploying HTML..."
 cp "$APP_DIR/index.html" "$TARGET_DIR/index.html"
 
 # 5b. Deploy dev fixtures (optional)
 if [ -d "$APP_DIR/dev-fixtures" ]; then
-  echo "🧪 Deploying dev fixtures..."
   cp -r "$APP_DIR/dev-fixtures" "$TARGET_DIR/dev-fixtures"
 fi
 

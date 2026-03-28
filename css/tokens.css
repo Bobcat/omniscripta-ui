@@ -113,22 +113,6 @@
       --chrome-font-size: 0.86rem;
       --chrome-padding-v: 8px;
       --chrome-padding-h: 12px;
-
-      /* Phase 0 tokens (no visual change): dialog foundations */
-      --dialog-overlay-bg: rgba(0, 0, 0, 0.38);
-      --dialog-overlay-padding: 16px;
-      --dialog-card-radius: 14px;
-      --dialog-card-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
-      --dialog-card-max-height: calc(100vh - 24px);
-      --dialog-card-padding: 0;
-      --dialog-topbar-gap: 10px;
-      --dialog-topbar-padding: 8px 10px;
-      --dialog-topbar-bg: rgba(255, 255, 255, 0.92);
-      --dialog-topbar-blur: blur(6px);
-      --dialog-body-padding: 10px;
-      --dialog-drag-x: 0px;
-      --dialog-drag-y: 0px;
-
       /* Phase 0.5 tokens (no visual change): controls */
       --control-border: 1px solid var(--border-strong);
       --control-bg: var(--panel);
@@ -171,3 +155,70 @@
       background: var(--chrome-bg);
       font-size: var(--chrome-font-size);
     }
+
+:root {
+  --accent-blue: var(--color-blue-500);
+  --accent-blue-hover: var(--color-blue-600);
+  --accent-red: var(--color-red-500);
+  --border-color: var(--color-border-soft);
+  --chrome-height: 40px;
+  --dp-left: 16px;
+  --dp-top: 80px;
+  --text: var(--color-slate-800);
+  --text-main: var(--color-slate-800);
+  --text-secondary: var(--color-slate-600);
+}
+
+.modal.delete-project-modal {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 0;
+}
+
+.delete-project-card {
+  position: absolute;
+  left: var(--dp-left, 16px);
+  top: var(--dp-top, 80px);
+  width: min(420px, calc(100vw - 20px));
+  padding: 12px;
+}
+
+.delete-project-card h3 {
+  margin: 2px 0 8px;
+  font-size: 0.94rem;
+  font-weight: 500;
+}
+
+.delete-project-card p {
+  margin: 0 0 10px;
+  font-size: 0.86rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.danger-soft {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger-text);
+}
+
+.danger-soft:hover {
+  background: var(--color-danger-bg-hover);
+  border-color: var(--color-danger-border-hover);
+}
+
+@media (max-width: 600px) {
+  .modal.delete-project-modal {
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+
+  .delete-project-card {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: min(420px, 96vw);
+    padding: 12px;
+  }
+}

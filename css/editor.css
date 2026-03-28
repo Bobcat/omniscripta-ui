@@ -705,36 +705,6 @@
       background: var(--panel);
     }
 
-    /* Modal */
-    .modal.hidden {
-      display: none;
-    }
-
-    .modal {
-      position: fixed;
-      inset: 0;
-      background: var(--dialog-overlay-bg);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 3000;
-      padding: var(--dialog-overlay-padding);
-    }
-
-    .modal-card {
-      background: var(--bg);
-      border-radius: var(--dialog-card-radius);
-      border: 1px solid var(--border);
-      width: min(560px, 96vw);
-      box-shadow: var(--dialog-card-shadow);
-      padding: 14px;
-    }
-
-
-
-
-
-
     /* Shared dialog card layout */
     .settings-card,
     .find-card,
@@ -747,31 +717,10 @@
       flex-direction: column;
     }
 
-    /* Shared draggable dialog base (Settings / Find / Help / Filter / Live Audio) */
-    .settings-card,
-    .find-card,
-    .help-card,
-    .filter-card,
-    .live-audio-panel-card {
-      padding: var(--dialog-card-padding);
-      --drag-x: var(--dialog-drag-x);
-      --drag-y: var(--dialog-drag-y);
-      transform: translate(var(--drag-x), var(--drag-y));
-    }
-
-    .settings-card,
-    .find-card,
-    .help-card,
-    .filter-card,
     .history-card {
       max-height: var(--dialog-card-max-height);
     }
 
-    .settings-topbar,
-    .find-topbar,
-    .help-topbar,
-    .filter-topbar,
-    .live-audio-panel-topbar,
     .history-topbar {
       background: var(--dialog-topbar-bg);
       backdrop-filter: var(--dialog-topbar-blur);
@@ -782,61 +731,7 @@
       width: min(520px, calc(100vw - 24px));
     }
 
-    .settings-topbar,
-    .find-topbar,
-    .help-topbar,
-    .filter-topbar,
-    .live-audio-panel-topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: var(--dialog-topbar-gap);
-      padding: var(--dialog-topbar-padding);
-      cursor: grab;
-      user-select: none;
-    }
-
-    .settings-topbar:active,
-    .find-topbar:active,
-    .help-topbar:active,
-    .filter-topbar:active,
-    .live-audio-panel-topbar:active {
-      cursor: grabbing;
-    }
-
-    .settings-title,
-    .find-title,
-    .help-title,
-    .filter-title,
-    .live-audio-panel-title {
-      font-size: 0.85rem;
-      font-weight: 700;
-    }
-
-    .settings-title {
-      text-align: left;
-    }
-
-    .settings-grip,
-    .find-grip,
-    .help-grip,
-    .filter-grip,
-    .live-audio-panel-grip {
-      color: var(--muted);
-      letter-spacing: 2px;
-      font-size: 0.95rem;
-    }
-
-    .settings-body,
-    .find-body,
-    .help-body,
-    .filter-body,
-    .live-audio-panel-body {
-      padding: var(--dialog-body-padding);
-      font-size: 0.85rem;
-    }
-
-    .settings-body,
+        .settings-body,
     .find-body,
     .help-body {
       overflow: auto;
@@ -1095,76 +990,6 @@
       word-break: break-word;
     }
 
-    .modal-card h3 {
-      margin: 4px 0 10px;
-      font-size: 1.05rem;
-    }
-
-    .modal-card p {
-      margin: 0 0 12px;
-      color: var(--muted);
-    }
-
-    .modal.delete-project-modal {
-      align-items: flex-start;
-      justify-content: flex-start;
-      padding: 0;
-    }
-
-    .delete-project-card {
-      position: absolute;
-      left: var(--dp-left, 16px);
-      top: var(--dp-top, 80px);
-      width: min(420px, calc(100vw - 20px));
-      padding: 12px;
-    }
-
-    .delete-project-card h3 {
-      margin: 2px 0 8px;
-      font-size: 0.94rem;
-      font-weight: 500;
-    }
-
-    .delete-project-card p {
-      margin: 0 0 10px;
-      font-size: 0.86rem;
-      line-height: 1.4;
-      color: var(--muted);
-    }
-
-    .danger-soft {
-      background: var(--color-danger-bg);
-      border-color: var(--color-danger-border);
-      color: var(--color-danger-text);
-    }
-
-    .danger-soft:hover {
-      background: var(--color-danger-bg-hover);
-      border-color: var(--color-danger-border-hover);
-    }
-
-    @media (max-width: 600px) {
-      .modal.delete-project-modal {
-        align-items: center;
-        justify-content: center;
-        padding: 16px;
-      }
-
-      .delete-project-card {
-        position: relative;
-        left: auto;
-        top: auto;
-        width: min(420px, 96vw);
-        padding: 12px;
-      }
-    }
-
-    .modal-actions {
-      display: flex;
-      gap: 10px;
-      justify-content: flex-end;
-    }
-
     .muted {
       color: var(--muted);
     }
@@ -1186,10 +1011,6 @@
     .help-card {
       width: min(560px, 96vw);
       /* modal-card padding is zeroed via shared draggable dialog base */
-    }
-
-    .help-topbar {
-      border-radius: var(--dialog-card-radius) var(--dialog-card-radius) 0 0;
     }
 
     .help-body {
@@ -1332,10 +1153,6 @@
 
     .filter-card {
       width: min(640px, calc(100vw - 24px));
-    }
-
-    .filter-topbar {
-      border-radius: var(--dialog-card-radius) var(--dialog-card-radius) 0 0;
     }
 
     .filter-body {

@@ -17,6 +17,9 @@
     "url": "https://github.com/Bobcat/omniscripta-app/issues"
   },
   "homepage": "https://github.com/Bobcat/omniscripta-app#readme",
+  "dependencies": {
+    "@spa-foundation/core": "file:../../../home/gunnar/projects/spa-foundation/core"
+  },
   "devDependencies": {
     "esbuild": "^0.27.2"
   }

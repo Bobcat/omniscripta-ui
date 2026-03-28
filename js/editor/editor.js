@@ -24,8 +24,8 @@ import {
 } from "./editorSegments.js";
 import { actionToDebugJson, timecodeToSeconds, nowHHMMSS } from "./editorHelpers.js";
 import { getEditorBootDom } from "./editorDom.js";
-import { createMouseDragController } from "./editorDrag.js";
 import { setupHistoryModal, setupHelpModal, setupSettingsModal } from "./editorModals.js";
+import { ModalController, createDialogDragController } from "@spa-foundation/core";
 import { createSpeakerDropdownController } from "./editorSpeakerDropdown.js";
 import {
   wireEditorHotkeys as shortcutsWireEditorHotkeys,
@@ -171,8 +171,7 @@ export function mountEditor(options = {}) {
           }
         }
       }
-    },
-    getJobId: () => { /* Not strictly needed if we pass URL to load() */ }
+    }
   }); // TopicsView needs to be loaded later
 
   const customPlayer = new AudioPlayer({
@@ -286,7 +285,7 @@ export function mountEditor(options = {}) {
   const findCard = findModal ? findModal.querySelector('.find-card') : null;
   const findDragHandle = document.getElementById('findDragHandle');
 
-  const findDrag = createMouseDragController((x, y) => {
+  const findDrag = createDialogDragController((x, y) => {
     if (findCard) {
       findCard.style.setProperty('--drag-x', `${x}px`);
       findCard.style.setProperty('--drag-y', `${y}px`);
@@ -307,7 +306,7 @@ export function mountEditor(options = {}) {
   const helpCard = helpModal ? helpModal.querySelector('.help-card') : null;
   const helpDragHandle = document.getElementById('helpDragHandle');
 
-  const helpDrag = createMouseDragController((x, y) => {
+  const helpDrag = createDialogDragController((x, y) => {
     if (helpCard) {
       helpCard.style.setProperty('--drag-x', `${x}px`);
       helpCard.style.setProperty('--drag-y', `${y}px`);
@@ -335,7 +334,7 @@ export function mountEditor(options = {}) {
   const filterCard = filterModal ? filterModal.querySelector('.filter-card') : null;
   const filterDragHandle = document.getElementById('filterDragHandle');
 
-  const filterDrag = createMouseDragController((x, y) => {
+  const filterDrag = createDialogDragController((x, y) => {
     if (filterCard) {
       filterCard.style.setProperty('--drag-x', `${x}px`);
       filterCard.style.setProperty('--drag-y', `${y}px`);
@@ -954,10 +953,16 @@ export function mountEditor(options = {}) {
   if (closeFindBtn) closeFindBtn.addEventListener('click', closeFindModal);
 
   if (findModal) {
-    findModal.addEventListener('mousedown', (e) => { if (e.target === findModal) closeFindModal(); });
+    new ModalController(findModal, {
+      backdropEvent: 'mousedown',
+      onBackdrop: () => closeFindModal()
+    });
   }
   if (replaceAllModal) {
-    replaceAllModal.addEventListener('mousedown', (e) => { if (e.target === replaceAllModal) closeReplaceAllConfirm(); });
+    new ModalController(replaceAllModal, {
+      backdropEvent: 'mousedown',
+      onBackdrop: () => closeReplaceAllConfirm()
+    });
   }
 
   if (findNextBtn) findNextBtn.addEventListener('click', () => findNext(false));
@@ -982,7 +987,7 @@ export function mountEditor(options = {}) {
   const settingsCard = settingsModal ? settingsModal.querySelector('.settings-card') : null;
   const settingsDragHandle = document.getElementById('settingsDragHandle');
 
-  const settingsDrag = createMouseDragController((x, y) => {
+  const settingsDrag = createDialogDragController((x, y) => {
     if (settingsCard) {
       settingsCard.style.setProperty('--drag-x', `${x}px`);
       settingsCard.style.setProperty('--drag-y', `${y}px`);
@@ -2233,13 +2238,13 @@ export function mountEditor(options = {}) {
   // timeupdate highlight is handled by playbackLoop() (rAF)
 
   // Load transcript (SRT)
-  async function _loadTranscriptSrtText(srtText, displayName, { handle = null, sourceKind = 'disk' } = {}) {
+  async function _loadTranscriptSrtText(srtText, displayName, { handle = null } = {}) {
     setChosenFileLabel(transcriptBtnLabelEl, displayName, 'Choose transcript', 'transcript');
     chosenTranscriptName = displayName || null;
     updateFileSummaryLabel();
 
     loadedJsonFileName = displayName || null;
-    exportFileName = (sourceKind === 'disk') ? (displayName || null) : null;
+    exportFileName = displayName || null;
     lastSavedAt = null;
 
     srtSaveHandle = handle || null; // if present, enables true Save without prompting
@@ -2278,7 +2283,7 @@ export function mountEditor(options = {}) {
         const file = await handle.getFile();
         const srtText = await file.text();
         try { transcriptInput.value = ""; } catch { }
-        await _loadTranscriptSrtText(srtText, handle.name || file.name || "transcript.srt", { handle, sourceKind: 'disk' });
+        await _loadTranscriptSrtText(srtText, handle.name || file.name || "transcript.srt", { handle });
       } catch (err) {
         if (err && (err.name === "AbortError" || err.code === 20)) return;
         console.error(err);
@@ -2293,7 +2298,7 @@ export function mountEditor(options = {}) {
     const reader = new FileReader();
     reader.onload = () => {
       const srtText = String(reader.result || '');
-      _loadTranscriptSrtText(srtText, file.name || "transcript.srt", { handle: null, sourceKind: 'disk' });
+      _loadTranscriptSrtText(srtText, file.name || "transcript.srt", { handle: null });
     };
     reader.readAsText(file, 'utf-8');
   });

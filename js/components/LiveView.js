@@ -1,7 +1,7 @@
 import { LiveAudioService, downsampleBuffer, float32ToPcm16LeBuffer } from "../services/LiveAudioService.js";
 import { LiveSessionService } from "../services/LiveSessionService.js";
 import { TRANSCRIPT_LANGUAGES } from "../constants/languages.js";
-import { createMouseDragController } from "../editor/editorDrag.js";
+import { createDialogDragController } from "@spa-foundation/core";
 
 const STATUS_LABELS = {
     idle: "Idle",
@@ -236,8 +236,6 @@ export class LiveView {
               <button class="btn-outline btn-compact" id="liveClearBtn" type="button" style="color: var(--accent-red); border-color: transparent;">Clear</button>
             </div>
 
-            <div class="spacer" style="width: 1px; height: 24px; background: var(--border-color); margin: 0 8px;"></div>
-
             <!-- Dev Tools toggle (always visible) -->
             <button class="btn-outline btn-dev-toggle" id="liveDevToggleBtn" type="button" aria-expanded="false" title="Dev Tools">
               <span class="dev-toggle-icon">⚙</span>
@@ -252,12 +250,12 @@ export class LiveView {
 
         <!-- Modeless advanced audio panel -->
         <div class="live-audio-panel hidden" id="liveAudioPanel" role="dialog" aria-modal="false" aria-label="Advanced audio options">
-          <div class="live-audio-panel-card" id="liveAudioPanelCard">
-            <div class="live-audio-panel-topbar" id="liveAudioPanelDragHandle" title="Drag to move">
-              <div class="live-audio-panel-title">Advanced audio</div>
-              <div class="live-audio-panel-grip" aria-hidden="true">⋮⋮</div>
+          <div class="live-audio-panel-card dialog-card" id="liveAudioPanelCard">
+            <div class="dialog-topbar dialog-drag-handle" id="liveAudioPanelDragHandle" title="Drag to move">
+              <div class="dialog-title">Advanced audio</div>
+              <div class="dialog-grip" aria-hidden="true">⋮⋮</div>
             </div>
-            <div class="live-audio-panel-body">
+            <div class="dialog-body live-audio-panel-body">
               <div class="live-audio-panel-hint">UX only for now. Values on the right are read from the current browser mic track.</div>
 
               <div class="live-audio-pregain">
@@ -800,7 +798,7 @@ export class LiveView {
     initAudioSettingsDrag() {
         if (!this.el.audioPanelCard || !this.el.audioPanelDragHandle) return;
         if (!this.audioSettingsDrag) {
-            this.audioSettingsDrag = createMouseDragController((x, y) => {
+            this.audioSettingsDrag = createDialogDragController((x, y) => {
                 if (!this.el.audioPanelCard) return;
                 this.el.audioPanelCard.style.setProperty("--drag-x", `${x}px`);
                 this.el.audioPanelCard.style.setProperty("--drag-y", `${y}px`);

@@ -1,3 +1,6 @@
+@import "@spa-foundation/core/base.css";
+@import "@spa-foundation/core/shell.css";
+@import "@spa-foundation/core/preset-modern.css";
 @import "./tokens.css";
 @import "./editor.css";
 @import "./live.css";

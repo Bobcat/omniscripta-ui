@@ -6,6 +6,16 @@ import { IntroView } from "./components/IntroView.js";
 import { ProjectService } from "./services/ProjectService.js";
 import { FileHandleService } from "./services/FileHandleService.js";
 import { fetchJobStatus, fetchUiSettings } from "./api.js";
+import { RouterCore, ShellState, DialogService, DialogAnchor, ModalController, bindMobileSidebarDismiss } from "@spa-foundation/core";
+
+const dockLeftSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="3.5"></rect><path d="M8.5 4.9V19.1"></path></svg>';
+const dockRightSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="3.5"></rect><path d="M15.5 4.9V19.1"></path></svg>';
+
+function renderSidebarToggleIcon(target, isOpen) {
+    if (!target) return;
+    target.classList.remove('material-symbols-outlined');
+    target.innerHTML = isOpen ? dockLeftSvg : dockRightSvg;
+}
 
 class App {
     constructor() {
@@ -25,6 +35,7 @@ class App {
         this.container = document.getElementById('main-view');
         this.sidebar = document.getElementById('app-sidebar');
         this.menuToggle = document.getElementById('menu-toggle');
+        this.menuToggleIcon = this.menuToggle ? this.menuToggle.querySelector('.material-symbols-outlined') : null;
         this.navLinks = document.querySelectorAll('.nav-links li[data-action]');
         this.liveNavLink = document.querySelector('.nav-links li[data-action="live"]');
         this.liveNavText = this.liveNavLink ? this.liveNavLink.querySelector('.link-text') : null;
@@ -38,7 +49,7 @@ class App {
             editor: new EditorView(this),
             settings: new SettingsView(this),
             live: new LiveView(this),
-            intro: new IntroView(this)
+            intro: new IntroView(this),
         };
 
         this.projectActionMenu = null;
@@ -52,10 +63,93 @@ class App {
         this.deleteProjectCancelBtn = null;
         this.deleteProjectConfirmBtn = null;
         this.pendingDeleteProject = null;
+        this.alertModalController = null;
+        this.deleteProjectModalController = null;
 
         this.projectService = new ProjectService();
+        this.dialogService = new DialogService();
+        this.deleteProjectPositioner = new DialogAnchor();
+        this.shellState = this.initShellState();
+        this.router = this.initRouter();
         this.initAlertModal();
         this.init();
+    }
+
+    initShellState() {
+        const shellState = new ShellState({
+            sidebarOpen: this.state.sidebarOpen,
+            isMobile: !!this.state.isMobile
+        });
+
+        shellState.subscribe(({ next }) => {
+            this.state.sidebarOpen = next.sidebarOpen;
+            this.state.isMobile = next.isMobile;
+            this.applySidebarState(next.sidebarOpen);
+        });
+
+        const initialState = shellState.getSnapshot();
+        this.state.sidebarOpen = initialState.sidebarOpen;
+        this.state.isMobile = initialState.isMobile;
+        this.applySidebarState(initialState.sidebarOpen);
+        return shellState;
+    }
+
+    initRouter() {
+        const router = new RouterCore(this.container, {
+            onSameRouteNavigate: ({ to, isPopState }) => {
+                const viewName = to.view;
+                const data = to.data;
+                if (this.hasInitialRender && this.state.currentView === viewName && isPopState && data && data.section) {
+                    const view = this.views[viewName];
+                    if (view && typeof view.scrollToSection === 'function') {
+                        view.scrollToSection(data.section);
+                        return true;
+                    }
+                }
+                return false;
+            },
+            onRouteWillMount: ({ from, to, data, unmountState }) => {
+                const previousViewName = from ? from.view : this.state.currentView;
+                const viewName = to.view;
+
+                // If leaving the editor, persist audio position.
+                if (previousViewName === 'editor' && this.state.activeProjectId && unmountState && unmountState.currentTime) {
+                    this.projectService.updateProject(this.state.activeProjectId, { lastPosition: unmountState.currentTime });
+                }
+
+                this.state.currentView = viewName;
+                localStorage.setItem(this.LAST_VIEW_KEY, viewName);
+
+                let viewData = data;
+                if (viewName === 'editor') {
+                    if (data && data.jobId) {
+                        this.state.activeProjectId = data.jobId;
+                        localStorage.setItem(this.LAST_EDITOR_PROJECT_KEY, data.jobId);
+
+                        const projects = this.projectService.getProjects();
+                        const p = projects.find(proj => proj.id === data.jobId);
+                        if (p && p.lastPosition) {
+                            viewData = { ...data, startTime: p.lastPosition, lastViewMode: p.lastViewMode || null };
+                        }
+                    }
+                } else {
+                    this.state.activeProjectId = null;
+                }
+
+                this.updateNavHighlight(viewName);
+                this.renderProjects(); // Re-render sidebar to update project highlights
+                return viewData;
+            },
+            onRouteDidMount: () => {
+                this.hasInitialRender = true;
+                this.syncLiveNavState();
+            }
+        });
+
+        Object.entries(this.views).forEach(([viewName, view]) => {
+            router.register(viewName, view);
+        });
+        return router;
     }
 
     initAlertModal() {
@@ -68,28 +162,35 @@ class App {
             okBtn.addEventListener('click', () => this.hideAlert());
         }
 
-        // Close on Enter
-        this.alertModal.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                this.hideAlert();
+        this.alertModalController = new ModalController(this.alertModal, {
+            onEnter: () => this.hideAlert()
+        });
+
+        this.dialogService.register('alert', {
+            onOpen: ({ title, message }) => {
+                if (!this.alertModal) return false;
+                this.alertTitle.textContent = title;
+                this.alertMessage.innerText = message;
+                this.alertModalController.open();
+                // Focus the OK button
+                const okButton = document.getElementById('alertOkBtn');
+                if (okButton) okButton.focus();
+                return true;
+            },
+            onClose: () => {
+                if (this.alertModalController) {
+                    this.alertModalController.close();
+                }
             }
         });
     }
 
     showAlert(title, message) {
-        if (!this.alertModal) return;
-        this.alertTitle.textContent = title;
-        this.alertMessage.innerText = message;
-        this.alertModal.classList.remove('hidden');
-        // Focus the OK button
-        const okBtn = document.getElementById('alertOkBtn');
-        if (okBtn) okBtn.focus();
+        this.dialogService.open('alert', { title, message });
     }
 
     hideAlert() {
-        if (this.alertModal) {
-            this.alertModal.classList.add('hidden');
-        }
+        this.dialogService.close('alert');
     }
 
     async init() {
@@ -118,20 +219,16 @@ class App {
         this.state.currentView = initialView;
 
         this.bindEvents();
-        this.createMobileToggle(); // Floating hamburger for mobile
         this.initDeleteProjectModal();
         this.initProjectActionsUi();
         this.detectDeviceType(); // Set global mobile/desktop class
         this.checkDevice();
+        bindMobileSidebarDismiss(this.shellState, this.sidebar, 600);
         this.renderProjects(); // Initial render
         this.render();
         this.syncLiveNavState();
-
-        // Handle browser back/forward
-        window.addEventListener('popstate', (event) => {
-            if (event.state && event.state.view) {
-                this.navigateTo(event.state.view, event.state.data, true);
-            }
+        this.router.bindPopState({
+            parseHash: ({ hash }) => this.parseHashRoute(hash)
         });
     }
 
@@ -249,48 +346,22 @@ class App {
             });
         }
 
-        // Listen for mobile menu buttons from views being clicked
-        // We use event delegation or a custom event since views are dynamic
-        document.addEventListener('click', (e) => {
-            // Check if clicked element is a mobile-menu toggle (e.g. from editor)
-            if (e.target.matches('.mobile-menu-btn, #mobileMenuBtn')) {
-                this.toggleSidebar(true);
-            }
-        });
-
         // Window resize
         window.addEventListener('resize', () => {
             this.detectDeviceType();
             this.checkDevice();
         });
-
-        // Close sidebar when clicking outside on mobile
-        document.addEventListener('click', (e) => {
-            if (this.state.isMobile && this.state.sidebarOpen) {
-                const inSidebar = this.sidebar.contains(e.target);
-                const isToggle = e.target.closest('#mobile-menu-toggle') ||
-                    e.target.closest('#mobileMenuBtn'); // Also check the internal toggle
-
-                if (!inSidebar && !isToggle) {
-                    this.toggleSidebar(false);
-                }
-            }
-        });
     }
 
     checkDevice() {
-        const wasMobile = this.state.isMobile;
-        this.state.isMobile = this.isMobile();
+        const snapshot = this.shellState.getSnapshot();
+        const wasMobile = snapshot.isMobile;
+        const isMobileNow = this.isMobile();
+        this.shellState.setIsMobile(isMobileNow, "checkDevice.setIsMobile");
 
-        if (this.state.isMobile !== wasMobile) {
+        if (isMobileNow !== wasMobile) {
             // Reset sidebar state based on device
-            if (this.state.isMobile) {
-                this.sidebar.classList.remove('expanded');
-                this.state.sidebarOpen = false;
-            } else {
-                this.sidebar.classList.add('expanded');
-                this.state.sidebarOpen = true;
-            }
+            this.shellState.syncSidebarForDevice("checkDevice.syncSidebarForDevice");
         }
     }
 
@@ -329,115 +400,61 @@ class App {
         }
     }
 
-    createMobileToggle() {
-        const btn = document.createElement('button');
-        btn.id = 'mobile-menu-toggle';
-        btn.className = 'icon-btn';
-        btn.title = 'Menu';
-        btn.innerHTML = '<span class="material-symbols-outlined">menu</span>';
-        btn.addEventListener('click', () => this.toggleSidebar());
-
-        document.body.appendChild(btn);
+    toggleSidebar(forceState) {
+        if (forceState !== undefined) {
+            this.shellState.setSidebarOpen(!!forceState, "toggleSidebar.force");
+            return;
+        }
+        this.shellState.toggleSidebar("toggleSidebar.toggle");
     }
 
-    toggleSidebar(forceState) {
-        const newState = forceState !== undefined ? forceState : !this.state.sidebarOpen;
-        this.state.sidebarOpen = newState;
-
-        if (this.state.sidebarOpen) {
+    applySidebarState(sidebarOpen) {
+        if (sidebarOpen) {
             this.sidebar.classList.add('expanded');
-            document.body.classList.add('sidebar-open');
+            renderSidebarToggleIcon(this.menuToggleIcon, true);
         } else {
             this.sidebar.classList.remove('expanded');
-            document.body.classList.remove('sidebar-open');
+            renderSidebarToggleIcon(this.menuToggleIcon, false);
         }
+    }
+
+    parseHashRoute(hash) {
+        const raw = String(hash || '').trim();
+        if (!raw) return null;
+        const parts = raw.split('-');
+        const viewName = parts[0];
+        if (!this.views[viewName]) return null;
+
+        if (parts.length > 1) {
+            return { view: viewName, data: { section: parts.slice(1).join('-') } };
+        }
+
+        return { view: viewName, data: null };
+    }
+
+    resolveInitialRoute(viewName, data = null) {
+        let nextData = data;
+        if (viewName === 'editor' && (!nextData || !nextData.jobId)) {
+            const lastEditorProjectId = localStorage.getItem(this.LAST_EDITOR_PROJECT_KEY);
+            if (lastEditorProjectId) {
+                nextData = { ...(nextData || {}), jobId: lastEditorProjectId };
+            }
+        }
+        return { view: viewName, data: nextData };
     }
 
     render() {
-        let startView = this.state.currentView;
-        let viewData = null;
-
-        const hash = window.location.hash.replace('#', '');
-        if (hash) {
-            const parts = hash.split('-');
-            if (this.views[parts[0]]) {
-                startView = parts[0];
-                if (parts.length > 1) {
-                    viewData = { section: parts.slice(1).join('-') };
-                }
-            } else if (this.views[hash]) {
-                startView = hash;
-            }
-        }
-        if (startView === 'editor' && (!viewData || !viewData.jobId)) {
-            const lastEditorProjectId = localStorage.getItem(this.LAST_EDITOR_PROJECT_KEY);
-            if (lastEditorProjectId) {
-                viewData = { ...(viewData || {}), jobId: lastEditorProjectId };
-            }
-        }
-        window.history.replaceState({ view: startView, data: viewData }, '', '#' + (hash || startView));
-        this.navigateTo(startView, viewData, true);
+        const defaultRoute = this.resolveInitialRoute(this.state.currentView, null);
+        this.router.startFromHash(defaultRoute.view, defaultRoute.data, {
+            parseHash: ({ hash }) => this.parseHashRoute(hash),
+            resolveInitialRoute: ({ view, data }) => this.resolveInitialRoute(view, data)
+        });
     }
 
     navigateTo(viewName, data = null, isPopState = false) {
         if (!this.views[viewName]) return;
-
-        // Prevent full remount if navigating internally within the same view
-        if (this.hasInitialRender && this.state.currentView === viewName && isPopState && data && data.section) {
-            if (typeof this.views[viewName].scrollToSection === 'function') {
-                this.views[viewName].scrollToSection(data.section);
-                return;
-            }
-        }
-
-        // Unmount current view and save state if applicable
-        if (this.state.currentView && this.views[this.state.currentView]) {
-            const currentV = this.views[this.state.currentView];
-            if (typeof currentV.unmount === 'function') {
-                const state = currentV.unmount();
-
-                // If it was the editor, save the audio position
-                if (this.state.currentView === 'editor' && this.state.activeProjectId && state && state.currentTime) {
-                    this.projectService.updateProject(this.state.activeProjectId, { lastPosition: state.currentTime });
-                }
-            }
-        }
-
-        this.state.currentView = viewName;
-        localStorage.setItem(this.LAST_VIEW_KEY, viewName);
-
-        if (!isPopState) {
-            window.history.pushState({ view: viewName, data: data }, '', '#' + viewName);
-        }
-
-        let viewData = data;
-
-        // Track active project & Restore state
-        if (viewName === 'editor') {
-            if (data && data.jobId) {
-                this.state.activeProjectId = data.jobId;
-                localStorage.setItem(this.LAST_EDITOR_PROJECT_KEY, data.jobId);
-
-                // Load saved position
-                const projects = this.projectService.getProjects();
-                const p = projects.find(proj => proj.id === data.jobId);
-                if (p && p.lastPosition) {
-                    viewData = { ...data, startTime: p.lastPosition, lastViewMode: p.lastViewMode || null };
-                }
-            }
-        } else {
-            this.state.activeProjectId = null;
-        }
-
-        this.updateNavHighlight(viewName);
-        this.renderProjects(); // Re-render sidebar to update project highlights
-
-        // Mount new
-        this.container.innerHTML = ''; // Clear
-        this.views[viewName].mount(this.container, viewData);
-        this.hasInitialRender = true;
-        this.syncLiveNavState();
-
+        const options = { isPopState };
+        this.router.navigate(viewName, data, options);
     }
 
     updateNavHighlight(viewName) {
@@ -501,31 +518,38 @@ class App {
             this.deleteProjectConfirmBtn.addEventListener('click', () => this.confirmDeleteProject());
         }
 
-        this.deleteProjectModal.addEventListener('mousedown', (e) => {
-            if (e.target === this.deleteProjectModal) {
-                this.hideDeleteProjectDialog();
-            }
+        this.deleteProjectModalController = new ModalController(this.deleteProjectModal, {
+            backdropEvent: 'mousedown',
+            onBackdrop: () => this.hideDeleteProjectDialog(),
+            onEscape: () => this.hideDeleteProjectDialog(),
+            onEnter: () => this.confirmDeleteProject()
         });
-        this.deleteProjectModal.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                this.hideDeleteProjectDialog();
-            } else if (e.key === 'Enter') {
-                this.confirmDeleteProject();
+
+        this.dialogService.register('delete-project', {
+            onOpen: ({ project, anchorRect = null }) => {
+                if (!project || !this.deleteProjectModal || !this.deleteProjectMessage) return false;
+                this.pendingDeleteProject = project;
+                this.deleteProjectMessage.innerText = `This will delete "${project.name}" from recent projects.`;
+                this.positionDeleteProjectDialog(anchorRect);
+                this.deleteProjectModalController.open();
+                // Reposition after render using the actual dialog dimensions.
+                requestAnimationFrame(() => this.positionDeleteProjectDialog(anchorRect));
+                if (this.deleteProjectConfirmBtn) {
+                    this.deleteProjectConfirmBtn.focus();
+                }
+                return true;
+            },
+            onClose: () => {
+                if (this.deleteProjectModalController) {
+                    this.deleteProjectModalController.close();
+                }
+                this.pendingDeleteProject = null;
             }
         });
     }
 
     showDeleteProjectDialog(project, anchorRect = null) {
-        if (!project || !this.deleteProjectModal || !this.deleteProjectMessage) return;
-        this.pendingDeleteProject = project;
-        this.deleteProjectMessage.innerText = `This will delete "${project.name}" from recent projects.`;
-        this.positionDeleteProjectDialog(anchorRect);
-        this.deleteProjectModal.classList.remove('hidden');
-        // Reposition after render using the actual dialog dimensions.
-        requestAnimationFrame(() => this.positionDeleteProjectDialog(anchorRect));
-        if (this.deleteProjectConfirmBtn) {
-            this.deleteProjectConfirmBtn.focus();
-        }
+        this.dialogService.open('delete-project', { project, anchorRect });
     }
 
     positionDeleteProjectDialog(anchorRect = null) {
@@ -551,30 +575,20 @@ class App {
         }
         if (!rect) return;
 
-        const viewportPadding = 8;
         const card = this.deleteProjectModal.querySelector('.delete-project-card');
         const cardRect = card ? card.getBoundingClientRect() : null;
         const dialogWidth = cardRect && cardRect.width > 0 ? cardRect.width : Math.min(420, window.innerWidth - 20);
         const dialogHeight = cardRect && cardRect.height > 0 ? cardRect.height : 188;
 
-        let left = rect.right + 8;
-        let top = rect.top - dialogHeight - 10;
-
-        if (left + dialogWidth > window.innerWidth - viewportPadding) {
-            left = rect.left - dialogWidth - 8;
-        }
-        left = Math.max(viewportPadding, Math.min(left, window.innerWidth - dialogWidth - viewportPadding));
-        top = Math.max(viewportPadding, Math.min(top, window.innerHeight - dialogHeight - viewportPadding));
-
-        this.deleteProjectModal.style.setProperty('--dp-left', `${left}px`);
-        this.deleteProjectModal.style.setProperty('--dp-top', `${top}px`);
+        const position = this.deleteProjectPositioner.compute(rect, {
+            width: dialogWidth,
+            height: dialogHeight
+        });
+        this.deleteProjectPositioner.applyCssVars(this.deleteProjectModal, position, '--dp-left', '--dp-top');
     }
 
     hideDeleteProjectDialog() {
-        if (this.deleteProjectModal) {
-            this.deleteProjectModal.classList.add('hidden');
-        }
-        this.pendingDeleteProject = null;
+        this.dialogService.close('delete-project');
     }
 
     confirmDeleteProject() {
@@ -805,7 +819,7 @@ class App {
 
             // Create separator and container
             const separator = document.createElement('div');
-            separator.className = 'separator';
+            separator.className = 'separator projects-separator';
             separator.textContent = 'Recent projects'; // Changed case
             // Reduced to 0.75rem
             separator.style.cssText = 'padding: 10px 16px; font-size: 0.75rem; color: var(--text-secondary); letter-spacing: 0.05em; margin-top: 10px; font-weight: 500;';

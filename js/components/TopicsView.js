@@ -2,10 +2,9 @@
 import { _srtTcToSeconds } from '../utils.js';
 
 export class TopicsView {
-    constructor({ containerId, onSeek, getJobId }) {
+    constructor({ containerId, onSeek }) {
         this.container = document.getElementById(containerId); // This might be a placeholder div
         this.onSeek = onSeek;
-        this.getJobId = getJobId;
         this.topics = [];
     }
 

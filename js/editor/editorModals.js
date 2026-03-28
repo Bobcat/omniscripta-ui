@@ -1,3 +1,5 @@
+import { ModalController } from "@spa-foundation/core";
+
 export function setupHistoryModal({
     historyBtn,
     closeHistoryBtn,
@@ -7,27 +9,37 @@ export function setupHistoryModal({
     detailsEl,
     renderHistory,
 }) {
+    const historyModalController = historyModal
+        ? new ModalController(historyModal, {
+            backdropEvent: 'mousedown',
+            onBackdrop: () => closeHistoryModal()
+        })
+        : null;
+
     function openHistoryModal() {
         if (!historyModal) return;
         try { player.pause(); } catch { }
         clearSelection();
         if (detailsEl) detailsEl.textContent = '(click an item)';
-        historyModal.classList.remove('hidden');
+        if (historyModalController) {
+            historyModalController.open();
+        } else {
+            historyModal.classList.remove('hidden');
+        }
         renderHistory();
     }
 
     function closeHistoryModal() {
         if (!historyModal) return;
-        historyModal.classList.add('hidden');
+        if (historyModalController) {
+            historyModalController.close();
+        } else {
+            historyModal.classList.add('hidden');
+        }
     }
 
     if (historyBtn) historyBtn.addEventListener('click', openHistoryModal);
     if (closeHistoryBtn) closeHistoryBtn.addEventListener('click', closeHistoryModal);
-    if (historyModal) {
-        historyModal.addEventListener('mousedown', (e) => {
-            if (e.target === historyModal) closeHistoryModal();
-        });
-    }
 
     return { openHistoryModal, closeHistoryModal };
 }
@@ -38,25 +50,35 @@ export function setupHelpModal({
     helpModal,
     player,
 }) {
+    const helpModalController = helpModal
+        ? new ModalController(helpModal, {
+            backdropEvent: 'click',
+            onBackdrop: () => closeHelpModal()
+        })
+        : null;
+
     function openHelpModal() {
         if (!helpModal) return;
         try { player.pause(); } catch { }
-        helpModal.classList.remove('hidden');
+        if (helpModalController) {
+            helpModalController.open();
+        } else {
+            helpModal.classList.remove('hidden');
+        }
         setTimeout(() => { closeHelpBtn?.focus?.(); }, 0);
     }
 
     function closeHelpModal() {
         if (!helpModal) return;
-        helpModal.classList.add('hidden');
+        if (helpModalController) {
+            helpModalController.close();
+        } else {
+            helpModal.classList.add('hidden');
+        }
     }
 
     if (helpBtn) helpBtn.addEventListener('click', openHelpModal);
     if (closeHelpBtn) closeHelpBtn.addEventListener('click', closeHelpModal);
-    if (helpModal) {
-        helpModal.addEventListener('click', (e) => {
-            if (e.target === helpModal) closeHelpModal();
-        });
-    }
 
     return { openHelpModal, closeHelpModal };
 }
@@ -83,27 +105,37 @@ export function setupSettingsModal({
         if (optAutoSplitTs) optAutoSplitTs.checked = !!getAutoAssignSplitTs();
     }
 
+    const settingsModalController = settingsModal
+        ? new ModalController(settingsModal, {
+            backdropEvent: 'mousedown',
+            onBackdrop: () => closeSettingsModal()
+        })
+        : null;
+
     function openSettingsModal() {
         flushPendingText();
         try { player.pause(); } catch { }
         resetSettingsDrag();
         loadSettings();
         syncSettingsUI();
-        if (settingsModal) settingsModal.classList.remove('hidden');
+        if (settingsModalController) {
+            settingsModalController.open();
+        } else if (settingsModal) {
+            settingsModal.classList.remove('hidden');
+        }
     }
 
     function closeSettingsModal() {
         onSettingsDragUp();
-        if (settingsModal) settingsModal.classList.add('hidden');
+        if (settingsModalController) {
+            settingsModalController.close();
+        } else if (settingsModal) {
+            settingsModal.classList.add('hidden');
+        }
     }
 
     if (settingsBtn) settingsBtn.addEventListener('click', openSettingsModal);
     if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', closeSettingsModal);
-    if (settingsModal) {
-        settingsModal.addEventListener('mousedown', (e) => {
-            if (e.target === settingsModal) closeSettingsModal();
-        });
-    }
 
     if (optKeepCentered) {
         optKeepCentered.addEventListener('change', (e) => {

@@ -1,3 +1,4 @@
+import { ModalController } from "@spa-foundation/core";
 import { normSpeaker } from "../utils.js";
 
 export function isFilterActive(filterState) {
@@ -394,8 +395,9 @@ export function wireFilterControlEvents({
     if (filterBtn) filterBtn.addEventListener('click', openFilterModal);
     if (closeFilterBtn) closeFilterBtn.addEventListener('click', closeFilterModal);
     if (filterModal) {
-        filterModal.addEventListener('click', (e) => {
-            if (e.target === filterModal) closeFilterModal();
+        new ModalController(filterModal, {
+            backdropEvent: 'click',
+            onBackdrop: () => closeFilterModal()
         });
         filterModal.addEventListener('change', (e) => {
             if (isFilterModalChangeTarget(e.target)) applyFilterFromModalControls();

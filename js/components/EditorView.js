@@ -24,8 +24,8 @@ export class EditorView {
         <button class="primary desktop-only" disabled="" id="saveBtn" title="Ctrl+S" type="button">Save</button>
         <button class="desktop-only" id="saveAsBtn" title="Save as…" type="button">Save as</button>
 
-        <!-- Mobile Menu Toggle -->
-        <button id="mobileMenuBtn" class="mobile-only" type="button" title="Menu">☰</button>
+        <!-- Mobile File Actions Toggle -->
+        <button id="mobileMenuBtn" class="mobile-only" type="button" title="File actions"><span class="material-symbols-outlined">more_vert</span></button>
 
         <!-- File Actions (Collapsible on Mobile) -->
         <div id="headerFileActions" class="header-file-actions">
@@ -116,12 +116,12 @@ export class EditorView {
     </div>
   </div>
   <div aria-label="Settings" aria-modal="true" class="modal hidden" id="settingsModal" role="dialog">
-    <div class="modal-card settings-card">
-      <div class="settings-topbar" id="settingsDragHandle" title="Drag to move">
-        <div class="settings-title">Settings</div>
-        <div aria-hidden="true" class="settings-grip">⋮⋮</div>
+    <div class="modal-card dialog-card settings-card">
+      <div class="dialog-topbar dialog-drag-handle" id="settingsDragHandle" title="Drag to move">
+        <div class="dialog-title">Settings</div>
+        <div aria-hidden="true" class="dialog-grip">⋮⋮</div>
       </div>
-      <div class="settings-body">
+      <div class="dialog-body settings-body">
         <label class="chk">
           <input id="optKeepCentered" type="checkbox" />
           Keep active segment centered during playback
@@ -146,12 +146,12 @@ export class EditorView {
   </div>
   <!-- Find/Replace modal -->
   <div aria-label="Find and replace" aria-modal="true" class="modal hidden" id="findModal" role="dialog">
-    <div class="modal-card find-card">
-      <div class="find-topbar" id="findDragHandle" title="Drag to move">
-        <div class="find-title">Find/Replace</div>
-        <div aria-hidden="true" class="find-grip">⋮⋮</div>
+    <div class="modal-card dialog-card find-card">
+      <div class="dialog-topbar dialog-drag-handle" id="findDragHandle" title="Drag to move">
+        <div class="dialog-title">Find/Replace</div>
+        <div aria-hidden="true" class="dialog-grip">⋮⋮</div>
       </div>
-      <div class="find-body">
+      <div class="dialog-body find-body">
         <div class="find-row">
           <label for="findInput">Find</label>
           <input autocomplete="off" id="findInput" spellcheck="false">
@@ -197,12 +197,12 @@ export class EditorView {
   </div>
   <!-- Help modal -->
   <div aria-label="Help" aria-modal="true" class="modal hidden" id="helpModal" role="dialog">
-    <div class="modal-card help-card">
-      <div class="help-topbar" id="helpDragHandle" title="Drag to move">
-        <div class="help-title">Help</div>
-        <div aria-hidden="true" class="help-grip">⋮⋮</div>
+    <div class="modal-card dialog-card help-card">
+      <div class="dialog-topbar dialog-drag-handle" id="helpDragHandle" title="Drag to move">
+        <div class="dialog-title">Help</div>
+        <div aria-hidden="true" class="dialog-grip">⋮⋮</div>
       </div>
-      <div class="help-body">
+      <div class="dialog-body help-body">
         <div aria-label="Keyboard shortcuts" class="help-grid">
           <div class="help-key"><span class="kbd">F1</span></div>
           <div>Play/pause</div>
@@ -242,12 +242,12 @@ export class EditorView {
 
   <!-- Filter modal -->
   <div aria-label="Filter" aria-modal="true" class="modal hidden" id="filterModal" role="dialog">
-    <div class="modal-card filter-card">
-      <div class="filter-topbar" id="filterDragHandle" title="Drag to move">
-        <div class="filter-title">Filter</div>
-        <div aria-hidden="true" class="filter-grip">⋮⋮</div>
+    <div class="modal-card dialog-card filter-card">
+      <div class="dialog-topbar dialog-drag-handle" id="filterDragHandle" title="Drag to move">
+        <div class="dialog-title">Filter</div>
+        <div aria-hidden="true" class="dialog-grip">⋮⋮</div>
       </div>
-      <div class="filter-body">
+      <div class="dialog-body filter-body">
         <div class="filter-section">
           <div class="filter-head">Speakers</div>
           <div class="muted" style="margin-top:4px;">Select one or more speakers (leave empty = all).</div>

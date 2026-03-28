@@ -1,52 +1,8 @@
 # Agent Instructions (Omniscripta Frontend)
 
-Read this first, then follow the detailed runbook:
-- `/var/www/omniscripta-app/.agent/workflows/operations_runbook.md`
+Workspace-level operational guidance lives here:
+- `~/projects/transcribe-dev/AGENTS.md`
 
-## Scope
-- This file applies to the frontend repo rooted at `/var/www/omniscripta-app`.
-
-## Repo relationship
-- Frontend source is here: `/var/www/omniscripta-app`.
-- Backend live is `/srv/transcribe`.
-- Backend dev is `/home/gunnar/projects/transcribe-dev`.
-
-## Test paths
-- Live-backend frontend path: `http://localhost:8080/index.html`.
-- Dev-backend frontend path: `http://127.0.0.1:18010/index.html` (via tunnel to server `127.0.0.1:8010`).
-
-## Deploy
-- Deploy to live static: `/var/www/omniscripta-app/deploy.sh`.
-- Deploy to dev static: `/var/www/omniscripta-app/deploy-dev.sh`.
-- Do not edit built static artifacts directly in `/srv/transcribe/static`.
-
-## Services
-
-### Dev services (user-level, `systemctl --user`)
-
-| Service | Port | Description |
-|---|---|---|
-| `transcribe-frontend-dev.service` | `:8010` | Frontend proxy + static files |
-| `transcribe-api-dev.service` | `:8001` | Portal API (FastAPI/Uvicorn) |
-| `transcribe-asr-pool-dev.service` | `:18090` | ASR Pool — warm WhisperX runners |
-| `asr-worker-live-dev@1.service` | — | Worker daemon (live mode) |
-| `asr-worker-batch-dev@1.service` | — | Worker daemon (upload mode) |
-| `transcribe-demo-jobs-janitor-dev.timer` | — | Periodic janitor for `data/demo_jobs` live chunks |
-
-### Live services (system-level, `sudo systemctl`)
-
-| Service | Port | Description |
-|---|---|---|
-| `transcribe-api.service` | `:8000` | Portal API (behind nginx) |
-| `transcribe-asr-pool.service` | `:8090` | ASR Pool — warm WhisperX runners |
-| `transcribe-worker-live.service` | — | Worker daemon (live mode) |
-| `transcribe-worker-upload.service` | — | Worker daemon (upload mode) |
-| `transcribe-demo-jobs-janitor.timer` | — | Periodic janitor for `/srv/transcribe/data/demo_jobs` live chunks |
-| `transcribe-tabby-tunnel.service` | `:5001` | SSH tunnel to Tabby LLM on PC1 |
-
-Live frontend is served by nginx (no separate systemd service).
-
-## Secrets
-- LLM key is server-side worker config, not frontend browser config.
-- Live key source: `/etc/transcribe/transcribe.env`.
-- Dev key source: `~/.config/transcribe/dev.env`.
+Repository-specific scope:
+- This file applies to `/var/www/omniscripta-app`.
+- Keep frontend changes scoped to this repo unless the task explicitly spans multiple repos.
