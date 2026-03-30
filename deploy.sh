@@ -56,6 +56,7 @@ echo "🎨 Bundling CSS..."
 $ESBUILD "$APP_DIR/css/style.css" \
   --bundle \
   --outfile="$TARGET_DIR/style.css" \
+  --loader:.svg=dataurl \
   --minify \
   --log-level=error \
   --target=es2020
