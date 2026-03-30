@@ -57,6 +57,7 @@ export class UploadView {
               <div>
                 <label for="lang">Language</label>
                 <select id="lang">
+                  <option value="" selected>Detect automatically</option>
                   ${langOptions}
                 </select>
               </div>
@@ -228,7 +229,9 @@ export class UploadView {
         setLine("queued", "upload", "Uploading…");
 
         const fields = {};
-        fields.language = (langEl && langEl.value) ? langEl.value : "en";
+        fields.language = (langEl && langEl.value !== undefined && langEl.value !== null)
+          ? String(langEl.value)
+          : "";
         fields.speakers = (spkEl && spkEl.value) ? spkEl.value : "auto";
         setActiveUpload({
           filename: this.selectedFile.name,
@@ -302,7 +305,9 @@ export class UploadView {
       this.currentFilename = filename;
       selectedFileNameEl.textContent = filename;
 
-      if (langEl && upload.language) langEl.value = String(upload.language);
+      if (langEl && upload.language !== undefined && upload.language !== null) {
+        langEl.value = String(upload.language);
+      }
       if (spkEl && upload.speakers !== undefined && upload.speakers !== null) {
         spkEl.value = String(upload.speakers);
       }
@@ -339,7 +344,9 @@ export class UploadView {
         this.currentFilename = filename;
         selectedFileNameEl.textContent = filename;
 
-        if (langEl && job.language) langEl.value = job.language;
+        if (langEl && job.language !== undefined && job.language !== null) {
+          langEl.value = String(job.language);
+        }
         if (spkEl && job.speakers) spkEl.value = String(job.speakers);
 
         startUploadBtn.disabled = true;
@@ -422,7 +429,11 @@ export class UploadView {
         this.app.state.activeJob = {
           id: jobId,
           filename: this.currentFilename || prevJob.filename || "Audio",
-          language: prevJob.language || (st.language ? String(st.language) : "en"),
+          language: (
+            prevJob.language !== undefined
+            ? prevJob.language
+            : (st.language !== undefined && st.language !== null ? String(st.language) : "")
+          ),
           speakers: prevJob.speakers || (statusSpeakers !== undefined && statusSpeakers !== null ? String(statusSpeakers) : "auto"),
           progress: p,
           status: st.state

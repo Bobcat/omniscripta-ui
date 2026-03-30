@@ -19,10 +19,10 @@ const STATUS_LABELS = {
 
 const LIVE_VAD_PHASE_LABELS = {
     speech: "Speech detected",
-    hangover: "",
-    silence: "",
-    disabled: "",
-    unknown: "",
+    hangover: "Recent speech",
+    silence: "No speech",
+    disabled: "Disabled",
+    unknown: "Unknown",
 };
 const LIVE_VAD_SPEECH_BADGE_MAX_AGE_MS = 220;
 const LIVE_VAD_SPEECH_BADGE_HOLD_MS = 900;
@@ -202,7 +202,6 @@ export class LiveView {
               <select id="liveLanguageSelect" class="live-select live-language-select" title="Auto is recommended unless you are sure about the spoken language.">
                 ${langOptions}
               </select>
-              <div class="live-language-help" id="liveLanguageHelp">Auto is recommended for unknown or mixed-language speech.</div>
             </div>
           </div>
 
@@ -539,7 +538,6 @@ export class LiveView {
         this.el.vadBadge = document.getElementById("liveVadBadge");
         this.el.languagePicker = document.getElementById("liveLanguagePicker");
         this.el.languageSelect = document.getElementById("liveLanguageSelect");
-        this.el.languageHelp = document.getElementById("liveLanguageHelp");
         this.el.audioSettingsBtn = document.getElementById("liveAudioSettingsBtn");
         this.el.audioPanel = document.getElementById("liveAudioPanel");
         this.el.audioPanelCard = document.getElementById("liveAudioPanelCard");
@@ -724,9 +722,33 @@ export class LiveView {
     normalizeLanguageCode(value) {
         const code = String(value || "").trim().toLowerCase();
         if (!code) return "";
+        if (code === "auto") return "";
         for (let i = 0; i < TRANSCRIPT_LANGUAGES.length; i += 1) {
             const known = String(TRANSCRIPT_LANGUAGES[i] && TRANSCRIPT_LANGUAGES[i].code || "").trim().toLowerCase();
             if (known === code) return known;
+        }
+        const primary = code.split(/[-_]/, 1)[0];
+        if (primary && primary !== code) {
+            for (let i = 0; i < TRANSCRIPT_LANGUAGES.length; i += 1) {
+                const known = String(TRANSCRIPT_LANGUAGES[i] && TRANSCRIPT_LANGUAGES[i].code || "").trim().toLowerCase();
+                if (known === primary) return known;
+            }
+        }
+        return "";
+    }
+
+    detectBrowserPreferredLanguage() {
+        if (typeof navigator === "undefined") return "";
+        const candidates = [];
+        if (Array.isArray(navigator.languages)) {
+            for (let i = 0; i < navigator.languages.length; i += 1) {
+                candidates.push(String(navigator.languages[i] || ""));
+            }
+        }
+        candidates.push(String(navigator.language || ""));
+        for (let i = 0; i < candidates.length; i += 1) {
+            const normalized = this.normalizeLanguageCode(candidates[i]);
+            if (normalized) return normalized;
         }
         return "";
     }
@@ -734,9 +756,12 @@ export class LiveView {
     loadPreferredLanguage() {
         try {
             const raw = window.localStorage.getItem(LIVE_LANGUAGE_STORAGE_KEY);
-            return this.normalizeLanguageCode(raw);
+            if (raw !== null) {
+                return this.normalizeLanguageCode(raw);
+            }
+            return this.detectBrowserPreferredLanguage();
         } catch {
-            return "";
+            return this.detectBrowserPreferredLanguage();
         }
     }
 
@@ -754,14 +779,7 @@ export class LiveView {
         const normalized = this.normalizeLanguageCode(this.selectedLanguage);
         this.selectedLanguage = normalized;
         this.el.languageSelect.value = normalized;
-        this.updateLanguageHelpVisibility();
         this.fitLanguageSelectToSelectedOption();
-    }
-
-    updateLanguageHelpVisibility() {
-        if (!this.el.languageHelp) return;
-        const isAutoSelected = !this.normalizeLanguageCode(this.selectedLanguage);
-        this.el.languageHelp.classList.toggle("hidden", isAutoSelected);
     }
 
     fitLanguageSelectToSelectedOption() {
@@ -1726,9 +1744,7 @@ export class LiveView {
                 + (gpuProxyPipelinePct !== null && Number.isFinite(gpuProxyPipelinePct) ? ` (${gpuProxyPipelinePct.toFixed(1)}% of recording)` : "")
             );
         }
-        lines.push(
-            `Health: poll_errors=${pollErrors} chunk_errors=${chunkErrors} finalization=${String(run.finalization_state || "")}`
-        );
+        lines.push(`Health: poll_errors=${pollErrors} chunk_errors=${chunkErrors}`);
         const refMeta = fixture.reference_meta && typeof fixture.reference_meta === "object" ? fixture.reference_meta : {};
         if (Object.prototype.hasOwnProperty.call(refMeta, "boundary_partial_end")) {
             lines.push(`Ref boundary_partial_end=${String(refMeta.boundary_partial_end)}`);
@@ -1746,7 +1762,6 @@ export class LiveView {
         const chunkReasons = r.chunk_reason_counts && typeof r.chunk_reason_counts === "object"
             ? r.chunk_reason_counts
             : {};
-        const finalizationState = String(r.finalization_state || "").trim();
 
         const gpuProxyTranscribeTimeS = Number(r.gpu_proxy_transcribe_s || 0);
         const gpuProxyPipelineTimeS = Number(r.gpu_proxy_pipeline_s || 0);
@@ -1773,7 +1788,6 @@ export class LiveView {
             `GPU proxy pipeline time: ${gpuProxyPipelineTimeS.toFixed(2)}s`
             + (gpuProxyPipelinePct !== null && Number.isFinite(gpuProxyPipelinePct) ? ` (${gpuProxyPipelinePct.toFixed(1)}% of recording)` : "")
         );
-        lines.push(`Finalization: ${finalizationState || "unknown"}`);
         return lines.join("\n");
     }
 

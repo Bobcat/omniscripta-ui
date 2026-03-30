@@ -113,19 +113,6 @@
       align-items: center;
     }
 
-    .live-language-picker.is-compact .live-language-help {
-      display: none;
-    }
-
-    .live-language-help {
-      width: 100%;
-      margin-top: -2px;
-      font-size: 0.68rem;
-      line-height: 1.2;
-      color: var(--muted, var(--color-slate-500));
-      white-space: normal;
-    }
-
 
     .live-language-picker .live-language-select {
       width: 96px;
@@ -889,11 +876,6 @@
 
       .live-language-picker .live-audio-settings-btn .material-symbols-outlined {
         font-size: 18px;
-      }
-
-
-      .live-language-help {
-        display: none;
       }
 
       .live-language-picker .live-language-select {
