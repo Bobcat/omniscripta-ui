@@ -8,15 +8,6 @@ import { FileHandleService } from "./services/FileHandleService.js";
 import { fetchJobStatus, fetchUiSettings } from "./api.js";
 import { RouterCore, ShellState, DialogService, DialogAnchor, ModalController, bindMobileSidebarDismiss } from "@spa-foundation/core";
 
-const dockLeftSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="3.5"></rect><path d="M8.5 4.9V19.1"></path></svg>';
-const dockRightSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="3.5"></rect><path d="M15.5 4.9V19.1"></path></svg>';
-
-function renderSidebarToggleIcon(target, isOpen) {
-    if (!target) return;
-    target.classList.remove('material-symbols-outlined');
-    target.innerHTML = isOpen ? dockLeftSvg : dockRightSvg;
-}
-
 class App {
     constructor() {
         this.LAST_VIEW_KEY = 'omniscripta_last_view';
@@ -35,9 +26,9 @@ class App {
         this.container = document.getElementById('main-view');
         this.sidebar = document.getElementById('app-sidebar');
         this.menuToggle = document.getElementById('menu-toggle');
-        this.menuToggleIcon = this.menuToggle ? this.menuToggle.querySelector('.material-symbols-outlined') : null;
         this.navLinks = document.querySelectorAll('.nav-links li[data-action]');
         this.liveNavLink = document.querySelector('.nav-links li[data-action="live"]');
+        this.liveNavIcon = this.liveNavLink ? this.liveNavLink.querySelector('.material-symbols-outlined') : null;
         this.liveNavText = this.liveNavLink ? this.liveNavLink.querySelector('.link-text') : null;
         this.liveNavBaseText = this.liveNavText
             ? String(this.liveNavText.textContent || 'Live recording').trim()
@@ -409,13 +400,7 @@ class App {
     }
 
     applySidebarState(sidebarOpen) {
-        if (sidebarOpen) {
-            this.sidebar.classList.add('expanded');
-            renderSidebarToggleIcon(this.menuToggleIcon, true);
-        } else {
-            this.sidebar.classList.remove('expanded');
-            renderSidebarToggleIcon(this.menuToggleIcon, false);
-        }
+        this.sidebar.classList.toggle('expanded', !!sidebarOpen);
     }
 
     parseHashRoute(hash) {
@@ -482,6 +467,9 @@ class App {
             : this.liveNavBaseText;
         this.liveNavText.textContent = nextLabel;
         this.liveNavLink.title = nextLabel;
+        if (this.liveNavIcon) {
+            this.liveNavIcon.style.color = recordingActive ? '#dc2626' : '';
+        }
     }
 
     initDeleteProjectModal() {

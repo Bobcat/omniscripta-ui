@@ -17,25 +17,17 @@ export function setupHistoryModal({
         : null;
 
     function openHistoryModal() {
-        if (!historyModal) return;
+        if (!historyModalController) return;
         try { player.pause(); } catch { }
         clearSelection();
         if (detailsEl) detailsEl.textContent = '(click an item)';
-        if (historyModalController) {
-            historyModalController.open();
-        } else {
-            historyModal.classList.remove('hidden');
-        }
+        historyModalController.open();
         renderHistory();
     }
 
     function closeHistoryModal() {
-        if (!historyModal) return;
-        if (historyModalController) {
-            historyModalController.close();
-        } else {
-            historyModal.classList.add('hidden');
-        }
+        if (!historyModalController) return;
+        historyModalController.close();
     }
 
     if (historyBtn) historyBtn.addEventListener('click', openHistoryModal);
@@ -58,23 +50,15 @@ export function setupHelpModal({
         : null;
 
     function openHelpModal() {
-        if (!helpModal) return;
+        if (!helpModalController) return;
         try { player.pause(); } catch { }
-        if (helpModalController) {
-            helpModalController.open();
-        } else {
-            helpModal.classList.remove('hidden');
-        }
+        helpModalController.open();
         setTimeout(() => { closeHelpBtn?.focus?.(); }, 0);
     }
 
     function closeHelpModal() {
-        if (!helpModal) return;
-        if (helpModalController) {
-            helpModalController.close();
-        } else {
-            helpModal.classList.add('hidden');
-        }
+        if (!helpModalController) return;
+        helpModalController.close();
     }
 
     if (helpBtn) helpBtn.addEventListener('click', openHelpModal);
@@ -113,25 +97,19 @@ export function setupSettingsModal({
         : null;
 
     function openSettingsModal() {
+        if (!settingsModalController) return;
         flushPendingText();
         try { player.pause(); } catch { }
         resetSettingsDrag();
         loadSettings();
         syncSettingsUI();
-        if (settingsModalController) {
-            settingsModalController.open();
-        } else if (settingsModal) {
-            settingsModal.classList.remove('hidden');
-        }
+        settingsModalController.open();
     }
 
     function closeSettingsModal() {
+        if (!settingsModalController) return;
         onSettingsDragUp();
-        if (settingsModalController) {
-            settingsModalController.close();
-        } else if (settingsModal) {
-            settingsModal.classList.add('hidden');
-        }
+        settingsModalController.close();
     }
 
     if (settingsBtn) settingsBtn.addEventListener('click', openSettingsModal);

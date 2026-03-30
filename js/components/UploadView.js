@@ -19,11 +19,6 @@ export class UploadView {
     return `
       <div class="upload-wrap">
         <div class="wrap">
-        <div class="top">
-          <div class="dot" aria-hidden="true"></div>
-          <div class="brand">Omniscripta</div>
-        </div>
-
         <h1 class="subtle-header">Upload → Transcribe → Edit &amp; Export</h1>
         <p class="sub">
           Upload an audio file. When transcription is ready, the editor opens automatically.
