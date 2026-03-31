@@ -62,8 +62,11 @@
     }
     
     .live-bottom-bar .controls-left {
+      display: flex;
+      align-items: center;
       gap: 10px;
       flex: 1 1 0;
+      flex-wrap: nowrap;
     }
 
     .live-language-picker {
@@ -71,7 +74,7 @@
       align-items: center;
       gap: 8px;
       min-width: 0;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
     }
 
     .live-language-picker .live-audio-settings-btn {
@@ -384,10 +387,27 @@
       font-size: 0.92rem;
       font-weight: 600;
       color: var(--text-main, var(--color-slate-800));
+      line-height: 1;
+      display: flex;
+      align-items: center;
     }
 
     .timer.timer-top {
       font-size: 1.2rem;
+    }
+
+    /* Listening/Paused button containers */
+    .live-float-listening,
+    .live-float-paused {
+      display: none;
+    }
+
+    .live-float-listening:not(.hidden),
+    .live-float-paused:not(.hidden) {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
     }
 
     /* Big round start button */
@@ -864,10 +884,11 @@
 
       .live-bottom-bar .controls-left {
         flex: 0 0 auto;
+        gap: 6px;
       }
 
       .live-language-picker {
-        gap: 4px;
+        gap: 2px;
       }
 
       .live-language-picker .live-audio-settings-btn {
@@ -879,22 +900,26 @@
       }
 
       .live-language-picker .live-language-select {
-        min-width: 80px;
-        max-width: 168px;
-        padding: 4px 24px 4px 8px;
-        font-size: 0.74rem;
+        min-width: 90px;
+        max-width: 90px;
+        padding: 4px 16px 4px 4px;
+        font-size: 0.7rem;
       }
 
       .live-bottom-bar .controls-center {
-        flex: 1 1 auto;
+        flex: 0 0 auto;
         order: 0;
         margin-bottom: 0;
+        margin-left: 12px;
+        margin-right: 8px;
         justify-content: center;
       }
 
       .live-bottom-bar .controls-right {
         flex: 0 0 auto;
         justify-content: flex-end;
+        margin-left: auto;
+        margin-right: 4px;
       }
 
       .live-audio-panel {
@@ -955,6 +980,8 @@
       .live-placeholder {
         min-height: auto !important;
         height: auto !important;
+        justify-content: center;
+        transform: translateY(-16%);
       }
 
       .live-dev-section {

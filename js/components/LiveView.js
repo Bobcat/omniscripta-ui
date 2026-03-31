@@ -208,13 +208,13 @@ export class LiveView {
           <!-- Center: Actions -->
           <div class="controls-center">
             <!-- Listening: Pause + Finish -->
-            <div class="live-float-listening hidden" id="liveFloatListening" style="display: flex; gap: 8px;">
+            <div class="live-float-listening hidden" id="liveFloatListening">
               <button class="btn-secondary" id="livePauseBtn" type="button">Pause</button>
               <button class="btn-danger" id="liveStopBtn" type="button">Finish</button>
             </div>
 
             <!-- Paused: Resume + Finish -->
-            <div class="live-float-paused hidden" id="liveFloatPaused" style="display: flex; gap: 8px;">
+            <div class="live-float-paused hidden" id="liveFloatPaused">
               <button class="btn-secondary" id="liveResumeBtn" type="button">Resume</button>
               <button class="btn-danger" id="liveStopPausedBtn" type="button">Finish</button>
             </div>
