@@ -30,6 +30,7 @@ class App {
         this.liveNavLink = document.querySelector('.nav-links li[data-action="live"]');
         this.liveNavIcon = this.liveNavLink ? this.liveNavLink.querySelector('.material-symbols-outlined') : null;
         this.liveNavText = this.liveNavLink ? this.liveNavLink.querySelector('.link-text') : null;
+        this.mobileLiveRecordingIndicator = document.getElementById('mobile-live-recording-indicator');
         this.liveNavBaseText = this.liveNavText
             ? String(this.liveNavText.textContent || 'Live recording').trim()
             : 'Live recording';
@@ -469,6 +470,9 @@ class App {
         this.liveNavLink.title = nextLabel;
         if (this.liveNavIcon) {
             this.liveNavIcon.style.color = recordingActive ? '#dc2626' : '';
+        }
+        if (this.mobileLiveRecordingIndicator) {
+            this.mobileLiveRecordingIndicator.classList.toggle('recording', recordingActive);
         }
     }
 

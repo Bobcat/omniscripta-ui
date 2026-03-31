@@ -187,7 +187,6 @@ export class LiveView {
 
           <!-- Left: Timer + Language -->
           <div class="controls-left">
-            <div class="timer hidden" id="liveDurationText">00:00</div>
             <div class="live-language-picker" id="liveLanguagePicker">
               <button
                 id="liveAudioSettingsBtn"
@@ -553,7 +552,6 @@ export class LiveView {
         this.el.audioCurrentChannelCount = document.getElementById("liveAudioCurrentChannelCount");
         this.el.audioCurrentEngine = document.getElementById("liveAudioCurrentEngine");
         this.el.audioCurrentChunkMs = document.getElementById("liveAudioCurrentChunkMs");
-        this.el.durationText = document.getElementById("liveDurationText");
         this.el.durationTextTop = document.getElementById("liveDurationTextTop");
         this.el.sessionId = document.getElementById("liveSessionId");
         this.el.startBtn = document.getElementById("liveStartBtn");
@@ -2165,7 +2163,6 @@ export class LiveView {
         const compactLanguagePicker = phase === "listening" || phase === "paused";
         if (this.el.languagePicker) this.el.languagePicker.classList.toggle("hidden", !showLanguagePicker);
         if (this.el.languagePicker) this.el.languagePicker.classList.toggle("is-compact", compactLanguagePicker);
-        if (this.el.durationText) this.el.durationText.classList.toggle("hidden", !showTimer);
         if (this.el.durationTextTop) this.el.durationTextTop.classList.toggle("hidden", !showTimer);
 
         // Floating card panels
@@ -2796,7 +2793,7 @@ export class LiveView {
     }
 
     updateDurationDisplay() {
-        if (!this.el.durationText && !this.el.durationTextTop) {
+        if (!this.el.durationTextTop) {
             this.updateCadenceIndicator();
             return;
         }
@@ -2810,7 +2807,6 @@ export class LiveView {
         const display = hours > 0
             ? `${String(hours).padStart(2, "0")}:${mm}:${ss}`
             : `${mm}:${ss}`;
-        if (this.el.durationText) this.el.durationText.textContent = display;
         if (this.el.durationTextTop) this.el.durationTextTop.textContent = display;
         this.updateCadenceIndicator();
     }

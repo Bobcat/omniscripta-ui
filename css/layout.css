@@ -171,6 +171,26 @@ body.mobile .projects-list .project-menu-btn {
     background: rgba(15, 23, 42, 0.35);
 }
 
+.sidebar-live-indicator {
+    display: none;
+}
+
+@media (max-width: 600px) {
+    body.mobile .sidebar:not(.expanded) .sidebar-live-indicator.recording {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #dc2626;
+        font-size: 20px;
+        line-height: 1;
+        pointer-events: none;
+    }
+}
+
 .project-action-sheet {
     width: 100%;
     background: var(--bg);

@@ -4,7 +4,8 @@
     .live-wrap {
       display: flex;
       flex-direction: column;
-      min-height: 100vh;
+      min-height: 100%;
+      height: auto;
       box-sizing: border-box;
       gap: 0;
     }
@@ -13,8 +14,9 @@
     .live-main {
       display: flex;
       flex-direction: column;
-      height: 100vh;
-      flex-shrink: 0;
+      min-height: 100%;
+      height: auto;
+      flex: 1 1 auto;
       box-sizing: border-box;
       gap: 0;
     }
@@ -839,18 +841,19 @@
 
     @media (max-width: 640px) {
 
-      /* Mobile viewport fix - use dvh for dynamic viewport height */
+      /* Mobile viewport fix: follow parent container instead of hard viewport height */
       body.mobile .live-wrap,
       .live-wrap {
-        min-height: 100dvh !important;
-        height: 100dvh !important;
-        max-height: 100dvh !important;
+        min-height: 100% !important;
+        height: auto !important;
+        max-height: none !important;
       }
 
       body.mobile .live-main,
       .live-main {
-        height: 100dvh !important;
-        max-height: 100dvh !important;
+        min-height: 100% !important;
+        height: auto !important;
+        max-height: none !important;
         display: flex !important;
         flex-direction: column !important;
       }
@@ -900,9 +903,9 @@
       }
 
       .live-language-picker .live-language-select {
-        min-width: 90px;
-        max-width: 90px;
-        padding: 4px 16px 4px 4px;
+        min-width: 100px;
+        max-width: 100px;
+        padding: 4px 16px 4px 8px;
         font-size: 0.7rem;
       }
 
@@ -919,7 +922,7 @@
         flex: 0 0 auto;
         justify-content: flex-end;
         margin-left: auto;
-        margin-right: 4px;
+        margin-right: -4px;
       }
 
       .live-audio-panel {
@@ -948,6 +951,11 @@
         font-size: 0.85rem;
       }
 
+      #livePauseBtn,
+      #liveResumeBtn {
+        margin-left: 4px;
+      }
+
       /* Dev toggle: compact on mobile */
       .btn-dev-toggle {
         padding: 4px 8px !important;
@@ -970,7 +978,9 @@
       .live-content-area {
         flex: 1 1 auto !important;
         min-height: 0 !important;
-        max-height: calc(100dvh - 44px - 48px) !important;
+        max-height: none !important;
+        display: flex !important;
+        flex-direction: column !important;
         overflow-y: auto !important;
         position: relative !important;
       }
@@ -978,10 +988,11 @@
       /* Ensure placeholder and final text are visible */
       body.mobile .live-placeholder,
       .live-placeholder {
-        min-height: auto !important;
+        flex: 1 1 auto !important;
+        min-height: 0 !important;
         height: auto !important;
         justify-content: center;
-        transform: translateY(-16%);
+        transform: translateY(-14%);
       }
 
       .live-dev-section {
