@@ -913,7 +913,7 @@
         flex: 0 0 auto;
         order: 0;
         margin-bottom: 0;
-        margin-left: 12px;
+        margin-left: 22px;
         margin-right: 8px;
         justify-content: center;
       }
@@ -951,9 +951,9 @@
         font-size: 0.85rem;
       }
 
-      #livePauseBtn,
-      #liveResumeBtn {
-        margin-left: 4px;
+      .live-float-listening:not(.hidden),
+      .live-float-paused:not(.hidden) {
+        gap: 4px;
       }
 
       /* Dev toggle: compact on mobile */
