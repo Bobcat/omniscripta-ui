@@ -813,8 +813,6 @@ class App {
             const separator = document.createElement('div');
             separator.className = 'separator projects-separator';
             separator.textContent = 'Recent projects'; // Changed case
-            // Reduced to 0.75rem
-            separator.style.cssText = 'padding: 10px 16px; font-size: 0.75rem; color: var(--text-secondary); letter-spacing: 0.05em; margin-top: 10px; font-weight: 500;';
 
             container = document.createElement('ul');
             container.id = 'sidebar-projects';
@@ -837,7 +835,7 @@ class App {
         const projects = this.projectService.getProjects();
 
         if (projects.length === 0) {
-            container.innerHTML = '<li style="padding: 8px 14px; opacity: 0.6; font-size: 0.85rem;">No recent projects</li>';
+            container.innerHTML = '<li class="projects-empty">No recent projects</li>';
             return;
         }
 

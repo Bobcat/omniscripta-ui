@@ -1,0 +1,39 @@
+#app-sidebar .sidebar-content > .nav-links > li {
+  height: 38px !important;
+  margin-bottom: 0 !important;
+  font-size: 0.85rem !important;
+  padding-left: 8px !important;
+}
+
+#app-sidebar:not(.expanded) .sidebar-content > .nav-links > li {
+  padding-left: 0 !important;
+}
+
+#app-sidebar .sidebar-content > .nav-links > li .material-symbols-outlined {
+  font-size: 20px !important;
+}
+
+@media (min-width: 601px) {
+  #app-sidebar:not(.expanded) {
+    width: 66px !important;
+  }
+}
+
+#app-sidebar .projects-separator {
+  padding: 10px 16px 10px 8px !important;
+  margin-top: 8px !important;
+  color: var(--text-secondary) !important;
+  font-size: 0.75rem !important;
+  letter-spacing: 0.05em !important;
+  font-weight: 500 !important;
+}
+
+#app-sidebar .sidebar-content {
+  padding-top: 6px !important;
+}
+
+#app-sidebar .projects-list .projects-empty {
+  padding: 8px 14px !important;
+  opacity: 0.6 !important;
+  font-size: 0.85rem !important;
+}
