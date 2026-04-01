@@ -176,7 +176,7 @@ body.mobile .projects-list .project-menu-btn {
 }
 
 @media (max-width: 600px) {
-    body.mobile .sidebar:not(.expanded) .sidebar-live-indicator.recording {
+    .sidebar:not(.expanded) .sidebar-live-indicator.recording {
         display: inline-flex;
         align-items: center;
         justify-content: center;
