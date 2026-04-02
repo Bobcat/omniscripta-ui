@@ -96,6 +96,13 @@ registerProcessor('${WORKLET_NAME}', LiveCaptureProcessor);
     return URL.createObjectURL(blob);
 }
 
+const DEFAULT_SETTINGS = {
+    preGain: 1.0,
+    noiseSuppression: false,
+    autoGainControl: false,
+    echoCancellation: false,
+};
+
 export class LiveAudioService {
     constructor(options = {}) {
         this.targetSampleRate = Number(options.targetSampleRate || DEFAULT_TARGET_SAMPLE_RATE);
@@ -119,6 +126,8 @@ export class LiveAudioService {
         this.chunkSamples = Math.max(80, Math.round((this.targetSampleRate * this.chunkMs) / 1000));
         this.pendingSamples = new Float32Array(0);
         this.sentChunks = 0;
+
+        this.settings = { ...DEFAULT_SETTINGS };
     }
 
     log(msg) {
@@ -158,11 +167,18 @@ export class LiveAudioService {
         }
     }
 
-    async start() {
+    async start(settings = {}) {
         if (this.started) {
             this.paused = false;
             return;
         }
+
+        this.settings = {
+            preGain: Number.isFinite(settings.preGain) ? settings.preGain : DEFAULT_SETTINGS.preGain,
+            noiseSuppression: !!settings.noiseSuppression,
+            autoGainControl: !!settings.autoGainControl,
+            echoCancellation: !!settings.echoCancellation,
+        };
 
         if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
             throw new Error("Microphone API not available in this browser.");
@@ -172,9 +188,9 @@ export class LiveAudioService {
             audio: {
                 channelCount: 1,
                 sampleRate: this.targetSampleRate,
-                noiseSuppression: false,
-                echoCancellation: false,
-                autoGainControl: false,
+                noiseSuppression: this.settings.noiseSuppression,
+                echoCancellation: this.settings.echoCancellation,
+                autoGainControl: this.settings.autoGainControl,
             },
             video: false,
         };
@@ -203,9 +219,9 @@ export class LiveAudioService {
                 const deviceConstraints = {
                     audio: {
                         deviceId: { exact: device.id },
-                        noiseSuppression: false,
-                        echoCancellation: false,
-                        autoGainControl: false,
+                        noiseSuppression: this.settings.noiseSuppression,
+                        echoCancellation: this.settings.echoCancellation,
+                        autoGainControl: this.settings.autoGainControl,
                     },
                     video: false,
                 };
@@ -226,9 +242,9 @@ export class LiveAudioService {
                 this.log("No specific device worked; trying default mic...");
                 const defaultConstraints = {
                     audio: {
-                        noiseSuppression: false,
-                        echoCancellation: false,
-                        autoGainControl: false,
+                        noiseSuppression: this.settings.noiseSuppression,
+                        echoCancellation: this.settings.echoCancellation,
+                        autoGainControl: this.settings.autoGainControl,
                     },
                     video: false,
                 };
@@ -361,7 +377,17 @@ export class LiveAudioService {
         if (!(rawChunk instanceof Float32Array) || rawChunk.length === 0) return;
 
         try {
-            const down = downsampleBuffer(rawChunk, this.inputSampleRate, this.targetSampleRate);
+            // Apply pre-gain if set
+            let chunk = rawChunk;
+            const gain = Number(this.settings && this.settings.preGain) || 1.0;
+            if (gain !== 1.0 && gain > 0) {
+                chunk = new Float32Array(rawChunk.length);
+                for (let i = 0; i < rawChunk.length; i++) {
+                    chunk[i] = rawChunk[i] * gain;
+                }
+            }
+
+            const down = downsampleBuffer(chunk, this.inputSampleRate, this.targetSampleRate);
             if (!down || down.length === 0) return;
 
             this.pendingSamples = concatFloat32(this.pendingSamples, down);

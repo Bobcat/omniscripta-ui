@@ -254,8 +254,6 @@ export class LiveView {
               <div class="dialog-grip" aria-hidden="true">⋮⋮</div>
             </div>
             <div class="dialog-body live-audio-panel-body">
-              <div class="live-audio-panel-hint">UX only for now. Values on the right are read from the current browser mic track.</div>
-
               <div class="live-audio-pregain">
                 <div class="live-audio-pregain-head">
                   <label for="liveAudioPreGain">Mic pre-gain</label>
@@ -263,6 +261,8 @@ export class LiveView {
                 </div>
                 <input id="liveAudioPreGain" type="range" min="0.5" max="3.0" step="0.1" value="1.0" />
               </div>
+
+              <div class="live-audio-panel-hint">For best transcription quality: leave every checkbox off. Only try AGC if you move around while speaking. Checkboxes are locked while recording.</div>
 
               <div class="live-audio-toggles">
                 <label class="live-audio-toggle">
@@ -284,10 +284,10 @@ export class LiveView {
               <div class="live-audio-kv"><span class="muted">Device</span><span id="liveAudioCurrentDevice">Start recording to read</span></div>
               <div class="live-audio-kv"><span class="muted">Input sample rate</span><span id="liveAudioCurrentSampleRate">Start recording to read</span></div>
               <div class="live-audio-kv"><span class="muted">Channel count</span><span id="liveAudioCurrentChannelCount">Start recording to read</span></div>
-              <div class="live-audio-kv"><span class="muted">Capture engine</span><span id="liveAudioCurrentEngine">idle</span></div>
               <div class="live-audio-kv"><span class="muted">Chunk cadence</span><span id="liveAudioCurrentChunkMs">40 ms</span></div>
 
               <div class="live-audio-panel-actions">
+                <button class="mini live-audio-panel-reset" id="liveAudioPanelResetBtn" type="button">Reset to defaults</button>
                 <button class="mini live-audio-panel-close" id="liveAudioPanelCloseBtn" type="button">Close</button>
               </div>
             </div>
@@ -542,6 +542,7 @@ export class LiveView {
         this.el.audioPanelCard = document.getElementById("liveAudioPanelCard");
         this.el.audioPanelDragHandle = document.getElementById("liveAudioPanelDragHandle");
         this.el.audioPanelCloseBtn = document.getElementById("liveAudioPanelCloseBtn");
+        this.el.audioPanelResetBtn = document.getElementById("liveAudioPanelResetBtn");
         this.el.audioPreGain = document.getElementById("liveAudioPreGain");
         this.el.audioPreGainUiValue = document.getElementById("liveAudioPreGainUiValue");
         this.el.audioNoiseSuppression = document.getElementById("liveAudioNoiseSuppression");
@@ -550,7 +551,6 @@ export class LiveView {
         this.el.audioCurrentDevice = document.getElementById("liveAudioCurrentDevice");
         this.el.audioCurrentSampleRate = document.getElementById("liveAudioCurrentSampleRate");
         this.el.audioCurrentChannelCount = document.getElementById("liveAudioCurrentChannelCount");
-        this.el.audioCurrentEngine = document.getElementById("liveAudioCurrentEngine");
         this.el.audioCurrentChunkMs = document.getElementById("liveAudioCurrentChunkMs");
         this.el.durationTextTop = document.getElementById("liveDurationTextTop");
         this.el.sessionId = document.getElementById("liveSessionId");
@@ -608,6 +608,9 @@ export class LiveView {
         }
         if (this.el.audioPanelCloseBtn) {
             this.el.audioPanelCloseBtn.addEventListener("click", () => this.toggleAudioSettingsPanel(false));
+        }
+        if (this.el.audioPanelResetBtn) {
+            this.el.audioPanelResetBtn.addEventListener("click", () => this.resetAudioSettingsToDefaults());
         }
         if (this.el.audioPreGain) {
             this.el.audioPreGain.addEventListener("input", () => {
@@ -841,6 +844,16 @@ export class LiveView {
         this.refreshAudioSettingsPanel({ readCurrent: true });
     }
 
+    resetAudioSettingsToDefaults() {
+        this.audioSettingsUi = {
+            preGain: 1.0,
+            noiseSuppression: false,
+            autoGainControl: false,
+            echoCancellation: false,
+        };
+        this.refreshAudioSettingsPanel({ readCurrent: true });
+    }
+
     readCurrentAudioTrackState() {
         const state = {
             hasActiveTrack: false,
@@ -895,9 +908,18 @@ export class LiveView {
         if (this.el.audioPreGainUiValue) {
             this.el.audioPreGainUiValue.textContent = `${this.audioSettingsUi.preGain.toFixed(1)}x`;
         }
-        if (this.el.audioNoiseSuppression) this.el.audioNoiseSuppression.checked = !!this.audioSettingsUi.noiseSuppression;
-        if (this.el.audioAutoGainControl) this.el.audioAutoGainControl.checked = !!this.audioSettingsUi.autoGainControl;
-        if (this.el.audioEchoCancellation) this.el.audioEchoCancellation.checked = !!this.audioSettingsUi.echoCancellation;
+        if (this.el.audioNoiseSuppression) {
+            this.el.audioNoiseSuppression.checked = !!this.audioSettingsUi.noiseSuppression;
+            this.el.audioNoiseSuppression.disabled = !!this.audioStreaming;
+        }
+        if (this.el.audioAutoGainControl) {
+            this.el.audioAutoGainControl.checked = !!this.audioSettingsUi.autoGainControl;
+            this.el.audioAutoGainControl.disabled = !!this.audioStreaming;
+        }
+        if (this.el.audioEchoCancellation) {
+            this.el.audioEchoCancellation.checked = !!this.audioSettingsUi.echoCancellation;
+            this.el.audioEchoCancellation.disabled = !!this.audioStreaming;
+        }
 
         if (!readCurrent) return;
         const now = this.readCurrentAudioTrackState();
@@ -917,9 +939,6 @@ export class LiveView {
                 ? `${Math.round(now.channelCount)}`
                 : "Not reported")
                 : inactiveText;
-        }
-        if (this.el.audioCurrentEngine) {
-            this.el.audioCurrentEngine.textContent = now.engine || "idle";
         }
         if (this.el.audioCurrentChunkMs) {
             this.el.audioCurrentChunkMs.textContent = (Number.isFinite(now.chunkMs) && now.chunkMs > 0)
@@ -2295,7 +2314,12 @@ export class LiveView {
 
         try {
             if (!this.audioService.isCapturing()) {
-                await this.audioService.start();
+                await this.audioService.start({
+                preGain: this.audioSettingsUi.preGain,
+                noiseSuppression: this.audioSettingsUi.noiseSuppression,
+                autoGainControl: this.audioSettingsUi.autoGainControl,
+                echoCancellation: this.audioSettingsUi.echoCancellation,
+            });
                 this.stopRecordingTimer({ reset: true });
             } else {
                 this.audioService.resume();
