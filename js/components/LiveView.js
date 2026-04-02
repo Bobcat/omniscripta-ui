@@ -246,7 +246,7 @@ export class LiveView {
         </div>
         <!-- /live-main -->
 
-        <!-- Modeless advanced audio panel -->
+        <!-- Advanced audio panel -->
         <div class="live-audio-panel hidden" id="liveAudioPanel" role="dialog" aria-modal="false" aria-label="Advanced audio options">
           <div class="live-audio-panel-card dialog-card" id="liveAudioPanelCard">
             <div class="dialog-topbar dialog-drag-handle" id="liveAudioPanelDragHandle" title="Drag to move">
@@ -262,7 +262,14 @@ export class LiveView {
                 <input id="liveAudioPreGain" type="range" min="0.5" max="3.0" step="0.1" value="1.0" />
               </div>
 
-              <div class="live-audio-panel-hint">For best transcription quality: leave every checkbox off. Only try AGC if you move around while speaking. Checkboxes are locked while recording.</div>
+              <div class="live-vu-meter-wrap">
+                <div class="live-vu-meter-label">Input level</div>
+                <div class="live-vu-meter-bar">
+                  <canvas id="liveAudioVUMeter" width="200" height="20"></canvas>
+                </div>
+              </div>
+
+              <div class="live-audio-panel-hint">For stable transcription quality: leave every checkbox off. Only try AGC if you move around while speaking. Checkboxes are locked while recording.</div>
 
               <div class="live-audio-toggles">
                 <label class="live-audio-toggle">
@@ -552,6 +559,7 @@ export class LiveView {
         this.el.audioCurrentSampleRate = document.getElementById("liveAudioCurrentSampleRate");
         this.el.audioCurrentChannelCount = document.getElementById("liveAudioCurrentChannelCount");
         this.el.audioCurrentChunkMs = document.getElementById("liveAudioCurrentChunkMs");
+        this.el.audioVUMeter = document.getElementById("liveAudioVUMeter");
         this.el.durationTextTop = document.getElementById("liveDurationTextTop");
         this.el.sessionId = document.getElementById("liveSessionId");
         this.el.startBtn = document.getElementById("liveStartBtn");
@@ -609,6 +617,7 @@ export class LiveView {
         if (this.el.audioPanelCloseBtn) {
             this.el.audioPanelCloseBtn.addEventListener("click", () => this.toggleAudioSettingsPanel(false));
         }
+
         if (this.el.audioPanelResetBtn) {
             this.el.audioPanelResetBtn.addEventListener("click", () => this.resetAudioSettingsToDefaults());
         }
@@ -616,6 +625,10 @@ export class LiveView {
             this.el.audioPreGain.addEventListener("input", () => {
                 const raw = Number(this.el.audioPreGain.value);
                 this.audioSettingsUi.preGain = Number.isFinite(raw) ? Math.max(0.5, Math.min(3.0, raw)) : 1.0;
+                // Apply gain immediately to audio service if recording
+                if (this.audioService) {
+                    this.audioService.setPreGain(this.audioSettingsUi.preGain);
+                }
                 this.refreshAudioSettingsPanel({ readCurrent: false });
             });
         }
@@ -835,6 +848,7 @@ export class LiveView {
         if (this.el.audioPanel) {
             this.el.audioPanel.classList.toggle("hidden", !this.audioSettingsPanelOpen);
         }
+
         if (!this.audioSettingsPanelOpen) {
             if (this.audioSettingsDrag) {
                 this.audioSettingsDrag.onUp();
@@ -851,6 +865,10 @@ export class LiveView {
             autoGainControl: false,
             echoCancellation: false,
         };
+        // Reset gain in audio service
+        if (this.audioService) {
+            this.audioService.setPreGain(1.0);
+        }
         this.refreshAudioSettingsPanel({ readCurrent: true });
     }
 
@@ -921,6 +939,15 @@ export class LiveView {
             this.el.audioEchoCancellation.disabled = !!this.audioStreaming;
         }
 
+        // Disable reset button during recording if any checkbox is enabled
+        // (because checkboxes can't be changed during recording, only pre-gain can)
+        if (this.el.audioPanelResetBtn) {
+            const anyCheckboxEnabled = this.audioSettingsUi.noiseSuppression ||
+                this.audioSettingsUi.autoGainControl ||
+                this.audioSettingsUi.echoCancellation;
+            this.el.audioPanelResetBtn.disabled = !!this.audioStreaming && anyCheckboxEnabled;
+        }
+
         if (!readCurrent) return;
         const now = this.readCurrentAudioTrackState();
         const inactiveText = "Start recording to read";
@@ -950,6 +977,71 @@ export class LiveView {
     getRequestedSessionLanguage() {
         const normalized = this.normalizeLanguageCode(this.selectedLanguage);
         return normalized || null;
+    }
+
+    startVUMeterAnimation() {
+        if (this.vuMeterAnimationId) return;
+        const draw = () => {
+            if (!this.el.audioVUMeter || !this.audioService) {
+                this.vuMeterAnimationId = null;
+                return;
+            }
+            const ctx = this.el.audioVUMeter.getContext("2d");
+            const width = this.el.audioVUMeter.width;
+            const height = this.el.audioVUMeter.height;
+
+            // Get current level
+            const level = this.audioService.getLevel();
+
+            // Clear canvas
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw background
+            ctx.fillStyle = "rgba(0, 0, 0, 0.1)";
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw level bar with 2 zones: blue (safe) and amber (clip risk)
+            const barWidth = width * level;
+            const clipRiskThreshold = 0.9; // 90% = start of amber zone
+
+            if (barWidth > 0) {
+                if (level <= clipRiskThreshold) {
+                    // Safe zone - solid blue
+                    ctx.fillStyle = "#0ea5e9"; // sky-500
+                    ctx.fillRect(0, 0, barWidth, height);
+                } else {
+                    // Clip risk zone - amber
+                    ctx.fillStyle = "#f59e0b"; // amber-500
+                    ctx.fillRect(0, 0, barWidth, height);
+                }
+            }
+
+            // Draw threshold line at 90%
+            const thresholdX = width * clipRiskThreshold;
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(thresholdX, 0);
+            ctx.lineTo(thresholdX, height);
+            ctx.stroke();
+
+
+
+            this.vuMeterAnimationId = requestAnimationFrame(draw);
+        };
+        draw();
+    }
+
+    stopVUMeterAnimation() {
+        if (this.vuMeterAnimationId) {
+            cancelAnimationFrame(this.vuMeterAnimationId);
+            this.vuMeterAnimationId = null;
+        }
+        // Clear canvas
+        if (this.el.audioVUMeter) {
+            const ctx = this.el.audioVUMeter.getContext("2d");
+            ctx.clearRect(0, 0, this.el.audioVUMeter.width, this.el.audioVUMeter.height);
+        }
     }
 
     clearOutput() {
@@ -2330,6 +2422,7 @@ export class LiveView {
             this.awaitingLiveResult = false;
             this.remoteState = "listening";
             this.startRecordingTimer();
+            this.startVUMeterAnimation();
             this.sessionService.sendControl("start");
             this.setStatus("listening", "Recording in progress.");
             this.updatePartialPlaceholder();
@@ -2744,6 +2837,7 @@ export class LiveView {
 
         this.audioStreaming = false;
         this.audioPaused = false;
+        this.stopVUMeterAnimation();
     }
 
     cleanupSession(reason = "manual_close", options = {}) {

@@ -114,9 +114,12 @@ export class LiveAudioService {
         this.mediaStream = null;
         this.audioContext = null;
         this.sourceNode = null;
+        this.preGainNode = null;
         this.processorNode = null;
         this.fallbackGainNode = null;
         this.workletUrl = null;
+        this.analyserNode = null;
+        this.analyserDataArray = null;
 
         this.mode = "idle";
         this.started = false;
@@ -283,6 +286,11 @@ export class LiveAudioService {
         this.inputSampleRate = Number(this.audioContext.sampleRate || this.targetSampleRate);
         this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream);
 
+        // Create pre-gain node (for VU meter to reflect actual gain)
+        this.preGainNode = this.audioContext.createGain();
+        this.preGainNode.gain.value = this.settings.preGain || 1.0;
+        this.sourceNode.connect(this.preGainNode);
+
         let workletReady = false;
         if (this.audioContext.audioWorklet && typeof window.AudioWorkletNode !== "undefined") {
             try {
@@ -296,10 +304,14 @@ export class LiveAudioService {
                 });
                 node.port.onmessage = (ev) => this.handleFloatChunk(ev.data);
 
-                this.sourceNode.connect(node);
+                // Chain: source -> preGain -> processor
+                this.preGainNode.connect(node);
                 this.processorNode = node;
                 this.mode = "worklet";
                 workletReady = true;
+
+                // Add analyser for VU meter (after preGain so it reflects the gain)
+                this.setupAnalyser();
             } catch (err) {
                 this.log(`AudioWorklet unavailable, fallback to ScriptProcessor (${err && err.message ? err.message : err})`);
             }
@@ -332,16 +344,20 @@ export class LiveAudioService {
                 this.handleFloatChunk(mixed);
             };
 
-            const gain = this.audioContext.createGain();
-            gain.gain.value = 0;
+            const muteGain = this.audioContext.createGain();
+            muteGain.gain.value = 0;
 
-            this.sourceNode.connect(node);
-            node.connect(gain);
-            gain.connect(this.audioContext.destination);
+            // Chain: source -> preGain -> processor -> muteGain (to prevent feedback)
+            this.preGainNode.connect(node);
+            node.connect(muteGain);
+            muteGain.connect(this.audioContext.destination);
 
             this.processorNode = node;
-            this.fallbackGainNode = gain;
+            this.fallbackGainNode = muteGain;
             this.mode = "script_processor";
+
+            // Add analyser for VU meter (after preGain)
+            this.setupAnalyser();
         }
 
         try {
@@ -377,17 +393,9 @@ export class LiveAudioService {
         if (!(rawChunk instanceof Float32Array) || rawChunk.length === 0) return;
 
         try {
-            // Apply pre-gain if set
-            let chunk = rawChunk;
-            const gain = Number(this.settings && this.settings.preGain) || 1.0;
-            if (gain !== 1.0 && gain > 0) {
-                chunk = new Float32Array(rawChunk.length);
-                for (let i = 0; i < rawChunk.length; i++) {
-                    chunk[i] = rawChunk[i] * gain;
-                }
-            }
-
-            const down = downsampleBuffer(chunk, this.inputSampleRate, this.targetSampleRate);
+            // Pre-gain is now applied in the audio graph via preGainNode
+            // No need to apply it again here
+            const down = downsampleBuffer(rawChunk, this.inputSampleRate, this.targetSampleRate);
             if (!down || down.length === 0) return;
 
             this.pendingSamples = concatFloat32(this.pendingSamples, down);
@@ -428,6 +436,15 @@ export class LiveAudioService {
             this.fallbackGainNode = null;
         }
 
+        if (this.preGainNode) {
+            try {
+                this.preGainNode.disconnect();
+            } catch {
+                // ignore disconnect failure
+            }
+            this.preGainNode = null;
+        }
+
         if (this.sourceNode) {
             try {
                 this.sourceNode.disconnect();
@@ -464,9 +481,76 @@ export class LiveAudioService {
             this.workletUrl = null;
         }
 
+        if (this.analyserNode) {
+            try {
+                this.analyserNode.disconnect();
+            } catch {
+                // ignore disconnect failure
+            }
+            this.analyserNode = null;
+        }
+        this.analyserDataArray = null;
+
         this.mode = "idle";
         this.inputSampleRate = 0;
         this.pendingSamples = new Float32Array(0);
         this.log(`Mic capture stopped (${this.sentChunks} chunks sent)`);
+    }
+
+    setupAnalyser() {
+        if (!this.audioContext || !this.preGainNode) return;
+        try {
+            this.analyserNode = this.audioContext.createAnalyser();
+            this.analyserNode.fftSize = 256;
+            this.analyserDataArray = new Uint8Array(this.analyserNode.frequencyBinCount);
+
+            // Connect preGainNode to analyser so VU meter reflects the gain
+            // (analyser is not connected to destination - it's just for monitoring)
+            this.preGainNode.connect(this.analyserNode);
+        } catch (err) {
+            this.log(`Analyser setup failed: ${err && err.message ? err.message : err}`);
+        }
+    }
+
+    /**
+     * Get current audio input level (0.0 to 1.0)
+     * Uses time domain data for accurate amplitude measurement
+     * @returns {number} Level between 0.0 (silence) and 1.0 (max)
+     */
+    getLevel() {
+        if (!this.analyserNode || !this.analyserDataArray) return 0;
+        this.analyserNode.getByteTimeDomainData(this.analyserDataArray);
+
+        // Calculate peak amplitude (values are 0-255, 128 is silence)
+        let peak = 0;
+        for (let i = 0; i < this.analyserDataArray.length; i++) {
+            // Distance from center (128)
+            const amplitude = Math.abs(this.analyserDataArray[i] - 128);
+            if (amplitude > peak) peak = amplitude;
+        }
+
+        // Convert to 0-1 range (max amplitude is 128)
+        return Math.min(1, peak / 128);
+    }
+
+    /**
+     * Update pre-gain value (can be called while recording)
+     * @param {number} value - Gain value (0.5 to 3.0)
+     */
+    setPreGain(value) {
+        const newGain = Number.isFinite(value) ? Math.max(0.1, Math.min(5.0, value)) : 1.0;
+        this.settings.preGain = newGain;
+        if (this.preGainNode && this.audioContext) {
+            try {
+                this.preGainNode.gain.setTargetAtTime(newGain, this.audioContext.currentTime, 0.1);
+            } catch (err) {
+                // Fallback for older browsers
+                try {
+                    this.preGainNode.gain.value = newGain;
+                } catch {
+                    // ignore
+                }
+            }
+        }
     }
 }
