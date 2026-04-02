@@ -19,9 +19,9 @@ export class UploadView {
     return `
       <div class="upload-wrap">
         <div class="wrap">
-        <h1 class="subtle-header">Upload → Transcribe → Edit &amp; Export</h1>
+        <h1 class="subtle-header">Upload → Transcribe → Process</h1>
         <p class="sub">
-          Upload an audio file. When transcription is ready, the editor opens automatically.
+          Upload an audio file. When transcription is complete, the transcript workspace opens automatically.
         </p>
 
 
@@ -57,9 +57,9 @@ export class UploadView {
                 </select>
               </div>
               <div>
-                <label for="spk">Speakers</label>
+                <label for="spk">Speaker recognition</label>
                 <select id="spk">
-                  <option value="none">No speaker recognition (fastest)</option>
+                  <option value="none" selected>None (fast)</option>
                   <option value="1">1 Speaker</option>
                   <option value="2">2 Speakers</option>
                   <option value="3">3 Speakers</option>
@@ -68,7 +68,14 @@ export class UploadView {
                   <option value="6">6 Speakers</option>
                   <option value="7">7 Speakers</option>
                   <option value="8">8 Speakers</option>
-                  <option value="auto" selected>Detect automatically</option>
+                  <option value="auto">Detect automatically</option>
+                </select>
+              </div>
+              <div>
+                <label for="align">Timestamps</label>
+                <select id="align">
+                  <option value="disabled" selected>Segment/cue-level (fast)</option>
+                  <option value="enabled">Word-level (most precise)</option>
                 </select>
               </div>
             </div>
@@ -121,6 +128,7 @@ export class UploadView {
     const selectedFileNameEl = document.getElementById('selectedFileName');
     const langEl = document.getElementById('lang');
     const spkEl = document.getElementById('spk');
+    const alignEl = document.getElementById('align');
 
     const progressWrapEl = document.getElementById('progressWrap');
     const fillEl = document.getElementById('fill');
@@ -214,6 +222,7 @@ export class UploadView {
         changeFileBtn.style.display = 'none'; // Prevent changing file during upload
         if (langEl) langEl.disabled = true;
         if (spkEl) spkEl.disabled = true;
+        if (alignEl) alignEl.disabled = true;
 
 
         // Show progress
@@ -228,10 +237,12 @@ export class UploadView {
           ? String(langEl.value)
           : "";
         fields.speakers = (spkEl && spkEl.value) ? spkEl.value : "auto";
+        fields.align = (alignEl && alignEl.value) ? alignEl.value : "disabled";
         setActiveUpload({
           filename: this.selectedFile.name,
           language: fields.language,
           speakers: fields.speakers,
+          align: fields.align,
           progress: 0,
           state: "queued",
           phase: "upload",
@@ -268,6 +279,7 @@ export class UploadView {
             filename: this.currentFilename || "Audio",
             language: fields.language,
             speakers: fields.speakers,
+            align: fields.align,
             progress: 0,
             status: "queued",
           };
@@ -285,6 +297,7 @@ export class UploadView {
           changeFileBtn.style.display = 'inline-block';
           if (langEl) langEl.disabled = false;
           if (spkEl) spkEl.disabled = false;
+          if (alignEl) alignEl.disabled = false;
         }
       });
     }
@@ -306,12 +319,16 @@ export class UploadView {
       if (spkEl && upload.speakers !== undefined && upload.speakers !== null) {
         spkEl.value = String(upload.speakers);
       }
+      if (alignEl && upload.align !== undefined && upload.align !== null) {
+        alignEl.value = String(upload.align);
+      }
 
       startUploadBtn.disabled = true;
       startUploadBtn.textContent = "Uploading…";
       changeFileBtn.style.display = 'none';
       if (langEl) langEl.disabled = true;
       if (spkEl) spkEl.disabled = true;
+      if (alignEl) alignEl.disabled = true;
 
       showProgress();
       setFilename(filename);
@@ -343,12 +360,14 @@ export class UploadView {
           langEl.value = String(job.language);
         }
         if (spkEl && job.speakers) spkEl.value = String(job.speakers);
+        if (alignEl && job.align) alignEl.value = String(job.align);
 
         startUploadBtn.disabled = true;
         startUploadBtn.textContent = "Transcribing…";
         changeFileBtn.style.display = 'none';
         if (langEl) langEl.disabled = true;
         if (spkEl) spkEl.disabled = true;
+        if (alignEl) alignEl.disabled = true;
 
         showProgress();
         setFilename(filename);
@@ -430,6 +449,7 @@ export class UploadView {
             : (st.language !== undefined && st.language !== null ? String(st.language) : "")
           ),
           speakers: prevJob.speakers || (statusSpeakers !== undefined && statusSpeakers !== null ? String(statusSpeakers) : "auto"),
+          align: prevJob.align || "disabled",
           progress: p,
           status: st.state
         };
