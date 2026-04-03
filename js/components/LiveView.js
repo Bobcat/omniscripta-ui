@@ -185,8 +185,9 @@ export class LiveView {
         <!-- Fixed Bottom Controls -->
         <div class="live-bottom-bar" id="liveControlsFloat">
 
-          <!-- Left: Timer + Language -->
+          <!-- Left: Desktop Timer + Language -->
           <div class="controls-left">
+            <div class="timer timer-bottom-desktop" id="liveDurationTextBottom">00:00</div>
             <div class="live-language-picker" id="liveLanguagePicker">
               <button
                 id="liveAudioSettingsBtn"
@@ -295,7 +296,10 @@ export class LiveView {
 
               <div class="live-audio-panel-actions">
                 <button class="mini live-audio-panel-reset" id="liveAudioPanelResetBtn" type="button">Reset to defaults</button>
-                <button class="mini live-audio-panel-close" id="liveAudioPanelCloseBtn" type="button">Close</button>
+                <div class="live-audio-panel-actions-right">
+                  <button class="mini live-audio-panel-record" id="liveAudioPanelRecordBtn" type="button">Start Recording</button>
+                  <button class="mini live-audio-panel-close" id="liveAudioPanelCloseBtn" type="button">Close</button>
+                </div>
               </div>
             </div>
           </div>
@@ -549,6 +553,7 @@ export class LiveView {
         this.el.audioPanelCard = document.getElementById("liveAudioPanelCard");
         this.el.audioPanelDragHandle = document.getElementById("liveAudioPanelDragHandle");
         this.el.audioPanelCloseBtn = document.getElementById("liveAudioPanelCloseBtn");
+        this.el.audioPanelRecordBtn = document.getElementById("liveAudioPanelRecordBtn");
         this.el.audioPanelResetBtn = document.getElementById("liveAudioPanelResetBtn");
         this.el.audioPreGain = document.getElementById("liveAudioPreGain");
         this.el.audioPreGainUiValue = document.getElementById("liveAudioPreGainUiValue");
@@ -561,6 +566,7 @@ export class LiveView {
         this.el.audioCurrentChunkMs = document.getElementById("liveAudioCurrentChunkMs");
         this.el.audioVUMeter = document.getElementById("liveAudioVUMeter");
         this.el.durationTextTop = document.getElementById("liveDurationTextTop");
+        this.el.durationTextBottom = document.getElementById("liveDurationTextBottom");
         this.el.sessionId = document.getElementById("liveSessionId");
         this.el.startBtn = document.getElementById("liveStartBtn");
         this.el.pauseBtn = document.getElementById("livePauseBtn");
@@ -618,6 +624,15 @@ export class LiveView {
             this.el.audioPanelCloseBtn.addEventListener("click", () => this.toggleAudioSettingsPanel(false));
         }
 
+        if (this.el.audioPanelRecordBtn) {
+            this.el.audioPanelRecordBtn.addEventListener("click", () => {
+                if (this.audioStreaming) {
+                    this.stopMic();
+                } else {
+                    this.startMic();
+                }
+            });
+        }
         if (this.el.audioPanelResetBtn) {
             this.el.audioPanelResetBtn.addEventListener("click", () => this.resetAudioSettingsToDefaults());
         }
@@ -2275,6 +2290,13 @@ export class LiveView {
         if (this.el.languagePicker) this.el.languagePicker.classList.toggle("hidden", !showLanguagePicker);
         if (this.el.languagePicker) this.el.languagePicker.classList.toggle("is-compact", compactLanguagePicker);
         if (this.el.durationTextTop) this.el.durationTextTop.classList.toggle("hidden", !showTimer);
+        if (this.el.durationTextBottom) this.el.durationTextBottom.classList.toggle("hidden", !showTimer);
+
+        // Audio panel record button: update label based on state
+        if (this.el.audioPanelRecordBtn) {
+            const isRecording = phase === "listening" || phase === "paused";
+            this.el.audioPanelRecordBtn.textContent = isRecording ? "Stop Recording" : "Start Recording";
+        }
 
         // Floating card panels
         if (this.el.floatIdle) this.el.floatIdle.classList.toggle("hidden", phase !== "idle");
@@ -2926,6 +2948,7 @@ export class LiveView {
             ? `${String(hours).padStart(2, "0")}:${mm}:${ss}`
             : `${mm}:${ss}`;
         if (this.el.durationTextTop) this.el.durationTextTop.textContent = display;
+        if (this.el.durationTextBottom) this.el.durationTextBottom.textContent = display;
         this.updateCadenceIndicator();
     }
 

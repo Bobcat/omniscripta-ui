@@ -204,9 +204,15 @@
       border-top: 1px solid var(--color-border-subtle);
     }
 
+    .live-audio-panel-actions-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .live-audio-panel-record,
     .live-audio-panel-reset,
     .live-audio-panel-close {
-      min-width: 64px;
       height: 28px;
       box-sizing: border-box;
       display: inline-flex;
@@ -216,8 +222,16 @@
       padding: 0 10px;
     }
 
+    .live-audio-panel-record {
+      min-width: 110px;
+    }
+
     .live-audio-panel-reset {
       min-width: 120px;
+    }
+
+    .live-audio-panel-close {
+      min-width: 64px;
     }
 
     .live-vu-meter-wrap {
@@ -429,6 +443,20 @@
 
     .timer.timer-top {
       font-size: 1.2rem;
+    }
+
+    .timer.timer-bottom-desktop {
+      font-size: 0.85rem;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-primary, #1e293b);
+      min-width: 40px;
+      text-align: center;
+    }
+
+    @media (max-width: 600px) {
+      .timer.timer-bottom-desktop {
+        display: none !important;
+      }
     }
 
     /* Listening/Paused button containers */
@@ -966,7 +994,7 @@
 
       .live-audio-panel-card {
         width: min(520px, calc(100vw - 16px));
-        max-height: min(65vh, 460px);
+        max-height: 85vh;
       }
 
       .live-audio-panel-body {

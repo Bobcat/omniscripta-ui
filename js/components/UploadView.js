@@ -74,7 +74,7 @@ export class UploadView {
               <div>
                 <label for="align">Timestamps</label>
                 <select id="align">
-                  <option value="disabled" selected>Segment/cue-level (fast)</option>
+                  <option value="disabled" selected>Segment-level (fast)</option>
                   <option value="enabled">Word-level (most precise)</option>
                 </select>
               </div>
