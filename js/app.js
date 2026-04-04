@@ -5,15 +5,21 @@ import { LiveView } from "./components/LiveView.js";
 import { ProjectService } from "./services/ProjectService.js";
 import { FileHandleService } from "./services/FileHandleService.js";
 import { fetchJobStatus } from "./api.js";
-import { RouterCore, ShellState, DialogService, DialogAnchor, ModalController, bindMobileSidebarDismiss } from "@spa-foundation/core";
+import { RouterCore, ShellState, DialogService, DialogAnchor, ModalController, bindMobileSidebarDismiss, createShellPersistence } from "@spa-foundation/core";
 
 class App {
     constructor() {
         this.LAST_VIEW_KEY = 'omniscripta_last_view';
         this.LAST_EDITOR_PROJECT_KEY = 'omniscripta_last_editor_project_id';
+        this.SHELL_STORAGE_KEY = 'omniscripta_shell_v1';
+        const bootShell = createShellPersistence({ storageKey: this.SHELL_STORAGE_KEY }).resolve({
+            preset: "",
+            sidebarOpen: true,
+            roundedSidebar: false
+        });
         this.state = {
             currentView: null, // set in init()
-            sidebarOpen: true, // Desktop default
+            sidebarOpen: (typeof bootShell.sidebarOpen === 'boolean' ? bootShell.sidebarOpen : true),
             activeJob: null, // { id, filename, progress, status }
             activeUpload: null, // { filename, language, speakers, progress, ... } before job_id is returned
             activeProjectId: null // ID of currently open project
@@ -59,6 +65,12 @@ class App {
         this.dialogService = new DialogService();
         this.deleteProjectPositioner = new DialogAnchor();
         this.shellState = this.initShellState();
+        this.shellPersistence = createShellPersistence({
+            storageKey: this.SHELL_STORAGE_KEY,
+            shellState: this.shellState,
+            getPreset: () => "",
+            getRoundedSidebar: () => false
+        });
         this.router = this.initRouter();
         this.initAlertModal();
         this.init();
@@ -74,6 +86,9 @@ class App {
             this.state.sidebarOpen = next.sidebarOpen;
             this.state.isMobile = next.isMobile;
             this.applySidebarState(next.sidebarOpen);
+            if (this.shellPersistence && typeof this.shellPersistence.save === 'function') {
+                this.shellPersistence.save();
+            }
         });
 
         const initialState = shellState.getSnapshot();

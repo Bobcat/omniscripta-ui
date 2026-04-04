@@ -1,5 +1,6 @@
 
 import { secondsToTimecodeWhole } from '../utils.js';
+import { buildSpeakerParagraphs } from '../text/paragraphs.js';
 
 export class TextView {
     constructor({ containerId, onSeek, getSegments }) {
@@ -8,7 +9,6 @@ export class TextView {
         this.getSegments = getSegments; // Function to get current segments list
         this.spanById = new Map();
         this.activeSegId = null;
-        this.curSpeaker = null;
     }
 
     render(segs, doneSegIds) {
@@ -20,7 +20,6 @@ export class TextView {
 
         if (!segs || !segs.length) return;
 
-        this.curSpeaker = null;
         const frag = document.createDocumentFragment();
 
         // Quick map for gap detection
@@ -28,59 +27,90 @@ export class TextView {
         const fullList = this.getSegments();
         for (let k = 0; k < fullList.length; k++) idxById.set(fullList[k].id, k);
 
-        let textEl = null;
-        this.curSpeaker = null;
+        const rows = [];
         let prevOrigIdx = null;
-
         for (let i = 0; i < segs.length; i++) {
             const seg = segs[i];
             const spk = seg.speaker || 'SPEAKER';
             const origIdx = idxById.get(seg.id);
             const hasGap = (prevOrigIdx !== null && origIdx !== (prevOrigIdx + 1));
+            rows.push({
+                text: seg.text || '',
+                speaker: spk,
+                forceBreakBefore: hasGap,
+                segment: seg,
+            });
+            prevOrigIdx = origIdx;
+        }
 
-            if (spk !== this.curSpeaker || hasGap) {
-                this.curSpeaker = spk;
-                const b = this.createBlock(seg.start, spk);
-                textEl = b.textEl;
-                frag.appendChild(b.block);
+        const { paragraphs } = buildSpeakerParagraphs(rows, {
+            rules: {
+                blockEverySegments: 3,
+                blockMinChars: 120,
+                blockMinWords: 20,
+                allowLooseBreak: false,
+            },
+        });
+        let prevParagraphSpeaker = null;
+        let prevBlockEl = null;
+        for (const paragraph of paragraphs) {
+            const items = Array.isArray(paragraph.items) ? paragraph.items : [];
+            const firstSeg = items[0] && items[0].segment ? items[0].segment : null;
+            if (!firstSeg) continue;
+
+            const currentSpeaker = String(paragraph.speaker || 'SPEAKER').trim() || 'SPEAKER';
+            const showMeta = !(prevParagraphSpeaker && prevParagraphSpeaker === currentSpeaker);
+            const b = this.createBlock(firstSeg.start, showMeta ? currentSpeaker : '', { showMeta });
+            if (!showMeta && prevBlockEl) {
+                // Keep speaker-to-speaker spacing as-is, but tighten paragraph-to-paragraph spacing.
+                prevBlockEl.classList.add('tv-block-before-paragraph-continue');
             }
+            const textEl = b.textEl;
+            frag.appendChild(b.block);
 
-            const span = document.createElement('span');
-            span.className = 'tv-seg';
-            span.dataset.segid = seg.id;
-            span.textContent = (seg.text || '').trim();
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const seg = item && item.segment ? item.segment : null;
+                if (!seg) continue;
 
-            if (doneSegIds && doneSegIds.has(seg.id)) span.classList.add('done');
+                const span = document.createElement('span');
+                span.className = 'tv-seg';
+                span.dataset.segid = seg.id;
+                span.textContent = String(item.text || '').trim();
 
-            span.onclick = (e) => {
-                e.stopPropagation();
-                if (this.onSeek) this.onSeek(seg.start, seg.id);
-            };
+                if (doneSegIds && doneSegIds.has(seg.id)) span.classList.add('done');
 
-            this.spanById.set(seg.id, span);
-            textEl.appendChild(span);
+                span.onclick = (e) => {
+                    e.stopPropagation();
+                    if (this.onSeek) this.onSeek(seg.start, seg.id);
+                };
 
-            // Add space if adjacent
-            if (i < segs.length - 1) {
-                const next = segs[i + 1];
-                const nextSpk = next.speaker || 'SPEAKER';
-                const nextOrigIdx = idxById.get(next.id);
-                if (nextSpk === this.curSpeaker && nextOrigIdx === (origIdx + 1)) {
+                this.spanById.set(seg.id, span);
+                textEl.appendChild(span);
+
+                if (i < items.length - 1) {
                     textEl.appendChild(document.createTextNode(' '));
                 }
             }
-            prevOrigIdx = origIdx;
+
+            prevParagraphSpeaker = currentSpeaker;
+            prevBlockEl = b.block;
         }
 
         this.container.appendChild(frag);
     }
 
-    createBlock(start, speaker) {
+    createBlock(start, speaker, { showMeta = true } = {}) {
         const block = document.createElement('div');
         block.className = 'tv-block';
+        if (!showMeta) block.classList.add('tv-block-paragraph-continue');
 
         const meta = document.createElement('div');
         meta.className = 'tv-meta';
+        if (!showMeta) {
+            meta.classList.add('tv-meta-empty');
+            meta.setAttribute('aria-hidden', 'true');
+        }
 
         const metaRow = document.createElement('div');
         metaRow.className = 'tv-meta-row';

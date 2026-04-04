@@ -1508,8 +1508,22 @@
       margin: 10px 0 14px;
     }
 
+    .tv-block.tv-block-paragraph-continue {
+      grid-template-columns: var(--tv-meta-width) 1fr;
+      margin-top: 0;
+    }
+
+    .tv-block.tv-block-before-paragraph-continue {
+      margin-bottom: 6px;
+    }
+
     .tv-meta {
       align-self: start;
+    }
+
+    .tv-meta.tv-meta-empty {
+      visibility: hidden;
+      pointer-events: none;
     }
 
     .tv-meta-row {

@@ -1,6 +1,7 @@
 import { LiveAudioService, downsampleBuffer, float32ToPcm16LeBuffer } from "../services/LiveAudioService.js";
 import { LiveSessionService } from "../services/LiveSessionService.js";
 import { TRANSCRIPT_LANGUAGES } from "../constants/languages.js";
+import { buildSpeakerParagraphs, DEFAULT_TRANSCRIPT_PARAGRAPH_RULES } from "../text/paragraphs.js";
 import { createDialogDragController } from "@spa-foundation/core";
 
 const STATUS_LABELS = {
@@ -61,11 +62,7 @@ const LIVE_DEMO_QUERY_VALUE = "live-demo";
 
 const LIVE_SPEAKER_TAG_PREFIX_RE = /^\s*\[?\s*(speaker[_ ]?\d+|spk[_ ]?\d+)\s*\]?\s*[:\-]/i;
 const LIVE_SPEAKER_TAG_GLOBAL_RE = /\[?\s*(speaker[_ ]?\d+|spk[_ ]?\d+)\s*\]?\s*[:\-]\s*/gi;
-const DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES = {
-    blockEverySegments: 3,
-    blockMinChars: 220,
-    blockMinWords: 35,
-};
+const DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES = { ...DEFAULT_TRANSCRIPT_PARAGRAPH_RULES };
 const LIVE_LANGUAGE_STORAGE_KEY = "omniscripta_live_language_v1";
 const LIVE_DEMO_LANGUAGE_CODE = "en";
 
@@ -1599,45 +1596,11 @@ export class LiveView {
         return out;
     }
 
-    _countWords(text) {
-        const tokens = String(text || "").trim().match(/\S+/g);
-        return tokens ? tokens.length : 0;
-    }
-
-    _startsWithUppercaseWord(text) {
-        return /^[\s"'(\[]*[A-Z][\w'-]*/.test(String(text || ""));
-    }
-
-    _endsWithClosedSentence(text) {
-        return /[.!?]["')\]]*\s*$/.test(String(text || ""));
-    }
-
-    _endsWithSinglePeriodOrTerminalPunctuation(text) {
-        const v = String(text || "");
-        if (/[!?]["')\]]*\s*$/.test(v)) return true;
-        if (!/\.["')\]]*\s*$/.test(v)) return false;
-        return !/(?:\.\.\.|…)["')\]]*\s*$/.test(v);
-    }
-
-    _capitalizeFirstLetterIfLowercase(text) {
-        return String(text || "").replace(/^([\s"'([{<]*)([a-z])/, (_m, lead, letter) => `${lead}${letter.toUpperCase()}`);
-    }
-
-    _canBreakAfterSegment(currentText, nextText) {
-        const cur = String(currentText || "");
-        const next = String(nextText || "");
-        if (!this._endsWithClosedSentence(cur)) return false;
-        if (/[,;:]\s*$/.test(cur)) return false;
-        if (/(\.\.\.|…)\s*$/.test(cur)) return false;
-        if (next && !this._startsWithUppercaseWord(next)) return false;
-        return true;
-    }
-
     _formatSegmentBlocksDiarizeHardPresentation(finalSegments) {
         if (!Array.isArray(finalSegments) || !finalSegments.length) return { text: "", paragraphs: [] };
         const rules = this._formatRules();
 
-        const segments = [];
+        const rows = [];
         for (let i = 0; i < finalSegments.length; i += 1) {
             const seg = finalSegments[i] && typeof finalSegments[i] === "object" ? finalSegments[i] : {};
             const rawText = String(seg.text || "");
@@ -1646,58 +1609,13 @@ export class LiveView {
             const tagged = rawText.match(LIVE_SPEAKER_TAG_PREFIX_RE);
             const inferredSpeaker = tagged ? String(tagged[1] || "").trim().toUpperCase().replace(" ", "_") : "";
             const speaker = String(seg.speaker || "").trim() || inferredSpeaker;
-            segments.push({ text, speaker });
+            rows.push({ text, speaker });
         }
-        if (!segments.length) return { text: "", paragraphs: [] };
-
-        const paragraphs = [{ text: segments[0].text, speaker: segments[0].speaker, breakBefore: "start" }];
-        let blockSegCount = 1;
-        let blockChars = segments[0].text.length;
-        let blockWords = this._countWords(segments[0].text);
-
-        for (let i = 1; i < segments.length; i += 1) {
-            const prev = segments[i - 1];
-            const cur = segments[i];
-            const shouldCapitalizeCur = this._endsWithSinglePeriodOrTerminalPunctuation(prev.text);
-            const curText = shouldCapitalizeCur ? this._capitalizeFirstLetterIfLowercase(cur.text) : cur.text;
-            const speakerChanged = !!(prev.speaker && cur.speaker && prev.speaker !== cur.speaker);
-            if (speakerChanged) {
-                paragraphs.push({ text: curText, speaker: cur.speaker, breakBefore: "speaker_change" });
-                blockSegCount = 1;
-                blockChars = curText.length;
-                blockWords = this._countWords(curText);
-                continue;
-            }
-
-            const targetReached = blockSegCount >= Number(rules.blockEverySegments || 0);
-            const minReached = (
-                blockChars >= Number(rules.blockMinChars || 0)
-                || blockWords >= Number(rules.blockMinWords || 0)
-            );
-            if (targetReached && minReached && this._canBreakAfterSegment(prev.text, curText)) {
-                paragraphs.push({ text: curText, speaker: cur.speaker, breakBefore: "heuristic" });
-                blockSegCount = 1;
-                blockChars = curText.length;
-                blockWords = this._countWords(curText);
-                continue;
-            }
-
-            const tail = paragraphs[paragraphs.length - 1];
-            tail.text = tail.text ? `${tail.text} ${curText}` : curText;
-            blockSegCount += 1;
-            blockChars += curText.length;
-            blockWords += this._countWords(curText);
-        }
-
-        const normalizedParagraphs = paragraphs
-            .map((p) => ({
-                text: this._normalizeSegmentText(p.text),
-                speaker: String(p.speaker || "").trim(),
-                breakBefore: String(p.breakBefore || "heuristic"),
-            }))
-            .filter((p) => !!p.text);
-        const text = normalizedParagraphs.map((p) => p.text).join("\n");
-        return { text, paragraphs: normalizedParagraphs };
+        return buildSpeakerParagraphs(rows, {
+            rules,
+            normalizeParagraphText: (value) => this._normalizeSegmentText(value),
+            carrySentenceCapitalization: true,
+        });
     }
 
     _formatPreviewSuffixText(finalText, previewText) {
