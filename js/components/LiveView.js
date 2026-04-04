@@ -57,6 +57,8 @@ const DEV_LIVE_FIXTURE_OPTIONS = [
     },
 ];
 
+const LIVE_DEMO_QUERY_VALUE = "live-demo";
+
 const LIVE_SPEAKER_TAG_PREFIX_RE = /^\s*\[?\s*(speaker[_ ]?\d+|spk[_ ]?\d+)\s*\]?\s*[:\-]/i;
 const LIVE_SPEAKER_TAG_GLOBAL_RE = /\[?\s*(speaker[_ ]?\d+|spk[_ ]?\d+)\s*\]?\s*[:\-]\s*/gi;
 const DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES = {
@@ -65,6 +67,7 @@ const DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES = {
     blockMinWords: 35,
 };
 const LIVE_LANGUAGE_STORAGE_KEY = "omniscripta_live_language_v1";
+const LIVE_DEMO_LANGUAGE_CODE = "en";
 
 export class LiveView {
     constructor(app) {
@@ -120,6 +123,7 @@ export class LiveView {
         this.fixtureRunLabel = "";
         this.selectedFixtureKey = DEV_LIVE_FIXTURE_OPTIONS[0] ? DEV_LIVE_FIXTURE_OPTIONS[0].value : "panel120v1";
         this.selectedLanguage = this.loadPreferredLanguage();
+        this.demoLanguageRestore = null;
         this.languageSelectMeasureCanvas = null;
         this.audioSettingsPanelOpen = false;
         this.audioSettingsDrag = null;
@@ -129,6 +133,7 @@ export class LiveView {
             autoGainControl: false,
             echoCancellation: false,
         };
+        this.liveDemoChoiceVisible = false;
         this.devSpeakerLabelsEnabled = true;
         this.liveTranscriptFormatRules = { ...DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES };
 
@@ -142,6 +147,7 @@ export class LiveView {
         ].join("");
         return `
       <div class="live-wrap">
+        <h1 class="sr-only">Live Recording Session</h1>
 
         <!-- Main content area (always 100vh) -->
         <div class="live-main">
@@ -159,6 +165,30 @@ export class LiveView {
 
         <!-- Content area (no card, full height) -->
         <div class="live-content-area" id="liveTranscriptArea">
+          <div class="live-demo-overlay hidden" id="liveDemoOverlay" aria-live="polite">
+            <div class="live-demo-dialog">
+              <div class="live-demo-eyebrow">Demo mode</div>
+              <h2>Choose a live demo</h2>
+              <p class="live-demo-copy">
+                Try the real live transcription view with a prerecorded sample. Pick the path that fits what you want to experience.
+              </p>
+              <div class="live-demo-option">
+                <button class="btn-primary-start live-demo-primary" id="liveDemoInjectBtn" type="button">Instant demo</button>
+                <p>
+                  Demo mode: A prerecorded sample is fed directly into live transcription. Transcript text appears immediately, but you will not hear the audio through your speakers.
+                </p>
+              </div>
+              <div class="live-demo-option">
+                <button class="btn-outline live-demo-secondary" id="liveDemoPlaybackBtn" type="button"${this.isLikelyMobile ? " disabled" : ""}>Speaker + mic demo</button>
+                <p>
+                  Plays the sample through your speakers and records it through your microphone. More realistic, but it depends on your browser, speaker volume, and mic setup.
+                </p>
+              </div>
+              <div class="live-demo-actions">
+                <button class="btn-outline live-demo-skip" id="liveDemoSkipBtn" type="button">Use live view normally</button>
+              </div>
+            </div>
+          </div>
 
           <!-- Idle placeholder -->
           <div class="live-placeholder" id="livePlaceholder">
@@ -363,6 +393,7 @@ export class LiveView {
         this.captureElements();
         this.initServices();
         this.bindUi();
+        this.liveDemoChoiceVisible = this.readLiveDemoIntent();
         this.setSpeakerLabelsEnabled(this.devSpeakerLabelsEnabled);
         void this.loadUiSettings();
         this.renderTranscriptText();
@@ -371,6 +402,7 @@ export class LiveView {
         this.updateCadenceIndicator();
         this.updateQualityPlaceholder();
         this.updateControls();
+        this.syncLiveDemoOverlay();
     }
 
     unmount() {
@@ -596,6 +628,10 @@ export class LiveView {
         this.el.floatProcessing = document.getElementById("liveFloatProcessing");
         this.el.processingText = document.getElementById("liveProcessingText");
         this.el.partialText = document.getElementById("livePartialText");
+        this.el.demoOverlay = document.getElementById("liveDemoOverlay");
+        this.el.demoInjectBtn = document.getElementById("liveDemoInjectBtn");
+        this.el.demoPlaybackBtn = document.getElementById("liveDemoPlaybackBtn");
+        this.el.demoSkipBtn = document.getElementById("liveDemoSkipBtn");
     }
 
     bindUi() {
@@ -715,6 +751,56 @@ export class LiveView {
                 this.setSpeakerLabelsEnabled(!this.devSpeakerLabelsEnabled);
             });
         }
+        if (this.el.demoInjectBtn) {
+            this.el.demoInjectBtn.addEventListener("click", () => {
+                this.hideLiveDemoOverlay();
+                void this.startSelectedFixtureRun("inject");
+            });
+        }
+        if (this.el.demoPlaybackBtn) {
+            this.el.demoPlaybackBtn.addEventListener("click", () => {
+                this.hideLiveDemoOverlay();
+                void this.startSelectedFixtureRun("playback");
+            });
+        }
+        if (this.el.demoSkipBtn) {
+            this.el.demoSkipBtn.addEventListener("click", () => {
+                this.hideLiveDemoOverlay();
+            });
+        }
+    }
+
+    readLiveDemoIntent() {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            return String(params.get("demo") || "").trim() === LIVE_DEMO_QUERY_VALUE;
+        } catch {
+            return false;
+        }
+    }
+
+    clearLiveDemoIntent() {
+        try {
+            const url = new URL(window.location.href);
+            if (!url.searchParams.has("demo")) return;
+            url.searchParams.delete("demo");
+            const search = url.searchParams.toString();
+            const nextUrl = url.pathname + (search ? `?${search}` : "") + url.hash;
+            window.history.replaceState(window.history.state, "", nextUrl);
+        } catch {
+            // ignore URL cleanup issues
+        }
+    }
+
+    syncLiveDemoOverlay() {
+        if (!this.el.demoOverlay) return;
+        this.el.demoOverlay.classList.toggle("hidden", !this.liveDemoChoiceVisible);
+    }
+
+    hideLiveDemoOverlay() {
+        this.liveDemoChoiceVisible = false;
+        this.clearLiveDemoIntent();
+        this.syncLiveDemoOverlay();
     }
 
     toggleDeveloperTools(forceOpen) {
@@ -801,6 +887,23 @@ export class LiveView {
         } catch {
             // ignore persistence issues
         }
+    }
+
+    activateDemoLanguage(code = LIVE_DEMO_LANGUAGE_CODE) {
+        const normalized = this.normalizeLanguageCode(code);
+        if (!normalized) return;
+        if (this.demoLanguageRestore === null) {
+            this.demoLanguageRestore = this.selectedLanguage;
+        }
+        this.selectedLanguage = normalized;
+        this.syncLanguageSelectUi();
+    }
+
+    restoreDemoLanguage() {
+        if (this.demoLanguageRestore === null) return;
+        this.selectedLanguage = this.normalizeLanguageCode(this.demoLanguageRestore);
+        this.demoLanguageRestore = null;
+        this.syncLanguageSelectUi();
     }
 
     syncLanguageSelectUi() {
@@ -971,15 +1074,15 @@ export class LiveView {
         if (this.el.audioCurrentSampleRate) {
             this.el.audioCurrentSampleRate.textContent = fromTrack
                 ? ((Number.isFinite(now.sampleRate) && now.sampleRate > 0)
-                ? `${Math.round(now.sampleRate)} Hz`
-                : "Not reported")
+                    ? `${Math.round(now.sampleRate)} Hz`
+                    : "Not reported")
                 : inactiveText;
         }
         if (this.el.audioCurrentChannelCount) {
             this.el.audioCurrentChannelCount.textContent = fromTrack
                 ? ((Number.isFinite(now.channelCount) && now.channelCount > 0)
-                ? `${Math.round(now.channelCount)}`
-                : "Not reported")
+                    ? `${Math.round(now.channelCount)}`
+                    : "Not reported")
                 : inactiveText;
         }
         if (this.el.audioCurrentChunkMs) {
@@ -2429,11 +2532,11 @@ export class LiveView {
         try {
             if (!this.audioService.isCapturing()) {
                 await this.audioService.start({
-                preGain: this.audioSettingsUi.preGain,
-                noiseSuppression: this.audioSettingsUi.noiseSuppression,
-                autoGainControl: this.audioSettingsUi.autoGainControl,
-                echoCancellation: this.audioSettingsUi.echoCancellation,
-            });
+                    preGain: this.audioSettingsUi.preGain,
+                    noiseSuppression: this.audioSettingsUi.noiseSuppression,
+                    autoGainControl: this.audioSettingsUi.autoGainControl,
+                    echoCancellation: this.audioSettingsUi.echoCancellation,
+                });
                 this.stopRecordingTimer({ reset: true });
             } else {
                 this.audioService.resume();
@@ -2514,6 +2617,7 @@ export class LiveView {
         this.fixtureRunActive = false;
         this.fixtureRunLabel = "";
         this.fixtureRunToken += 1;
+        this.restoreDemoLanguage();
         if (wasActive) {
             this.appendLog(`Fixture run cancelled (${reason})`);
         }
@@ -2555,6 +2659,7 @@ export class LiveView {
         }
 
         this.cancelFixtureRun("replace");
+        this.activateDemoLanguage(LIVE_DEMO_LANGUAGE_CODE);
         this.fixtureRunActive = true;
         this.fixtureRunLabel = String(cfg.id || "fixture");
         const token = this.fixtureRunToken + 1;
@@ -2611,6 +2716,7 @@ export class LiveView {
                 this.appendLog(`Fixture playback error: ${msg}`);
                 this.fixtureRunActive = false;
                 this.fixtureRunLabel = "";
+                this.restoreDemoLanguage();
                 this.updateControls();
                 if (this.audioStreaming) {
                     this.stopMic();
@@ -2665,6 +2771,7 @@ export class LiveView {
                 this.appendLog(`Fixture run failed: ${msg}`);
                 this.fixtureRunActive = false;
                 this.fixtureRunLabel = "";
+                this.restoreDemoLanguage();
                 if (this.audioStreaming) {
                     this.stopMic();
                 }
@@ -2682,6 +2789,7 @@ export class LiveView {
         }
 
         this.cancelFixtureRun("replace");
+        this.activateDemoLanguage(LIVE_DEMO_LANGUAGE_CODE);
         this.fixtureRunActive = true;
         this.fixtureRunLabel = String(cfg.id || "fixture") + " (inject)";
         const token = this.fixtureRunToken + 1;
@@ -2821,6 +2929,7 @@ export class LiveView {
                 this.appendLog(`Fixture inject run failed: ${msg}`);
                 this.fixtureRunActive = false;
                 this.fixtureRunLabel = "";
+                this.restoreDemoLanguage();
                 if (this.audioStreaming) {
                     this.stopMic();
                 }

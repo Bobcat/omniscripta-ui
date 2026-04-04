@@ -6,6 +6,91 @@
       font-family: 'Inter', sans-serif;
     }
 
+    .landing-page {
+      background: linear-gradient(180deg, #f8fbff 0%, #ffffff 28rem);
+    }
+
+    .landing-view {
+      padding-bottom: 64px;
+    }
+
+    .landing-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .landing-brand {
+      color: var(--text-color);
+      text-decoration: none;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .landing-nav-link {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .landing-nav-link:hover {
+      text-decoration: underline;
+    }
+
+    .landing-kicker {
+      margin: 0 0 12px 0;
+      color: var(--primary);
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .landing-hero h1 {
+      max-width: 760px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .landing-cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .landing-cta {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 18px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-weight: 600;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+
+    .landing-cta:hover {
+      transform: translateY(-1px);
+    }
+
+    .landing-cta-primary {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 12px 24px rgba(30, 64, 175, 0.16);
+    }
+
+    .landing-cta-secondary {
+      border: 1px solid var(--border);
+      color: var(--text-color);
+      background: rgba(255, 255, 255, 0.92);
+    }
+
     .intro-hero {
       text-align: center;
       margin-bottom: 40px;
@@ -177,6 +262,22 @@
       .intro-view {
         padding: 20px 16px 0;
         max-width: 100%;
+      }
+
+      .landing-view {
+        padding-bottom: 40px;
+      }
+
+      .landing-topbar {
+        margin-bottom: 16px;
+      }
+
+      .landing-cta-row {
+        flex-direction: column;
+      }
+
+      .landing-cta {
+        width: 100%;
       }
 
       .intro-hero {

@@ -2,10 +2,9 @@ import { UploadView } from "./components/UploadView.js";
 import { EditorView } from "./components/EditorView.js";
 import { SettingsView } from "./components/SettingsView.js";
 import { LiveView } from "./components/LiveView.js";
-import { IntroView } from "./components/IntroView.js";
 import { ProjectService } from "./services/ProjectService.js";
 import { FileHandleService } from "./services/FileHandleService.js";
-import { fetchJobStatus, fetchUiSettings } from "./api.js";
+import { fetchJobStatus } from "./api.js";
 import { RouterCore, ShellState, DialogService, DialogAnchor, ModalController, bindMobileSidebarDismiss } from "@spa-foundation/core";
 
 class App {
@@ -20,7 +19,6 @@ class App {
             activeProjectId: null // ID of currently open project
         };
 
-        this.uiSettings = null;
         this.hasInitialRender = false;
 
         this.container = document.getElementById('main-view');
@@ -41,7 +39,6 @@ class App {
             editor: new EditorView(this),
             settings: new SettingsView(this),
             live: new LiveView(this),
-            intro: new IntroView(this),
         };
 
         this.projectActionMenu = null;
@@ -186,26 +183,11 @@ class App {
     }
 
     async init() {
-        try {
-            this.uiSettings = await fetchUiSettings();
-        } catch (err) {
-            console.error("Failed to load ui_settings.json", err);
-            this.uiSettings = {};
-        }
-
-        const showQuickStart = this.uiSettings.show_quick_start === true;
-
-        // Hide sidebar link if disabled
-        const introLink = document.querySelector('.nav-links li[data-action="intro"]');
-        if (introLink && !showQuickStart) {
-            introLink.style.display = 'none';
-        }
-
         // Figure out startup view
         let initialView = localStorage.getItem(this.LAST_VIEW_KEY);
         if (!initialView) {
-            initialView = showQuickStart ? 'intro' : 'upload';
-        } else if (initialView === 'intro' && !showQuickStart) {
+            initialView = 'upload';
+        } else if (!this.views[initialView]) {
             initialView = 'upload';
         }
         this.state.currentView = initialView;
@@ -302,12 +284,6 @@ class App {
                     this.navigateTo('settings');
 
                     // On mobile, close sidebar after selection
-                    if (this.isMobile()) {
-                        this.toggleSidebar(false);
-                    }
-                } else if (action === 'intro') {
-                    this.navigateTo('intro');
-
                     if (this.isMobile()) {
                         this.toggleSidebar(false);
                     }
@@ -421,9 +397,17 @@ class App {
     resolveInitialRoute(viewName, data = null) {
         let nextData = data;
         if (viewName === 'editor' && (!nextData || !nextData.jobId)) {
-            const lastEditorProjectId = localStorage.getItem(this.LAST_EDITOR_PROJECT_KEY);
-            if (lastEditorProjectId) {
-                nextData = { ...(nextData || {}), jobId: lastEditorProjectId };
+            let hasExplicitEditorSource = false;
+            try {
+                const params = new URLSearchParams(window.location.search);
+                hasExplicitEditorSource = !!(params.get('audioUrl') || params.get('srtUrl'));
+            } catch (_) { }
+
+            if (!hasExplicitEditorSource) {
+                const lastEditorProjectId = localStorage.getItem(this.LAST_EDITOR_PROJECT_KEY);
+                if (lastEditorProjectId) {
+                    nextData = { ...(nextData || {}), jobId: lastEditorProjectId };
+                }
             }
         }
         return { view: viewName, data: nextData };

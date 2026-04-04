@@ -59,6 +59,15 @@ import {
 export function mountEditor(options = {}) {
   // Capture options if needed
   const { jobId, audioUrl, srtUrlPreview, startTime, srtContent, canUseFileSystem, app } = options;
+  const queryEditorMode = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const mode = String(params.get("mode") || params.get("viewMode") || "").trim();
+      return (mode === "text" || mode === "segments") ? mode : null;
+    } catch {
+      return null;
+    }
+  })();
 
   const {
     transcriptInput,
@@ -123,9 +132,11 @@ export function mountEditor(options = {}) {
   }
 
 
-  let editorMode = (options.lastViewMode === 'text' || options.lastViewMode === 'segments')
-    ? options.lastViewMode
-    : (document.body.classList.contains('mobile') ? 'text' : 'segments');
+  let editorMode = queryEditorMode
+    ? queryEditorMode
+    : (options.lastViewMode === 'text' || options.lastViewMode === 'segments')
+      ? options.lastViewMode
+      : (document.body.classList.contains('mobile') ? 'text' : 'segments');
 
   // Component Instances
   const textView = new TextView({

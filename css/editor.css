@@ -2032,6 +2032,14 @@
       padding-bottom: 100px;
     }
 
+    body.mobile #topicsView.hidden {
+      display: none !important;
+    }
+
+    .doc-view-splitter.hidden {
+      display: none !important;
+    }
+
     /* --- Doc-View Splitter Handle (mobile only) --- */
     .doc-view-splitter {
       flex: 0 0 auto;

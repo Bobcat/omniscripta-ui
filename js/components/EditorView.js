@@ -9,6 +9,7 @@ export class EditorView {
   getHtml() {
     return `
   <header>
+    <h1 class="sr-only">Audio Transcript Editor</h1>
     <div class="header-line header-line1">
       <div class="header-left">
         <div aria-label="Editor mode" class="mode-toggle desktop-only" role="group">

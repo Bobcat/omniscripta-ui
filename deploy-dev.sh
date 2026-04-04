@@ -40,6 +40,7 @@ rm -f "$TARGET_DIR/app.bundle.js.map"
 rm -f "$TARGET_DIR/style.css"
 rm -f "$TARGET_DIR/layout.css"
 rm -f "$TARGET_DIR/upload.css"
+rm -rf "$TARGET_DIR/app"
 rm -rf "$TARGET_DIR/assets"
 rm -rf "$TARGET_DIR/editor_build"
 rm -rf "$TARGET_DIR/dev-fixtures"
@@ -69,6 +70,8 @@ cp "$APP_DIR/css/upload.css" "$TARGET_DIR/upload.css"
 
 # 5. Deploy HTML (SPA Shell)
 cp "$APP_DIR/index.html" "$TARGET_DIR/index.html"
+mkdir -p "$TARGET_DIR/app"
+cp "$APP_DIR/app/index.html" "$TARGET_DIR/app/index.html"
 
 # 5b. Deploy dev fixtures (optional)
 if [ -d "$APP_DIR/dev-fixtures" ]; then
@@ -76,12 +79,20 @@ if [ -d "$APP_DIR/dev-fixtures" ]; then
 fi
 
 sed -i \
-  -e "s|src=\"js/app.js[^\\\"]*\"|src=\"app.bundle.js?v=$VERSION\"|" \
+  -e "s|src=\"/js/app.js[^\\\"]*\"|src=\"/app.bundle.js?v=$VERSION\"|" \
   -e "s|type=\"module\"||" \
-  -e "s|href=\"css/style.css[^\\\"]*\"|href=\"style.css?v=$VERSION\"|" \
-  -e "s|href=\"css/layout.css[^\\\"]*\"|href=\"layout.css?v=$VERSION\"|" \
-  -e "s|href=\"css/upload.css[^\\\"]*\"|href=\"upload.css?v=$VERSION\"|" \
+  -e "s|href=\"/css/style.css[^\\\"]*\"|href=\"/style.css?v=$VERSION\"|" \
+  -e "s|href=\"/css/layout.css[^\\\"]*\"|href=\"/layout.css?v=$VERSION\"|" \
+  -e "s|href=\"/css/upload.css[^\\\"]*\"|href=\"/upload.css?v=$VERSION\"|" \
   "$TARGET_DIR/index.html"
+
+sed -i \
+  -e "s|src=\"/js/app.js[^\\\"]*\"|src=\"/app.bundle.js?v=$VERSION\"|" \
+  -e "s|type=\"module\"||" \
+  -e "s|href=\"/css/style.css[^\\\"]*\"|href=\"/style.css?v=$VERSION\"|" \
+  -e "s|href=\"/css/layout.css[^\\\"]*\"|href=\"/layout.css?v=$VERSION\"|" \
+  -e "s|href=\"/css/upload.css[^\\\"]*\"|href=\"/upload.css?v=$VERSION\"|" \
+  "$TARGET_DIR/app/index.html"
 
 echo "✅ Dev deployment complete! (Version $VERSION)"
 ls -l "$TARGET_DIR"

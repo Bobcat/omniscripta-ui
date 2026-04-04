@@ -366,6 +366,7 @@
 
     /* ---- Content area (replaces canvas) ---- */
     .live-content-area {
+      position: relative;
       flex: 1;
       min-height: 0;
       overflow-y: auto;
@@ -373,6 +374,73 @@
       font-size: 1.1rem;
       line-height: 1.7;
       color: var(--text, var(--color-slate-800));
+    }
+
+    .live-demo-overlay {
+      position: absolute;
+      inset: 8px 12px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(245, 247, 250, 0.72);
+      backdrop-filter: blur(2px);
+      border-radius: 16px;
+    }
+
+    .live-demo-overlay.hidden {
+      display: none;
+    }
+
+    .live-demo-dialog {
+      width: min(620px, 100%);
+      background: rgba(255, 255, 255, 0.98);
+      border: 1px solid var(--border, var(--color-slate-200));
+      border-radius: 18px;
+      box-shadow: 0 20px 44px rgba(15, 23, 42, 0.14);
+      padding: 18px 18px 16px;
+    }
+
+    .live-demo-eyebrow {
+      margin-bottom: 8px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-blue, var(--color-blue-500));
+    }
+
+    .live-demo-dialog h2 {
+      margin: 0 0 8px;
+      font-size: 1.25rem;
+      line-height: 1.25;
+      color: var(--text-main, var(--color-slate-900));
+    }
+
+    .live-demo-copy {
+      margin: 0 0 14px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      color: var(--muted, var(--color-slate-500));
+    }
+
+    .live-demo-option {
+      border: 1px solid var(--border, var(--color-slate-200));
+      border-radius: 14px;
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.92);
+    }
+
+    .live-demo-option + .live-demo-option {
+      margin-top: 12px;
+    }
+
+    .live-demo-option p {
+      margin: 10px 0 0;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      color: var(--muted, var(--color-slate-500));
     }
 
     .live-placeholder {
@@ -504,6 +572,34 @@
       height: 20px;
       background-color: white;
       border-radius: 50%;
+    }
+
+    .live-demo-primary,
+    .live-demo-secondary,
+    .live-demo-skip {
+      width: auto;
+      height: auto;
+      min-height: 42px;
+      border-radius: 12px;
+      padding: 10px 14px;
+      box-shadow: none;
+      transform: none;
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+
+    .live-demo-primary::after {
+      content: none;
+    }
+
+    .live-demo-primary:hover {
+      transform: none;
+    }
+
+    .live-demo-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 14px;
     }
 
     .btn-secondary,
@@ -1044,6 +1140,29 @@
         flex-direction: column !important;
         overflow-y: auto !important;
         position: relative !important;
+      }
+
+      .live-demo-overlay {
+        inset: 8px 4px;
+        padding: 12px;
+      }
+
+      .live-demo-dialog {
+        padding: 14px;
+      }
+
+      .live-demo-dialog h2 {
+        font-size: 1.1rem;
+      }
+
+      .live-demo-primary,
+      .live-demo-secondary,
+      .live-demo-skip {
+        width: 100%;
+      }
+
+      .live-demo-actions {
+        justify-content: stretch;
       }
 
       /* Ensure placeholder and final text are visible */

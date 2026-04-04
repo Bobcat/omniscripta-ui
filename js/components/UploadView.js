@@ -26,6 +26,20 @@ export class UploadView {
 
 
         <div class="panel">
+          <div id="uploadDemoOverlay" class="upload-demo-overlay hidden" aria-live="polite">
+            <div class="upload-demo-dialog">
+              <div class="upload-demo-eyebrow">Demo mode</div>
+              <h2>Sample audio is already loaded</h2>
+              <p>
+                This upload view is prefilled with <strong>panel_120s_v1_08m09s_10m09s.mp3</strong>.
+                You can review the settings, click <strong>Start Transcription</strong>, or choose your own file instead.
+              </p>
+              <div class="upload-demo-actions">
+                <button class="btn primary" id="uploadDemoContinueBtn" type="button">Continue with demo audio</button>
+                <button class="btn secondary" id="uploadDemoChooseOwnBtn" type="button">Choose my own file</button>
+              </div>
+            </div>
+          </div>
           
           <!-- Step 1: Choose File -->
           <div id="step1" class="upload-zone" onclick="document.getElementById('fileInput').click()">
@@ -80,6 +94,11 @@ export class UploadView {
               </div>
             </div>
 
+            <label style="display:flex; align-items:center; gap:10px; margin-top: 16px; color: var(--muted); font-size: 13px; font-weight: 600;">
+              <input type="checkbox" id="topicsEnabled" checked style="width: 16px; height: 16px; margin: 0; accent-color: var(--accent);" />
+              <span>Generate topic list</span>
+            </label>
+
             <button class="btn primary" id="startUploadBtn" style="margin-top: 24px; width: 100%;">
               Start Transcription
             </button>
@@ -102,9 +121,9 @@ export class UploadView {
     `;
   }
 
-  mount(container) {
+  mount(container, data = null) {
     container.innerHTML = this.getHtml();
-    this.initLogic();
+    this.initLogic(data || null);
   }
 
   unmount() {
@@ -112,7 +131,7 @@ export class UploadView {
     return {};
   }
 
-  initLogic() {
+  initLogic(data = null) {
     const fileEl = document.createElement('input');
     fileEl.type = 'file';
     fileEl.accept = 'audio/*,.mp3,.wav,.m4a,.flac,.ogg,.opus';
@@ -129,12 +148,54 @@ export class UploadView {
     const langEl = document.getElementById('lang');
     const spkEl = document.getElementById('spk');
     const alignEl = document.getElementById('align');
+    const topicsEnabledEl = document.getElementById('topicsEnabled');
+    const uploadDemoOverlayEl = document.getElementById('uploadDemoOverlay');
+    const uploadDemoContinueBtn = document.getElementById('uploadDemoContinueBtn');
+    const uploadDemoChooseOwnBtn = document.getElementById('uploadDemoChooseOwnBtn');
 
     const progressWrapEl = document.getElementById('progressWrap');
     const fillEl = document.getElementById('fill');
     const pctEl = document.getElementById('pct');
     const statelineEl = document.getElementById('stateline');
     const filelineEl = document.getElementById('fileline');
+    const readPrefillDemo = () => {
+      if (data && data.demoIntent === 'upload-prefill') {
+        return 'upload-prefill';
+      }
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const demo = String(params.get('demo') || '').trim();
+        if (demo === 'upload-prefill') return demo;
+      } catch (_) { }
+      return null;
+    };
+    const clearPrefillDemoQuery = () => {
+      try {
+        const url = new URL(window.location.href);
+        if (!url.searchParams.has('demo')) return;
+        url.searchParams.delete('demo');
+        const search = url.searchParams.toString();
+        const nextUrl = url.pathname + (search ? `?${search}` : '') + url.hash;
+        window.history.replaceState(window.history.state, '', nextUrl);
+      } catch (_) { }
+    };
+    const hidePrefillOverlay = () => {
+      if (uploadDemoOverlayEl) {
+        uploadDemoOverlayEl.classList.add('hidden');
+      }
+    };
+    const showPrefillOverlay = () => {
+      if (uploadDemoOverlayEl) {
+        uploadDemoOverlayEl.classList.remove('hidden');
+      }
+    };
+    const prefillDemo = (readPrefillDemo() === 'upload-prefill')
+      ? {
+        url: '/dev-fixtures/panel_120s_v1_08m09s_10m09s.mp3',
+        filename: 'panel_120s_v1_08m09s_10m09s.mp3',
+        mime: 'audio/mpeg',
+      }
+      : null;
 
     // Polling state
     if (this.pollTimer) {
@@ -161,6 +222,13 @@ export class UploadView {
       triggerFileSelect();
     });
     if (changeFileBtn) changeFileBtn.addEventListener('click', triggerFileSelect);
+    if (uploadDemoContinueBtn) uploadDemoContinueBtn.addEventListener('click', hidePrefillOverlay);
+    if (uploadDemoChooseOwnBtn) {
+      uploadDemoChooseOwnBtn.addEventListener('click', () => {
+        hidePrefillOverlay();
+        triggerFileSelect();
+      });
+    }
 
     // 1b. Drag and Drop
     if (step1) { // The upload zone
@@ -199,11 +267,42 @@ export class UploadView {
       step2.classList.remove('hidden');
       selectedFileNameEl.textContent = f.name;
 
+      if (prefillDemo) {
+        if (spkEl) spkEl.value = 'auto';
+        if (alignEl) alignEl.value = 'enabled';
+      }
 
       // Reset any previous progress/errors
       progressWrapEl.style.display = 'none';
       if (pctEl) pctEl.textContent = '0%';
       if (fillEl) fillEl.style.width = '0%';
+    };
+
+    const prefillDemoFile = async () => {
+      if (!prefillDemo) return;
+      if (chooseBtn) {
+        chooseBtn.disabled = true;
+        chooseBtn.textContent = 'Loading demo audio...';
+      }
+      try {
+        const res = await fetch(prefillDemo.url, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`demo audio fetch failed: ${res.status}`);
+        const blob = await res.blob();
+        const file = new File(
+          [blob],
+          prefillDemo.filename,
+          { type: blob.type || prefillDemo.mime, lastModified: Date.now() }
+        );
+        handleFile(file);
+        showPrefillOverlay();
+        clearPrefillDemoQuery();
+      } catch (e) {
+        console.error('Failed to prefill upload demo audio', e);
+        if (chooseBtn) {
+          chooseBtn.disabled = false;
+          chooseBtn.textContent = 'Choose audio file';
+        }
+      }
     };
 
     fileEl.addEventListener('change', () => {
@@ -223,6 +322,7 @@ export class UploadView {
         if (langEl) langEl.disabled = true;
         if (spkEl) spkEl.disabled = true;
         if (alignEl) alignEl.disabled = true;
+        if (topicsEnabledEl) topicsEnabledEl.disabled = true;
 
 
         // Show progress
@@ -238,11 +338,13 @@ export class UploadView {
           : "";
         fields.speakers = (spkEl && spkEl.value) ? spkEl.value : "auto";
         fields.align = (alignEl && alignEl.value) ? alignEl.value : "disabled";
+        fields.topics_enabled = (topicsEnabledEl && topicsEnabledEl.checked) ? "enabled" : "disabled";
         setActiveUpload({
           filename: this.selectedFile.name,
           language: fields.language,
           speakers: fields.speakers,
           align: fields.align,
+          topics_enabled: fields.topics_enabled,
           progress: 0,
           state: "queued",
           phase: "upload",
@@ -280,6 +382,7 @@ export class UploadView {
             language: fields.language,
             speakers: fields.speakers,
             align: fields.align,
+            topics_enabled: fields.topics_enabled,
             progress: 0,
             status: "queued",
           };
@@ -298,6 +401,7 @@ export class UploadView {
           if (langEl) langEl.disabled = false;
           if (spkEl) spkEl.disabled = false;
           if (alignEl) alignEl.disabled = false;
+          if (topicsEnabledEl) topicsEnabledEl.disabled = false;
         }
       });
     }
@@ -322,6 +426,9 @@ export class UploadView {
       if (alignEl && upload.align !== undefined && upload.align !== null) {
         alignEl.value = String(upload.align);
       }
+      if (topicsEnabledEl && upload.topics_enabled !== undefined && upload.topics_enabled !== null) {
+        topicsEnabledEl.checked = String(upload.topics_enabled) !== "disabled";
+      }
 
       startUploadBtn.disabled = true;
       startUploadBtn.textContent = "Uploading…";
@@ -329,6 +436,7 @@ export class UploadView {
       if (langEl) langEl.disabled = true;
       if (spkEl) spkEl.disabled = true;
       if (alignEl) alignEl.disabled = true;
+      if (topicsEnabledEl) topicsEnabledEl.disabled = true;
 
       showProgress();
       setFilename(filename);
@@ -343,7 +451,7 @@ export class UploadView {
       const upload = this.app.state.activeUpload;
       if (upload && upload.status === "uploading") {
         restoreUploadingState(upload);
-        return;
+        return true;
       }
 
       const job = this.app.state.activeJob;
@@ -361,6 +469,9 @@ export class UploadView {
         }
         if (spkEl && job.speakers) spkEl.value = String(job.speakers);
         if (alignEl && job.align) alignEl.value = String(job.align);
+        if (topicsEnabledEl && job.topics_enabled !== undefined && job.topics_enabled !== null) {
+          topicsEnabledEl.checked = String(job.topics_enabled) !== "disabled" && job.topics_enabled !== false;
+        }
 
         startUploadBtn.disabled = true;
         startUploadBtn.textContent = "Transcribing…";
@@ -368,6 +479,7 @@ export class UploadView {
         if (langEl) langEl.disabled = true;
         if (spkEl) spkEl.disabled = true;
         if (alignEl) alignEl.disabled = true;
+        if (topicsEnabledEl) topicsEnabledEl.disabled = true;
 
         showProgress();
         setFilename(filename);
@@ -378,7 +490,9 @@ export class UploadView {
         if (!this.pollTimer) {
           poll(job.id);
         }
+        return true;
       }
+      return false;
     };
 
     const clamp01 = (x) => {
@@ -450,6 +564,11 @@ export class UploadView {
           ),
           speakers: prevJob.speakers || (statusSpeakers !== undefined && statusSpeakers !== null ? String(statusSpeakers) : "auto"),
           align: prevJob.align || "disabled",
+          topics_enabled: (
+            prevJob.topics_enabled !== undefined
+            ? prevJob.topics_enabled
+            : (st.topics_enabled !== undefined && st.topics_enabled !== null ? st.topics_enabled : "enabled")
+          ),
           progress: p,
           status: st.state
         };
@@ -467,6 +586,7 @@ export class UploadView {
           startUploadBtn.disabled = false;
           startUploadBtn.textContent = "Start Transcription";
           changeFileBtn.style.display = 'inline-block';
+          if (topicsEnabledEl) topicsEnabledEl.disabled = false;
           return;
         }
       } catch (e) {
@@ -523,6 +643,9 @@ export class UploadView {
       }
     };
 
-    restoreState();
+    const restored = restoreState();
+    if (!restored && prefillDemo) {
+      void prefillDemoFile();
+    }
   }
 }
