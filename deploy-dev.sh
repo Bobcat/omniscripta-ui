@@ -76,6 +76,8 @@ cp "$APP_DIR/app/index.html" "$TARGET_DIR/app/index.html"
 # 5b. Deploy dev fixtures (optional)
 if [ -d "$APP_DIR/dev-fixtures" ]; then
   cp -r "$APP_DIR/dev-fixtures" "$TARGET_DIR/dev-fixtures"
+  find "$TARGET_DIR/dev-fixtures" -type d -exec chmod 755 {} \;
+  find "$TARGET_DIR/dev-fixtures" -type f -exec chmod 644 {} \;
 fi
 
 sed -i \

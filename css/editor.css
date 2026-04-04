@@ -388,6 +388,13 @@
       color: var(--color-ink-900);
     }
 
+    .svc-settings-path {
+      font-family: inherit;
+      font-size: inherit;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+
     .svc-settings-error {
       color: var(--color-error-text);
       background: var(--color-error-bg);
@@ -1498,13 +1505,13 @@
 
     /* --- TextView Component Internal Styles (Restored from editor.html) --- */
     :root {
-      --tv-meta-width: 228px;
+      --tv-meta-width: 210px;
     }
 
     .tv-block {
       display: grid;
       grid-template-columns: var(--tv-meta-width) 1fr;
-      column-gap: 12px;
+      column-gap: 8px;
       margin: 10px 0 14px;
     }
 
@@ -1529,15 +1536,15 @@
     .tv-meta-row {
       display: flex;
       align-items: baseline;
-      gap: 8px;
+      gap: 6px;
       background: var(--bg);
     }
 
     .tv-time {
-      width: 78px;
+      width: 72px;
       flex: 0 0 auto;
       text-align: right;
-      padding-right: 4px;
+      padding-right: 2px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       font-size: 0.82em;
       line-height: 1.6;
@@ -1546,7 +1553,7 @@
     }
 
     .tv-speaker {
-      width: 130px;
+      width: 124px;
       flex: 0 0 auto;
       font-size: 0.85rem;
       font-weight: 600;
@@ -1564,6 +1571,7 @@
       font-size: 14px;
       color: var(--color-ink-900);
       font-family: var(--ui-font);
+      min-width: 0;
     }
 
     .tv-seg {
@@ -1583,6 +1591,38 @@
 
     .tv-seg.done {
       color: var(--color-ink-500);
+    }
+
+    #textView.tv-compact-meta .tv-block,
+    #textView.tv-compact-meta .tv-block.tv-block-paragraph-continue {
+      grid-template-columns: 1fr;
+      row-gap: 4px;
+    }
+
+    #textView.tv-compact-meta .tv-meta {
+      width: 100%;
+      text-align: left;
+      margin-bottom: 0;
+    }
+
+    #textView.tv-compact-meta .tv-meta.tv-meta-empty {
+      display: none;
+    }
+
+    #textView.tv-compact-meta .tv-meta-row {
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    #textView.tv-compact-meta .tv-time {
+      width: auto;
+      text-align: left;
+      padding-right: 0;
+    }
+
+    #textView.tv-compact-meta .tv-speaker {
+      width: auto;
+      max-width: 100%;
     }
 
     /* --- Responsive / Mobile --- */
@@ -2048,6 +2088,16 @@
 
     body.mobile #topicsView.hidden {
       display: none !important;
+    }
+
+    body.mobile #docViewContainer.no-topics #textView {
+      flex: 1 1 auto !important;
+      height: 100% !important;
+      min-height: 0 !important;
+    }
+
+    body.mobile #docViewContainer.no-topics {
+      padding-bottom: 0 !important;
     }
 
     .doc-view-splitter.hidden {

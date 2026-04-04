@@ -39,6 +39,10 @@ class App {
             ? String(this.liveNavText.textContent || 'Live recording').trim()
             : 'Live recording';
         this.liveNavRecording = false;
+        this.mobilePlayerInsetPx = 0;
+        this.playerInsetTarget = null;
+        this.playerInsetResizeObserver = null;
+        this.playerInsetMutationObserver = null;
 
         this.views = {
             upload: new UploadView(this),
@@ -58,8 +62,15 @@ class App {
         this.deleteProjectCancelBtn = null;
         this.deleteProjectConfirmBtn = null;
         this.pendingDeleteProject = null;
+        this.renameProjectModal = null;
+        this.renameProjectInput = null;
+        this.renameProjectWarning = null;
+        this.renameProjectCancelBtn = null;
+        this.renameProjectConfirmBtn = null;
+        this.pendingRenameProject = null;
         this.alertModalController = null;
         this.deleteProjectModalController = null;
+        this.renameProjectModalController = null;
 
         this.projectService = new ProjectService();
         this.dialogService = new DialogService();
@@ -209,9 +220,11 @@ class App {
 
         this.bindEvents();
         this.initDeleteProjectModal();
+        this.initRenameProjectModal();
         this.initProjectActionsUi();
         this.detectDeviceType(); // Set global mobile/desktop class
         this.checkDevice();
+        this.initMobilePlayerInsetSync();
         bindMobileSidebarDismiss(this.shellState, this.sidebar, 600);
         this.renderProjects(); // Initial render
         this.render();
@@ -302,6 +315,8 @@ class App {
                     if (this.isMobile()) {
                         this.toggleSidebar(false);
                     }
+                } else if (action === 'home') {
+                    window.location.href = '/';
                 }
             });
         });
@@ -333,7 +348,72 @@ class App {
         window.addEventListener('resize', () => {
             this.detectDeviceType();
             this.checkDevice();
+            this.bindPlayerInsetTarget();
+            this.updateMobilePlayerInset();
         });
+    }
+
+    initMobilePlayerInsetSync() {
+        this.bindPlayerInsetTarget();
+
+        if (typeof ResizeObserver !== 'undefined') {
+            this.playerInsetResizeObserver = new ResizeObserver(() => {
+                this.updateMobilePlayerInset();
+            });
+            if (this.playerInsetTarget) {
+                this.playerInsetResizeObserver.observe(this.playerInsetTarget);
+            }
+        }
+
+        if (typeof MutationObserver !== 'undefined') {
+            this.playerInsetMutationObserver = new MutationObserver(() => {
+                this.bindPlayerInsetTarget();
+                this.updateMobilePlayerInset();
+            });
+            this.playerInsetMutationObserver.observe(document.body, {
+                childList: true,
+                subtree: true,
+            });
+        }
+
+        this.updateMobilePlayerInset();
+    }
+
+    bindPlayerInsetTarget() {
+        const nextTarget = document.getElementById('player-container');
+        if (nextTarget === this.playerInsetTarget) return;
+
+        if (this.playerInsetResizeObserver && this.playerInsetTarget) {
+            this.playerInsetResizeObserver.unobserve(this.playerInsetTarget);
+        }
+
+        this.playerInsetTarget = nextTarget || null;
+
+        if (this.playerInsetResizeObserver && this.playerInsetTarget) {
+            this.playerInsetResizeObserver.observe(this.playerInsetTarget);
+        }
+    }
+
+    updateMobilePlayerInset() {
+        const root = document.documentElement;
+        if (!root) return;
+
+        let insetPx = 0;
+        const el = this.playerInsetTarget;
+        if (el) {
+            const style = window.getComputedStyle(el);
+            const isVisible = style.display !== 'none' && style.visibility !== 'hidden';
+            if (isVisible) {
+                const rect = el.getBoundingClientRect();
+                if (Number.isFinite(rect.height) && rect.height > 0) {
+                    insetPx = Math.ceil(rect.height);
+                }
+            }
+        }
+
+        if (insetPx === this.mobilePlayerInsetPx) return;
+        this.mobilePlayerInsetPx = insetPx;
+        root.style.setProperty('--mobile-player-height', `${insetPx}px`);
     }
 
     checkDevice() {
@@ -409,6 +489,34 @@ class App {
         return { view: viewName, data: null };
     }
 
+    clearTransientEditorQuery(viewName, data = null) {
+        const keepFixtureQuery = (
+            viewName === 'editor'
+            && (!data || (
+                !data.jobId
+                && !data.srtContent
+                && !data.audioUrl
+                && !data.srtUrlPreview
+            ))
+        );
+        if (keepFixtureQuery) return;
+
+        try {
+            const url = new URL(window.location.href);
+            let changed = false;
+            for (const key of ['audioUrl', 'srtUrl', 'jobId', 'mode', 'viewMode']) {
+                if (!url.searchParams.has(key)) continue;
+                url.searchParams.delete(key);
+                changed = true;
+            }
+            if (!changed) return;
+
+            const search = url.searchParams.toString();
+            const nextUrl = url.pathname + (search ? `?${search}` : '') + url.hash;
+            window.history.replaceState(window.history.state, '', nextUrl);
+        } catch (_) { }
+    }
+
     resolveInitialRoute(viewName, data = null) {
         let nextData = data;
         if (viewName === 'editor' && (!nextData || !nextData.jobId)) {
@@ -438,6 +546,9 @@ class App {
 
     navigateTo(viewName, data = null, isPopState = false) {
         if (!this.views[viewName]) return;
+        if (!isPopState) {
+            this.clearTransientEditorQuery(viewName, data);
+        }
         const options = { isPopState };
         this.router.navigate(viewName, data, options);
     }
@@ -539,6 +650,84 @@ class App {
         });
     }
 
+    initRenameProjectModal() {
+        let modal = document.getElementById('renameProjectModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'renameProjectModal';
+            modal.className = 'modal hidden rename-project-modal';
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+            modal.setAttribute('aria-labelledby', 'renameProjectTitle');
+            modal.innerHTML = `
+                <div class="modal-card rename-project-card">
+                    <h3 id="renameProjectTitle">Rename project</h3>
+                    <label class="rename-project-label" for="renameProjectInput">New name</label>
+                    <input id="renameProjectInput" type="text" maxlength="180" autocomplete="off" />
+                    <p id="renameProjectWarning"></p>
+                    <div class="modal-actions">
+                        <button id="renameProjectCancelBtn" type="button">Cancel</button>
+                        <button id="renameProjectConfirmBtn" class="primary" type="button">Save</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        this.renameProjectModal = modal;
+        this.renameProjectInput = modal.querySelector('#renameProjectInput');
+        this.renameProjectWarning = modal.querySelector('#renameProjectWarning');
+        this.renameProjectCancelBtn = modal.querySelector('#renameProjectCancelBtn');
+        this.renameProjectConfirmBtn = modal.querySelector('#renameProjectConfirmBtn');
+
+        if (this.renameProjectCancelBtn) {
+            this.renameProjectCancelBtn.addEventListener('click', () => this.hideRenameProjectDialog());
+        }
+        if (this.renameProjectConfirmBtn) {
+            this.renameProjectConfirmBtn.addEventListener('click', () => this.confirmRenameProject());
+        }
+        if (this.renameProjectInput) {
+            this.renameProjectInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.confirmRenameProject();
+                }
+            });
+        }
+
+        this.renameProjectModalController = new ModalController(this.renameProjectModal, {
+            backdropEvent: 'mousedown',
+            onBackdrop: () => this.hideRenameProjectDialog(),
+            onEscape: () => this.hideRenameProjectDialog(),
+            onEnter: () => this.confirmRenameProject()
+        });
+
+        this.dialogService.register('rename-project', {
+            onOpen: ({ project, anchorRect = null }) => {
+                if (!project || !this.renameProjectModal || !this.renameProjectInput || !this.renameProjectWarning) return false;
+                this.pendingRenameProject = project;
+                this.renameProjectInput.value = String(project.name || '');
+                this.renameProjectWarning.innerText = `Renaming only changes the local project entry. The transcription may still be available on the server for a while, but that is not guaranteed. If you want to keep working on it, save it locally.`;
+                this.positionRenameProjectDialog(anchorRect);
+                this.renameProjectModalController.open();
+                requestAnimationFrame(() => {
+                    this.positionRenameProjectDialog(anchorRect);
+                    if (this.renameProjectInput) {
+                        this.renameProjectInput.focus();
+                        this.renameProjectInput.select();
+                    }
+                });
+                return true;
+            },
+            onClose: () => {
+                if (this.renameProjectModalController) {
+                    this.renameProjectModalController.close();
+                }
+                this.pendingRenameProject = null;
+            }
+        });
+    }
+
     showDeleteProjectDialog(project, anchorRect = null) {
         this.dialogService.open('delete-project', { project, anchorRect });
     }
@@ -582,6 +771,65 @@ class App {
         this.dialogService.close('delete-project');
     }
 
+    showRenameProjectDialog(project, anchorRect = null) {
+        this.dialogService.open('rename-project', { project, anchorRect });
+    }
+
+    positionRenameProjectDialog(anchorRect = null) {
+        if (!this.renameProjectModal) return;
+
+        if (this.isMobile()) {
+            this.renameProjectModal.style.removeProperty('--rp-left');
+            this.renameProjectModal.style.removeProperty('--rp-top');
+            return;
+        }
+
+        let rect = anchorRect;
+        if (!rect) {
+            const sidebarRect = this.sidebar ? this.sidebar.getBoundingClientRect() : null;
+            if (sidebarRect) {
+                rect = {
+                    left: sidebarRect.right + 8,
+                    right: sidebarRect.right + 8,
+                    top: Math.max(72, sidebarRect.top + 110),
+                    bottom: Math.max(72, sidebarRect.top + 140)
+                };
+            }
+        }
+        if (!rect) return;
+
+        const card = this.renameProjectModal.querySelector('.rename-project-card');
+        const cardRect = card ? card.getBoundingClientRect() : null;
+        const dialogWidth = cardRect && cardRect.width > 0 ? cardRect.width : Math.min(460, window.innerWidth - 20);
+        const dialogHeight = cardRect && cardRect.height > 0 ? cardRect.height : 232;
+
+        const position = this.deleteProjectPositioner.compute(rect, {
+            width: dialogWidth,
+            height: dialogHeight
+        });
+        this.deleteProjectPositioner.applyCssVars(this.renameProjectModal, position, '--rp-left', '--rp-top');
+    }
+
+    hideRenameProjectDialog() {
+        this.dialogService.close('rename-project');
+    }
+
+    confirmRenameProject() {
+        const project = this.pendingRenameProject;
+        if (!project || !this.renameProjectInput) {
+            this.hideRenameProjectDialog();
+            return;
+        }
+        const nextName = String(this.renameProjectInput.value || '').trim();
+        if (!nextName) {
+            this.showAlert('Rename project', 'Name cannot be empty.');
+            return;
+        }
+        this.projectService.updateProject(project.id, { name: nextName });
+        this.renderProjects();
+        this.hideRenameProjectDialog();
+    }
+
     confirmDeleteProject() {
         const project = this.pendingDeleteProject;
         if (!project) {
@@ -604,6 +852,10 @@ class App {
             menu.id = 'projectActionMenu';
             menu.className = 'project-action-menu hidden';
             menu.innerHTML = `
+                <button type="button" class="project-action-item" id="projectActionRenameDesktop">
+                    <span class="material-symbols-outlined">edit</span>
+                    <span>Rename</span>
+                </button>
                 <button type="button" class="project-action-item delete" id="projectActionDeleteDesktop">
                     <span class="material-symbols-outlined">delete</span>
                     <span>Delete</span>
@@ -621,6 +873,10 @@ class App {
             sheetBackdrop.innerHTML = `
                 <div class="project-action-sheet" id="projectActionSheet" role="dialog" aria-modal="true" aria-label="Project actions">
                     <div class="project-action-sheet-handle" aria-hidden="true"></div>
+                    <button type="button" class="project-action-item" id="projectActionRenameMobile">
+                        <span class="material-symbols-outlined">edit</span>
+                        <span>Rename</span>
+                    </button>
                     <button type="button" class="project-action-item delete" id="projectActionDeleteMobile">
                         <span class="material-symbols-outlined">delete</span>
                         <span>Delete</span>
@@ -633,8 +889,23 @@ class App {
         this.projectActionSheet = sheetBackdrop.querySelector('#projectActionSheet');
         const sheetHandle = sheetBackdrop.querySelector('.project-action-sheet-handle');
 
+        const desktopRenameBtn = menu.querySelector('#projectActionRenameDesktop');
+        const mobileRenameBtn = sheetBackdrop.querySelector('#projectActionRenameMobile');
         const desktopDeleteBtn = menu.querySelector('#projectActionDeleteDesktop');
         const mobileDeleteBtn = sheetBackdrop.querySelector('#projectActionDeleteMobile');
+
+        if (desktopRenameBtn) {
+            desktopRenameBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.renameProjectFromActions();
+            });
+        }
+        if (mobileRenameBtn) {
+            mobileRenameBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.renameProjectFromActions();
+            });
+        }
 
         if (desktopDeleteBtn) {
             desktopDeleteBtn.addEventListener('click', (e) => {
@@ -799,6 +1070,16 @@ class App {
         this.projectActionTriggerRect = null;
         if (!project) return;
         this.showDeleteProjectDialog(project, effectiveAnchor);
+    }
+
+    renameProjectFromActions(anchorRect = null) {
+        const project = this.projectActionProject;
+        const effectiveAnchor = anchorRect || this.projectActionTriggerRect || null;
+        this.closeProjectActions({ immediate: this.isMobile() });
+        this.projectActionProject = null;
+        this.projectActionTriggerRect = null;
+        if (!project) return;
+        this.showRenameProjectDialog(project, effectiveAnchor);
     }
 
     renderProjects() {

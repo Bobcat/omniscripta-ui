@@ -71,9 +71,14 @@ cp "$APP_DIR/index.html" "$TARGET_DIR/index.html"
 mkdir -p "$TARGET_DIR/app"
 cp "$APP_DIR/app/index.html" "$TARGET_DIR/app/index.html"
 
+# Prod-only UI policy: hide Settings entry from sidebar in deployed app shell.
+perl -0pi -e 's/\n\s*<li data-action="settings" title="Settings">.*?<\/li>\n/\n/s' "$TARGET_DIR/app/index.html"
+
 # 5b. Deploy dev fixtures (optional)
 if [ -d "$APP_DIR/dev-fixtures" ]; then
     cp -r "$APP_DIR/dev-fixtures" "$TARGET_DIR/dev-fixtures"
+    find "$TARGET_DIR/dev-fixtures" -type d -exec chmod 755 {} \;
+    find "$TARGET_DIR/dev-fixtures" -type f -exec chmod 644 {} \;
 fi
 
 sed -i \

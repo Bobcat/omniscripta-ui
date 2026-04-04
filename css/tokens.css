@@ -164,6 +164,8 @@
   --chrome-height: 40px;
   --dp-left: 16px;
   --dp-top: 80px;
+  --rp-left: 16px;
+  --rp-top: 80px;
   --text: var(--color-slate-800);
   --text-main: var(--color-slate-800);
   --text-secondary: var(--color-slate-600);
@@ -196,6 +198,51 @@
   color: var(--muted);
 }
 
+.modal.rename-project-modal {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 0;
+}
+
+.rename-project-card {
+  position: absolute;
+  left: var(--rp-left, 16px);
+  top: var(--rp-top, 80px);
+  width: min(460px, calc(100vw - 20px));
+  padding: 12px;
+}
+
+.rename-project-card h3 {
+  margin: 2px 0 10px;
+  font-size: 0.94rem;
+  font-weight: 500;
+}
+
+.rename-project-label {
+  display: block;
+  font-size: 0.84rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.rename-project-card input[type="text"] {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.rename-project-card p {
+  margin: 0 0 10px;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: var(--muted);
+  white-space: normal;
+  word-break: break-word;
+}
+
 .danger-soft {
   background: var(--color-danger-bg);
   border-color: var(--color-danger-border);
@@ -223,6 +270,20 @@
     left: auto;
     top: auto;
     width: min(420px, 96vw);
+    padding: 12px;
+  }
+
+  .modal.rename-project-modal {
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+
+  .rename-project-card {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: min(460px, 96vw);
     padding: 12px;
   }
 }

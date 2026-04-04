@@ -2,6 +2,8 @@
 import { secondsToTimecodeWhole } from '../utils.js';
 import { buildSpeakerParagraphs } from '../text/paragraphs.js';
 
+const COMPACT_META_BREAKPOINT_PX = 760;
+
 export class TextView {
     constructor({ containerId, onSeek, getSegments }) {
         this.container = document.getElementById(containerId);
@@ -9,11 +11,19 @@ export class TextView {
         this.getSegments = getSegments; // Function to get current segments list
         this.spanById = new Map();
         this.activeSegId = null;
+        this.resizeObserver = null;
+
+        if (this.container && typeof ResizeObserver !== 'undefined') {
+            this.resizeObserver = new ResizeObserver(() => this.updateLayoutMode());
+            this.resizeObserver.observe(this.container);
+            this.updateLayoutMode();
+        }
     }
 
     render(segs, doneSegIds) {
         if (!this.container) return;
 
+        this.updateLayoutMode();
         this.spanById.clear();
         this.activeSegId = null;
         this.container.innerHTML = '';
@@ -98,6 +108,12 @@ export class TextView {
         }
 
         this.container.appendChild(frag);
+    }
+
+    updateLayoutMode() {
+        if (!this.container) return;
+        const width = this.container.clientWidth || 0;
+        this.container.classList.toggle('tv-compact-meta', width > 0 && width < COMPACT_META_BREAKPOINT_PX);
     }
 
     createBlock(start, speaker, { showMeta = true } = {}) {

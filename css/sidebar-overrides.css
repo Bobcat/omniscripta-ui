@@ -37,3 +37,9 @@
   opacity: 0.6 !important;
   font-size: 0.85rem !important;
 }
+
+@media (max-width: 600px) {
+  #app-sidebar {
+    z-index: 10050 !important;
+  }
+}

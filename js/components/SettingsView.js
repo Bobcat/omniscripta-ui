@@ -1,4 +1,4 @@
-import { fetchServiceSettings } from "../api.js";
+import { fetchServiceSettings, fetchUiSettings } from "../api.js";
 
 function escHtml(value) {
     return String(value ?? "")
@@ -62,6 +62,26 @@ export class SettingsView {
         if (line) line.textContent = String(text || "");
     }
 
+    buildUiSettingsSource(payload) {
+        if (!payload || typeof payload !== "object") return null;
+        const generated = String(payload.generated_at_utc || "").trim();
+        return {
+            id: "ui_settings_json",
+            title: "ui_settings.json",
+            path: "~/.config/transcribe/ui_settings.json (+ ui_settings.local.json)",
+            exists: true,
+            parse_ok: true,
+            error: "",
+            size_bytes: null,
+            mtime_utc: generated,
+            data: {
+                generated_at_utc: generated,
+                version: String(payload.version || ""),
+                settings: payload.settings && typeof payload.settings === "object" ? payload.settings : {},
+            },
+        };
+    }
+
     async load() {
         const refreshBtn = document.getElementById("settingsRefreshBtn");
         if (refreshBtn) refreshBtn.disabled = true;
@@ -69,7 +89,12 @@ export class SettingsView {
 
         try {
             const payload = await fetchServiceSettings();
-            const items = Array.isArray(payload?.sources) ? payload.sources : [];
+            const items = Array.isArray(payload?.sources) ? [...payload.sources] : [];
+            try {
+                const uiPayload = await fetchUiSettings({ forceRefresh: true, maxAgeMs: 0 });
+                const uiSource = this.buildUiSettingsSource(uiPayload);
+                if (uiSource) items.push(uiSource);
+            } catch (_) { }
             this.sources = items;
             if (!this.sources.length) {
                 this.activeSourceId = "";
@@ -146,7 +171,7 @@ export class SettingsView {
         panel.innerHTML = `
       ${exists ? `
       <div class="svc-settings-meta">
-        <div><strong>Path:</strong> <code>${escHtml(src.path || "")}</code></div>
+        <div><strong>Path:</strong> <span class="svc-settings-path">${escHtml(src.path || "")}</span></div>
         <div><strong>Exists:</strong> yes</div>
         <div><strong>Parse OK:</strong> ${parseOk ? "yes" : "no"}</div>
         <div><strong>Size:</strong> ${src.size_bytes != null ? `${Number(src.size_bytes)} bytes` : "—"}</div>

@@ -150,7 +150,7 @@ body.mobile .projects-list .project-menu-btn {
     font-size: 18px !important;
 }
 
-.project-action-item.delete:hover {
+.project-action-item:hover {
     background: #f3f4f6;
     color: var(--color-slate-900);
 }

@@ -205,12 +205,14 @@ export function mountEditor(options = {}) {
     const meta = extractMetadata(String(srtText || ''));
     const topics = (meta && Array.isArray(meta.topics) && meta.topics.length > 0) ? meta.topics : [];
     const splitter = document.getElementById('docViewSplitter');
+    const docContainer = document.getElementById('docViewContainer');
 
     topicsView.topics = topics;
     topicsView.render();
 
     if (topicsView.container) topicsView.container.classList.toggle('hidden', topics.length === 0);
     if (splitter) splitter.classList.toggle('hidden', topics.length === 0);
+    if (docContainer) docContainer.classList.toggle('no-topics', topics.length === 0);
   }
 
   let historySelected = null; // {stack:'undo'|'redo', hid:number}
