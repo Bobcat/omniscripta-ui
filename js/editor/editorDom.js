@@ -4,7 +4,6 @@ export function getEditorBootDom() {
         audioInput: document.getElementById('audioInput'),
         transcriptBtnLabelEl: document.getElementById('transcriptBtnLabel'),
         audioBtnLabelEl: document.getElementById('audioBtnLabel'),
-        fileSummaryEl: document.getElementById('fileSummaryLabel'),
         segmentsDiv: document.getElementById('segments'),
         player: document.getElementById('player'),
         customPlayerContainer: document.getElementById('customPlayer'),

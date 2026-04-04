@@ -74,7 +74,6 @@ export function mountEditor(options = {}) {
     audioInput,
     transcriptBtnLabelEl,
     audioBtnLabelEl,
-    fileSummaryEl,
     segmentsDiv,
     player,
     customPlayerContainer,
@@ -93,31 +92,12 @@ export function mountEditor(options = {}) {
     detailsEl,
   } = getEditorBootDom();
 
-  let chosenTranscriptName = null;
-  let chosenAudioName = null;
-
   // Mobile Detection moved to App.js
   // We rely on document.body.classList having 'mobile' or 'desktop' set by App.detectDeviceType()
-
-  function updateFileSummaryLabel() {
-    if (!fileSummaryEl) return;
-    let saved = null;
-    try {
-      // exportFileName is declared later in this script; guard with typeof to avoid TDZ issues.
-      if (typeof exportFileName !== 'undefined' && exportFileName) saved = exportFileName;
-    } catch { }
-    const t = saved || chosenTranscriptName || 'No transcript selected';
-    const a = chosenAudioName || 'No audio selected';
-    const s = `${t} / ${a}`;
-    fileSummaryEl.textContent = s;
-    fileSummaryEl.title = s;
-  }
-
-  updateFileSummaryLabel();
   function setChosenFileLabel(labelEl, name, chooseText, kind) {
     if (!labelEl) return;
     const txt = chooseText || '';
-    // Keep button labels stable (always "Choose …"); show filenames in the summary line instead.
+    // Keep button labels stable (always "Choose …"); the current file name only appears in the tooltip.
     labelEl.textContent = txt;
     const k = kind ? String(kind) : 'file';
     if (name) {
@@ -1558,6 +1538,7 @@ export function mountEditor(options = {}) {
 
     if (!hasData) {
       saveBtn.disabled = true;
+      saveBtn.classList.remove('primary');
       saveBtn.textContent = "Save";
       saveBtn.title = "Ctrl+S";
       document.title = "Transcript editor";
@@ -1572,6 +1553,7 @@ export function mountEditor(options = {}) {
     updateSegmentsChangedPill();
 
     saveBtn.disabled = false;
+    saveBtn.classList.toggle('primary', dirty);
 
     const canPicker = ctx.canUseFileSystem;
     if (canPicker) {
@@ -2253,8 +2235,6 @@ export function mountEditor(options = {}) {
   // Load transcript (SRT)
   async function _loadTranscriptSrtText(srtText, displayName, { handle = null } = {}) {
     setChosenFileLabel(transcriptBtnLabelEl, displayName, 'Choose transcript', 'transcript');
-    chosenTranscriptName = displayName || null;
-    updateFileSummaryLabel();
 
     loadedJsonFileName = displayName || null;
     exportFileName = displayName || null;
@@ -2322,8 +2302,6 @@ export function mountEditor(options = {}) {
     const file = e.target.files[0];
     if (!file) return;
     setChosenFileLabel(audioBtnLabelEl, file.name, 'Choose audio', 'audio');
-    chosenAudioName = file.name || null;
-    updateFileSummaryLabel();
     const url = URL.createObjectURL(file);
     player.src = url;
   });
@@ -2467,19 +2445,15 @@ export function mountEditor(options = {}) {
 
         const aName = audioName || tail;
         setChosenFileLabel(audioBtnLabelEl, aName, "Choose audio", "audio");
-        chosenAudioName = aName;
-        updateFileSummaryLabel();
       }
 
       if (srtContent) {
         // Local file content provided directly
         const tName = options.transcriptName || 'Local Project';
         setChosenFileLabel(transcriptBtnLabelEl, tName, "Choose transcript", "transcript");
-        chosenTranscriptName = tName;
         loadedJsonFileName = tName;
         srtSaveHandle = null;
         exportFileName = null;
-        updateFileSummaryLabel();
 
         buildSegmentsFromSrtText(srtContent);
         loadDoneFromStorage(); // Works if based on content hash
@@ -2499,12 +2473,10 @@ export function mountEditor(options = {}) {
         const tName = transcriptName || tail;
 
         setChosenFileLabel(transcriptBtnLabelEl, tName, "Choose transcript", "transcript");
-        chosenTranscriptName = tName;
         loadedJsonFileName = tName; // used for default Save-As name
         // Server-loaded transcript: no write-back handle yet (design later)
         srtSaveHandle = null;
         exportFileName = null;
-        updateFileSummaryLabel();
 
         buildSegmentsFromSrtText(srtText);
         loadDoneFromStorage();
@@ -2551,28 +2523,38 @@ export function mountEditor(options = {}) {
   }, 0);
 
 
-  // Mobile Menu Logic
-  const activeMenuBtn = document.getElementById('mobileMenuBtn');
-  const headerFileActions = document.getElementById('headerFileActions');
+  const moreMenuBtn = document.getElementById('moreMenuBtn');
+  const headerMoreMenu = document.getElementById('headerMoreMenu');
 
-  if (activeMenuBtn && headerFileActions) {
-    activeMenuBtn.addEventListener('click', (e) => {
+  if (moreMenuBtn && headerMoreMenu) {
+    const setMoreMenuOpen = (open) => {
+      headerMoreMenu.classList.toggle('show-menu', !!open);
+      moreMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+
+    moreMenuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      headerFileActions.classList.toggle('show-menu');
+      setMoreMenuOpen(!headerMoreMenu.classList.contains('show-menu'));
     });
 
-    // Close menu when clicking outside
     document.addEventListener('click', (e) => {
-      if (!headerFileActions.contains(e.target) && e.target !== activeMenuBtn) {
-        headerFileActions.classList.remove('show-menu');
+      if (!headerMoreMenu.contains(e.target) && e.target !== moreMenuBtn) {
+        setMoreMenuOpen(false);
       }
     });
 
-    // Close menu when clicking an action inside it
-    headerFileActions.addEventListener('click', () => {
-      headerFileActions.classList.remove('show-menu');
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        setMoreMenuOpen(false);
+      }
     });
-    // ... (Bottom of file) ...
+
+    headerMoreMenu.addEventListener('click', (e) => {
+      const item = e.target instanceof Element ? e.target.closest('.more-menu-item') : null;
+      if (item) {
+        setMoreMenuOpen(false);
+      }
+    }, true);
   }
 }
 

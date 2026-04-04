@@ -16,34 +16,32 @@ export class EditorView {
           <button class="mode-btn active" id="modeSegmentsBtn" title="Segment editor view"
             type="button">Segments</button>
           <button class="mode-btn" id="modeTextBtn" title="Readable text view" type="button">Document</button>
-        </div><button class="desktop-only" id="helpBtn" title="Show keyboard shortcuts" type="button">Help</button>
+        </div>
       </div>
       <div class="header-right header-actions">
         <!-- Desktop Tools (Hidden on Mobile) -->
         <button class="desktop-only" id="findBtn" title="Find and replace (Ctrl+F)" type="button">Find/Replace</button>
         <button class="desktop-only" id="filterBtn" title="Filter segments" type="button">Filter</button>
-        <button class="primary desktop-only" disabled="" id="saveBtn" title="Ctrl+S" type="button">Save</button>
-        <button class="desktop-only" id="saveAsBtn" title="Save as…" type="button">Save as</button>
+        <button class="desktop-only" disabled="" id="saveBtn" title="Ctrl+S" type="button">Save</button>
+        <button aria-expanded="false" aria-haspopup="menu" class="desktop-only header-more-trigger" id="moreMenuBtn" title="More actions" type="button">
+          <span>More</span>
+          <span aria-hidden="true" class="material-symbols-outlined">more_horiz</span>
+        </button>
 
-        <!-- Mobile File Actions Toggle -->
-        <button id="mobileMenuBtn" class="mobile-only" type="button" title="File actions"><span class="material-symbols-outlined">more_vert</span></button>
-
-        <!-- File Actions (Collapsible on Mobile) -->
-        <div id="headerFileActions" class="header-file-actions">
-          <button id="exportDocBtn" title="Export document" type="button">Export document</button>
-          <button class="file-btn" id="transcriptBtnLabel" title="Choose transcript" type="button">Choose
-            transcript</button>
+        <div aria-label="More actions" class="header-more-menu" id="headerMoreMenu" role="menu">
+          <button class="more-menu-item" id="saveAsBtn" title="Save as…" type="button">Save as</button>
+          <button class="more-menu-item" id="exportDocBtn" title="Export document" type="button">Export document</button>
+          <div aria-hidden="true" class="more-menu-separator"></div>
+          <button class="more-menu-item muted" id="transcriptBtnLabel" title="Choose transcript" type="button">Choose transcript</button>
           <input accept=".srt" hidden="" id="transcriptInput" type="file" />
-          <label class="file-btn" for="audioInput" id="audioBtnLabel" title="Choose audio">Choose audio</label>
+          <label class="more-menu-item muted" for="audioInput" id="audioBtnLabel" title="Choose audio">Choose audio</label>
           <input accept="audio/*" hidden="" id="audioInput" type="file" />
+          <div aria-hidden="true" class="more-menu-separator"></div>
+          <button class="more-menu-item" id="helpBtn" title="Show keyboard shortcuts" type="button">Help</button>
+          <button class="more-menu-item" id="settingsBtn" title="Settings" type="button">Settings</button>
+          <button class="more-menu-item" id="historyBtn" title="Show app-level undo/redo stack"
+            type="button">History</button>
         </div>
-      </div>
-    </div>
-    <div class="header-line header-line2">
-      <div class="header-left"></div>
-      <div class="header-right">
-        <div class="file-summary" id="fileSummaryLabel" title="No transcript selected / No audio selected">No transcript
-          selected / No audio selected</div>
       </div>
     </div>
   </header>
@@ -86,10 +84,6 @@ export class EditorView {
           title="Segments changed since last load/save">Segments
           changed: 0</span>
         <span class="pill muted desktop-only" id="donePill" title="Segments marked Done (workflow)">Done: 0/0</span>
-        <button class="desktop-only" id="settingsBtn" title="Settings" type="button">Settings</button>
-        <button class="desktop-only" id="historyBtn" title="Show app-level undo/redo stack"
-          type="button">History</button>
-
       </div>
     </div>
   </main>

@@ -210,6 +210,23 @@ export class UploadView {
     const clearActiveUpload = () => {
       this.app.state.activeUpload = null;
     };
+    const readSnippetMinutesOverride = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const explicit = String(params.get('snip') || '').trim();
+        if (/^\d+$/.test(explicit)) {
+          const minutes = parseInt(explicit, 10);
+          if (minutes >= 1 && minutes <= 720) return minutes;
+        }
+        for (const key of params.keys()) {
+          const m = String(key || '').trim().match(/^snip(\d{1,3})$/i);
+          if (!m) continue;
+          const minutes = parseInt(m[1], 10);
+          if (minutes >= 1 && minutes <= 720) return minutes;
+        }
+      } catch (_) { }
+      return null;
+    };
 
 
     // --- Logic ---
@@ -599,7 +616,12 @@ export class UploadView {
     const uploadWithProgress = (file, fields, onProgress) => {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open("POST", getApiUrl("/api/demo/jobs"), true);
+        const requestUrl = new URL(getApiUrl("/api/demo/jobs"), window.location.origin);
+        const snippetMinutes = readSnippetMinutesOverride();
+        if (snippetMinutes !== null) {
+          requestUrl.searchParams.set('snip', String(snippetMinutes));
+        }
+        xhr.open("POST", requestUrl.toString(), true);
 
         xhr.upload.onprogress = (evt) => {
           if (!evt.lengthComputable) return;
