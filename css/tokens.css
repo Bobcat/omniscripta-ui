@@ -243,6 +243,10 @@
   word-break: break-word;
 }
 
+.modal {
+  z-index: 14000;
+}
+
 .danger-soft {
   background: var(--color-danger-bg);
   border-color: var(--color-danger-border);
