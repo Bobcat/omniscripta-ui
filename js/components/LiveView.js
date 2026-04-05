@@ -33,7 +33,7 @@ const DEV_LIVE_FIXTURES = {
         id: "panel_120s_v1",
         version: "v1",
         label: "Run panel fixture (120s)",
-        url: "/dev-fixtures/panel_120s_v1_08m09s_10m09s.mp3",
+        url: "/dev-fixtures/panel_discussion_120s.mp3",
         durationMs: 120000,
         startDelayMs: 700,
         tailDelayMs: 1200,
@@ -43,7 +43,7 @@ const DEV_LIVE_FIXTURES = {
         id: "panel_120s_v1",
         version: "v1",
         label: "Run panel fixture (inject, 120s)",
-        url: "/dev-fixtures/panel_120s_v1_08m09s_10m09s.mp3",
+        url: "/dev-fixtures/panel_discussion_120s.mp3",
         durationMs: 120000,
         startDelayMs: 700,
         tailDelayMs: 1200,
@@ -86,6 +86,8 @@ export class LiveView {
 
         this.audioStreaming = false;
         this.audioPaused = false;
+        this.screenWakeLock = null;
+        this.screenWakeLockRequestInFlight = false;
 
         this.sessionService = null;
         this.audioService = null;
@@ -133,6 +135,13 @@ export class LiveView {
         this.liveDemoChoiceVisible = false;
         this.devSpeakerLabelsEnabled = true;
         this.liveTranscriptFormatRules = { ...DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES };
+        this.handleVisibilityChange = () => {
+            if (typeof document === "undefined" || document.visibilityState !== "visible") return;
+            void this.syncScreenWakeLock();
+        };
+        if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+            document.addEventListener("visibilitychange", this.handleVisibilityChange);
+        }
 
         this.el = {};
     }
@@ -176,7 +185,7 @@ export class LiveView {
                 </p>
               </div>
               <div class="live-demo-option">
-                <button class="btn-outline live-demo-secondary" id="liveDemoPlaybackBtn" type="button"${this.isLikelyMobile ? " disabled" : ""}>Speaker + mic demo</button>
+                <button class="btn-outline live-demo-secondary" id="liveDemoPlaybackBtn" type="button">Speaker + mic demo</button>
                 <p>
                   Plays the sample through your speakers and records it through your microphone. More realistic, but it depends on your browser, speaker volume, and mic setup.
                 </p>
@@ -442,6 +451,60 @@ export class LiveView {
     syncAppLiveNavState() {
         if (this.app && typeof this.app.syncLiveNavState === "function") {
             this.app.syncLiveNavState();
+        }
+    }
+
+    shouldHoldScreenWakeLock() {
+        return !!(this.audioStreaming || this.awaitingLiveResult || this.fixtureRunActive);
+    }
+
+    async releaseScreenWakeLock() {
+        const wakeLock = this.screenWakeLock;
+        this.screenWakeLock = null;
+        if (!wakeLock || typeof wakeLock.release !== "function") return;
+        try {
+            await wakeLock.release();
+        } catch {
+            // Ignore release failures; the browser may have released it already.
+        }
+    }
+
+    async syncScreenWakeLock() {
+        const shouldHold = this.shouldHoldScreenWakeLock();
+        const wakeLockApi = typeof navigator !== "undefined" ? navigator.wakeLock : null;
+        const canRequest = !!(wakeLockApi && typeof wakeLockApi.request === "function");
+
+        if (!shouldHold || !canRequest) {
+            await this.releaseScreenWakeLock();
+            return;
+        }
+        if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+            return;
+        }
+        if (this.screenWakeLock || this.screenWakeLockRequestInFlight) {
+            return;
+        }
+
+        this.screenWakeLockRequestInFlight = true;
+        try {
+            const wakeLock = await wakeLockApi.request("screen");
+            this.screenWakeLock = wakeLock;
+            if (wakeLock && typeof wakeLock.addEventListener === "function") {
+                wakeLock.addEventListener("release", () => {
+                    if (this.screenWakeLock === wakeLock) {
+                        this.screenWakeLock = null;
+                    }
+                    if (this.shouldHoldScreenWakeLock()
+                        && typeof document !== "undefined"
+                        && document.visibilityState === "visible") {
+                        void this.syncScreenWakeLock();
+                    }
+                }, { once: true });
+            }
+        } catch {
+            this.screenWakeLock = null;
+        } finally {
+            this.screenWakeLockRequestInFlight = false;
         }
     }
 
@@ -2211,6 +2274,7 @@ export class LiveView {
     }
 
     updateControls() {
+        void this.syncScreenWakeLock();
         const wsConnecting = !!(this.sessionService && this.sessionService.isConnecting());
         const wsOpen = !!(this.sessionService && this.sessionService.isOpen());
 
@@ -2562,12 +2626,6 @@ export class LiveView {
         const cfg = fixture && typeof fixture === "object" ? fixture : null;
         if (!cfg || !cfg.url) return;
         const mode = String(cfg.mode || "playback").trim().toLowerCase();
-        if (mode === "playback" && this.isLikelyMobile) {
-            this.appendLog("Play fixture is disabled on mobile. Use Inject fixture instead.");
-            this.setStatus("ready", "Use Inject fixture on mobile for reliable tests.");
-            this.updateControls();
-            return;
-        }
         if (mode === "inject") {
             return this.startFixtureInjectRun(cfg);
         }

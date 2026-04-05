@@ -31,7 +31,7 @@ export class UploadView {
               <div class="upload-demo-eyebrow">Demo mode</div>
               <h2>Sample audio is already loaded</h2>
               <p>
-                This upload view is prefilled with <strong>panel_120s_v1_08m09s_10m09s.mp3</strong>.
+                This upload view is prefilled with <strong>panel_discussion_120s.mp3</strong>.
                 You can review the settings, click <strong>Start Transcription</strong>, or choose your own file instead.
               </p>
               <div class="upload-demo-actions">
@@ -191,8 +191,8 @@ export class UploadView {
     };
     const prefillDemo = (readPrefillDemo() === 'upload-prefill')
       ? {
-        url: '/dev-fixtures/panel_120s_v1_08m09s_10m09s.mp3',
-        filename: 'panel_120s_v1_08m09s_10m09s.mp3',
+        url: '/dev-fixtures/panel_discussion_120s.mp3',
+        filename: 'panel_discussion_120s.mp3',
         mime: 'audio/mpeg',
       }
       : null;
@@ -517,10 +517,23 @@ export class UploadView {
       return Math.max(0, Math.min(1, x));
     };
 
+    const ensureProgressVisible = () => {
+      if (!progressWrapEl || window.innerWidth > 600) return;
+      const scrollContainer = this.app.container?.closest?.(".main-content")
+        || document.querySelector(".main-content")
+        || document.scrollingElement;
+      if (!scrollContainer || typeof scrollContainer.scrollBy !== "function") return;
+      const rect = progressWrapEl.getBoundingClientRect();
+      const viewportBottom = window.innerHeight - 20;
+      if (rect.bottom <= viewportBottom) return;
+      scrollContainer.scrollBy({ top: rect.bottom - viewportBottom, behavior: "smooth" });
+    };
+
     const showProgress = () => {
       progressWrapEl.style.display = "block";
       statelineEl.style.display = "block";
       filelineEl.style.display = "block";
+      requestAnimationFrame(() => ensureProgressVisible());
     };
 
     const setProgress = (p01) => {
@@ -533,6 +546,7 @@ export class UploadView {
       const left = [state, ownerOrPhase].filter(Boolean).join(" / ");
       const right = message ? (" - " + message) : "";
       statelineEl.textContent = (left || "") + right;
+      requestAnimationFrame(() => ensureProgressVisible());
     };
 
     const setFilename = (name) => {

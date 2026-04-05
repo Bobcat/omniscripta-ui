@@ -1143,11 +1143,18 @@
       }
 
       .live-demo-overlay {
-        inset: 8px 4px;
+        position: fixed;
+        inset: 0;
+        z-index: 11000;
         padding: 12px;
+        background: transparent;
+        backdrop-filter: none;
+        border-radius: 0;
       }
 
       .live-demo-dialog {
+        max-height: calc(100dvh - 24px);
+        overflow-y: auto;
         padding: 14px;
       }
 
@@ -1178,11 +1185,6 @@
       .live-dev-section {
         grid-template-columns: 1fr;
       }
-
-      #liveRunFixturePlayBtn {
-        display: none !important;
-      }
-
       .live-status-badge {
         font-size: 0.75rem;
         padding: 4px 8px;

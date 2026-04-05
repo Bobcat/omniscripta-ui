@@ -44,6 +44,7 @@ rm -rf "$TARGET_DIR/app"
 rm -rf "$TARGET_DIR/assets"
 rm -rf "$TARGET_DIR/editor_build"
 rm -rf "$TARGET_DIR/dev-fixtures"
+rm -rf "$TARGET_DIR/landing-screenshots"
 
 # 2. Build JS Bundle (No Sourcemap)
 echo "📦 Bundling JavaScript..."
@@ -80,6 +81,13 @@ if [ -d "$APP_DIR/dev-fixtures" ]; then
   find "$TARGET_DIR/dev-fixtures" -type f -exec chmod 644 {} \;
 fi
 
+# 5c. Deploy landing screenshots
+if [ -d "$APP_DIR/landing-screenshots" ]; then
+  cp -r "$APP_DIR/landing-screenshots" "$TARGET_DIR/landing-screenshots"
+  find "$TARGET_DIR/landing-screenshots" -type d -exec chmod 755 {} \;
+  find "$TARGET_DIR/landing-screenshots" -type f -exec chmod 644 {} \;
+fi
+
 sed -i \
   -e "s|src=\"/js/app.js[^\\\"]*\"|src=\"/app.bundle.js?v=$VERSION\"|" \
   -e "s|type=\"module\"||" \
@@ -87,6 +95,8 @@ sed -i \
   -e "s|href=\"/css/layout.css[^\\\"]*\"|href=\"/layout.css?v=$VERSION\"|" \
   -e "s|href=\"/css/upload.css[^\\\"]*\"|href=\"/upload.css?v=$VERSION\"|" \
   "$TARGET_DIR/index.html"
+
+perl -0pi -e "s|src=\"/landing-screenshots/([^\"?]+)(?:\?v=\d+)?\"|src=\"/landing-screenshots/\$1?v=$VERSION\"|g" "$TARGET_DIR/index.html"
 
 sed -i \
   -e "s|src=\"/js/app.js[^\\\"]*\"|src=\"/app.bundle.js?v=$VERSION\"|" \

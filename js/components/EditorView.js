@@ -17,6 +17,7 @@ export class EditorView {
             type="button">Segments</button>
           <button class="mode-btn" id="modeTextBtn" title="Readable text view" type="button">Document</button>
         </div>
+        <button class="desktop-only" id="helpBtn" title="Show keyboard shortcuts" type="button">Help</button>
       </div>
       <div class="header-right header-actions">
         <!-- Desktop Tools (Hidden on Mobile) -->
@@ -37,7 +38,6 @@ export class EditorView {
           <label class="more-menu-item muted" for="audioInput" id="audioBtnLabel" title="Choose audio">Choose audio</label>
           <input accept="audio/*" hidden="" id="audioInput" type="file" />
           <div aria-hidden="true" class="more-menu-separator"></div>
-          <button class="more-menu-item" id="helpBtn" title="Show keyboard shortcuts" type="button">Help</button>
           <button class="more-menu-item" id="settingsBtn" title="Settings" type="button">Settings</button>
           <button class="more-menu-item" id="historyBtn" title="Show app-level undo/redo stack"
             type="button">History</button>
