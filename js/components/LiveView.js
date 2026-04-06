@@ -128,9 +128,7 @@ export class LiveView {
         this.audioSettingsDrag = null;
         this.audioSettingsUi = {
             preGain: 1.0,
-            noiseSuppression: false,
             autoGainControl: false,
-            echoCancellation: false,
         };
         this.liveDemoChoiceVisible = false;
         this.devSpeakerLabelsEnabled = true;
@@ -306,20 +304,10 @@ export class LiveView {
                 </div>
               </div>
 
-              <div class="live-audio-panel-hint">For stable transcription quality: leave every checkbox off. Only try AGC if you move around while speaking. Checkboxes are locked while recording.</div>
-
               <div class="live-audio-toggles">
-                <label class="live-audio-toggle">
-                  <input id="liveAudioNoiseSuppression" type="checkbox" />
-                  <span>Noise suppression</span>
-                </label>
                 <label class="live-audio-toggle">
                   <input id="liveAudioAutoGainControl" type="checkbox" />
                   <span>Auto gain control</span>
-                </label>
-                <label class="live-audio-toggle">
-                  <input id="liveAudioEchoCancellation" type="checkbox" />
-                  <span>Echo cancellation</span>
                 </label>
               </div>
 
@@ -649,9 +637,7 @@ export class LiveView {
         this.el.audioPanelResetBtn = document.getElementById("liveAudioPanelResetBtn");
         this.el.audioPreGain = document.getElementById("liveAudioPreGain");
         this.el.audioPreGainUiValue = document.getElementById("liveAudioPreGainUiValue");
-        this.el.audioNoiseSuppression = document.getElementById("liveAudioNoiseSuppression");
         this.el.audioAutoGainControl = document.getElementById("liveAudioAutoGainControl");
-        this.el.audioEchoCancellation = document.getElementById("liveAudioEchoCancellation");
         this.el.audioCurrentDevice = document.getElementById("liveAudioCurrentDevice");
         this.el.audioCurrentSampleRate = document.getElementById("liveAudioCurrentSampleRate");
         this.el.audioCurrentChannelCount = document.getElementById("liveAudioCurrentChannelCount");
@@ -743,19 +729,9 @@ export class LiveView {
                 this.refreshAudioSettingsPanel({ readCurrent: false });
             });
         }
-        if (this.el.audioNoiseSuppression) {
-            this.el.audioNoiseSuppression.addEventListener("change", () => {
-                this.audioSettingsUi.noiseSuppression = !!this.el.audioNoiseSuppression.checked;
-            });
-        }
         if (this.el.audioAutoGainControl) {
             this.el.audioAutoGainControl.addEventListener("change", () => {
                 this.audioSettingsUi.autoGainControl = !!this.el.audioAutoGainControl.checked;
-            });
-        }
-        if (this.el.audioEchoCancellation) {
-            this.el.audioEchoCancellation.addEventListener("change", () => {
-                this.audioSettingsUi.echoCancellation = !!this.el.audioEchoCancellation.checked;
             });
         }
         this.initAudioSettingsDrag();
@@ -1039,9 +1015,7 @@ export class LiveView {
     resetAudioSettingsToDefaults() {
         this.audioSettingsUi = {
             preGain: 1.0,
-            noiseSuppression: false,
             autoGainControl: false,
-            echoCancellation: false,
         };
         // Reset gain in audio service
         if (this.audioService) {
@@ -1053,9 +1027,7 @@ export class LiveView {
     readCurrentAudioTrackState() {
         const state = {
             hasActiveTrack: false,
-            noiseSuppression: null,
             autoGainControl: null,
-            echoCancellation: null,
             sampleRate: null,
             channelCount: null,
             deviceLabel: "",
@@ -1085,9 +1057,7 @@ export class LiveView {
             if (Object.prototype.hasOwnProperty.call(constraints, cKey)) return constraints[cKey] === true;
             return null;
         };
-        state.noiseSuppression = pickBool("noiseSuppression", "noiseSuppression");
         state.autoGainControl = pickBool("autoGainControl", "autoGainControl");
-        state.echoCancellation = pickBool("echoCancellation", "echoCancellation");
         const sr = Number(settings.sampleRate || constraints.sampleRate || svc.inputSampleRate || 0);
         const ch = Number(settings.channelCount || constraints.channelCount || 0);
         state.sampleRate = Number.isFinite(sr) && sr > 0 ? sr : null;
@@ -1104,26 +1074,15 @@ export class LiveView {
         if (this.el.audioPreGainUiValue) {
             this.el.audioPreGainUiValue.textContent = `${this.audioSettingsUi.preGain.toFixed(1)}x`;
         }
-        if (this.el.audioNoiseSuppression) {
-            this.el.audioNoiseSuppression.checked = !!this.audioSettingsUi.noiseSuppression;
-            this.el.audioNoiseSuppression.disabled = !!this.audioStreaming;
-        }
         if (this.el.audioAutoGainControl) {
             this.el.audioAutoGainControl.checked = !!this.audioSettingsUi.autoGainControl;
             this.el.audioAutoGainControl.disabled = !!this.audioStreaming;
         }
-        if (this.el.audioEchoCancellation) {
-            this.el.audioEchoCancellation.checked = !!this.audioSettingsUi.echoCancellation;
-            this.el.audioEchoCancellation.disabled = !!this.audioStreaming;
-        }
 
-        // Disable reset button during recording if any checkbox is enabled
-        // (because checkboxes can't be changed during recording, only pre-gain can)
+        // Disable reset button during recording if AGC is enabled
+        // (because checkbox can't be changed during recording, only pre-gain can)
         if (this.el.audioPanelResetBtn) {
-            const anyCheckboxEnabled = this.audioSettingsUi.noiseSuppression ||
-                this.audioSettingsUi.autoGainControl ||
-                this.audioSettingsUi.echoCancellation;
-            this.el.audioPanelResetBtn.disabled = !!this.audioStreaming && anyCheckboxEnabled;
+            this.el.audioPanelResetBtn.disabled = !!this.audioStreaming && this.audioSettingsUi.autoGainControl;
         }
 
         if (!readCurrent) return;
@@ -2515,9 +2474,7 @@ export class LiveView {
             if (!this.audioService.isCapturing()) {
                 await this.audioService.start({
                     preGain: this.audioSettingsUi.preGain,
-                    noiseSuppression: this.audioSettingsUi.noiseSuppression,
                     autoGainControl: this.audioSettingsUi.autoGainControl,
-                    echoCancellation: this.audioSettingsUi.echoCancellation,
                 });
                 this.stopRecordingTimer({ reset: true });
             } else {
