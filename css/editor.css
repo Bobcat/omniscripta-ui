@@ -2021,9 +2021,9 @@
 
     /* Ensure content is not hidden behind player */
     body.mobile #docViewContainer {
-      padding-bottom: 80px;
-      /* Space for player */
-      height: 100dvh;
+      padding-bottom: 0;
+      /* Player space is handled by dynamic viewport minus player inset */
+      height: calc(100dvh - var(--mobile-player-height, 0px));
       /* Use dynamic viewport height */
       box-sizing: border-box;
       overflow: hidden;
@@ -2032,7 +2032,7 @@
 
     body.mobile #textView {
       /* Add padding to bottom of scrollable text area */
-      padding-bottom: 100px;
+      padding-bottom: 12px;
     }
 
     /* Fix indentation of timestamp/speaker/text on mobile */
@@ -2097,7 +2097,7 @@
       min-height: 80px !important;
       overflow-y: auto !important;
       display: block !important;
-      padding-bottom: 100px;
+      padding-bottom: 12px;
     }
 
     body.mobile #topicsView.hidden {
