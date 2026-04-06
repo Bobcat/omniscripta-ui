@@ -95,6 +95,26 @@
       line-height: 1.6;
     }
 
+    .landing-hero-actions {
+      margin-top: 28px;
+    }
+
+    .landing-hero-btn {
+      display: inline-block;
+      padding: 12px 30px;
+      background: var(--primary);
+      color: #fff;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 1rem;
+      border-radius: 8px;
+      transition: background-color 0.15s ease;
+    }
+
+    .landing-hero-btn:hover {
+      background: #1d4ed8;
+    }
+
     .intro-tabs-container {
       position: sticky;
       top: var(--landing-topbar-offset);
@@ -104,8 +124,7 @@
       -webkit-backdrop-filter: blur(8px);
       border-bottom: 1px solid var(--border);
       padding: 0 20px;
-      margin: 0 -20px 40px -20px;
-      /* Bleed out to container edges */
+      margin: 0 -20px 0 -20px;
     }
 
     .intro-tabs {
@@ -146,20 +165,23 @@
     .intro-content {
       display: flex;
       flex-direction: column;
-      gap: 80px;
-      /* Lots of whitespace between sections */
+      gap: 0;
       padding-bottom: 40px;
-      /* Breathing room at the bottom of the page */
     }
 
     .intro-section {
       display: flex;
       flex-direction: column;
       gap: 24px;
-      padding-top: 20px;
-      /* Offset for sticky header when scrolling */
+      padding: 48px 20px;
+      margin: 0 -20px;
       scroll-margin-top: 80px;
-      /* Ensures the sticky header doesn't cover content when jumped to */
+    }
+
+    .intro-section:nth-child(even) {
+      background: #f4f6fa;
+      border-top: 1px solid #e8ecf2;
+      border-bottom: 1px solid #e8ecf2;
     }
 
     .intro-text h2 {
@@ -189,12 +211,13 @@
     .intro-screenshot-placeholder {
       width: 100%;
       aspect-ratio: 16 / 9;
-      background: #ffffff;
-      border: 1px solid #d8dee8;
+      background: #f0f2f6;
+      border: 1px solid #d0d6e0;
       border-radius: 12px;
       overflow: hidden;
-      box-shadow: 0 12px 28px rgba(18, 23, 33, 0.08);
-      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      padding: 10px;
+      box-shadow: 0 4px 16px rgba(18, 23, 33, 0.06);
+      transition: box-shadow 0.2s ease, border-color 0.2s ease;
     }
 
     .intro-screenshot-image {
@@ -204,12 +227,13 @@
       object-fit: contain;
       object-position: top center;
       background: #ffffff;
+      border-radius: 6px;
       cursor: zoom-in;
     }
 
     .intro-media:hover .intro-screenshot-placeholder {
-      border-color: #cbd5e1;
-      box-shadow: 0 16px 34px rgba(18, 23, 33, 0.1);
+      border-color: #bcc5d3;
+      box-shadow: 0 6px 22px rgba(18, 23, 33, 0.1);
     }
 
     .intro-media-caption {
@@ -221,15 +245,20 @@
     }
 
     .intro-link {
+      display: inline-block;
+      padding: 6px 16px;
       color: var(--primary);
       text-decoration: none;
       font-weight: 500;
-      transition: color 0.15s ease;
+      font-size: 0.88rem;
+      border: 1px solid var(--primary);
+      border-radius: 6px;
+      transition: background-color 0.15s ease, color 0.15s ease;
     }
 
     .intro-link:hover {
-      color: #1d4ed8;
-      text-decoration: underline;
+      background: var(--primary);
+      color: #fff;
     }
 
     .intro-hint {
@@ -240,7 +269,7 @@
     .intro-hero h1,
     .intro-text h2 {
       font-weight: 600;
-      color: var(--text-color);
+      color: #1a1a2e;
     }
 
     .intro-subtitle,
@@ -284,10 +313,18 @@
         padding: 0 8px;
       }
 
+      .landing-hero-actions {
+        margin-top: 20px;
+      }
+
+      .landing-hero-btn {
+        padding: 10px 24px;
+        font-size: 0.93rem;
+      }
+
       .intro-tabs-container {
         padding: 0 16px;
-        margin: 0 -16px 24px -16px;
-        /* Visual hint for scrollable tabs */
+        margin: 0 -16px 0 -16px;
         position: sticky;
         top: var(--landing-topbar-offset);
       }
@@ -299,7 +336,7 @@
         top: 0;
         bottom: 0;
         width: 40px;
-        background: linear-gradient(to right, transparent, rgba(255,255,255,0.95));
+        background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.95));
         pointer-events: none;
       }
 
@@ -309,12 +346,12 @@
       }
 
       .intro-content {
-        gap: 48px;
         padding-bottom: 24px;
       }
 
       .intro-section {
-        padding-top: 16px;
+        padding: 32px 16px;
+        margin: 0 -16px;
         scroll-margin-top: 60px;
       }
 
@@ -335,7 +372,7 @@
 
       .intro-screenshot-placeholder {
         aspect-ratio: 16 / 9;
-        padding: 16px;
+        padding: 8px;
       }
 
       .intro-media-caption {
