@@ -100,8 +100,10 @@ export class LiveView {
 
         this.awaitingLiveResult = false;
         this.resultEnvelope = null;
+        this.resultCanExportPc = false;
         this.resultCanExportSrt = false;
         this.resultCanExportWav = false;
+        this.resultPcUrl = "";
         this.resultSrtUrl = "";
         this.resultWavUrl = "";
         this.qualityEnvelope = null;
@@ -266,6 +268,7 @@ export class LiveView {
               <button class="btn-outline btn-compact" id="liveDownloadWavBtn" type="button" disabled>WAV</button>
               <button class="btn-outline btn-compact" id="liveDownloadTxtBtn" type="button" disabled>TXT</button>
               <button class="btn-outline btn-compact" id="liveDownloadSrtBtn" type="button" disabled>SRT</button>
+              <button class="btn-outline btn-compact" id="liveDownloadPcBtn" type="button" disabled>P/C</button>
               <button class="btn-outline btn-compact" id="liveClearBtn" type="button" style="color: var(--accent-red); border-color: transparent;">Clear</button>
             </div>
 
@@ -532,7 +535,7 @@ export class LiveView {
                     if (keepFinishedState) {
                         this.awaitingLiveResult = false;
                         this.remoteState = "ready";
-                        this.setStatus("ready", "Transcript ready. Download TXT, SRT, or WAV.");
+                        this.setStatus("ready", "Transcript ready. Download TXT, SRT, WAV, or P/C.");
                         this.updateControls();
                         return;
                     }
@@ -658,6 +661,7 @@ export class LiveView {
         this.el.downloadWavBtn = document.getElementById("liveDownloadWavBtn");
         this.el.downloadTxtBtn = document.getElementById("liveDownloadTxtBtn");
         this.el.downloadSrtBtn = document.getElementById("liveDownloadSrtBtn");
+        this.el.downloadPcBtn = document.getElementById("liveDownloadPcBtn");
         this.el.qualityText = document.getElementById("liveQualityText");
         this.el.cadenceText = document.getElementById("liveCadenceText");
         this.el.devToggleBtn = document.getElementById("liveDevToggleBtn");
@@ -778,6 +782,9 @@ export class LiveView {
         }
         if (this.el.downloadSrtBtn) {
             this.el.downloadSrtBtn.addEventListener("click", () => this.downloadLiveTranscript("srt"));
+        }
+        if (this.el.downloadPcBtn) {
+            this.el.downloadPcBtn.addEventListener("click", () => this.downloadLiveTranscript("pc"));
         }
         if (this.el.devToggleBtn) {
             this.el.devToggleBtn.addEventListener("click", () => this.toggleDeveloperTools());
@@ -1385,8 +1392,10 @@ export class LiveView {
     resetLiveResultState() {
         this.awaitingLiveResult = false;
         this.resultEnvelope = null;
+        this.resultCanExportPc = false;
         this.resultCanExportWav = false;
         this.resultCanExportSrt = false;
+        this.resultPcUrl = "";
         this.resultWavUrl = "";
         this.resultSrtUrl = "";
         this.qualityEnvelope = null;
@@ -2071,8 +2080,10 @@ export class LiveView {
         const sid = this.getCurrentSessionId();
 
         this.resultEnvelope = e;
+        this.resultCanExportPc = !!e.can_export_pc;
         this.resultCanExportWav = !!e.can_export_wav;
         this.resultCanExportSrt = !!e.can_export_srt;
+        this.resultPcUrl = this.resultCanExportPc ? String(e.transcript_pc_url || "") : "";
         this.resultWavUrl = this.resultCanExportWav ? String(e.recording_wav_url || "") : "";
         this.resultSrtUrl = this.resultCanExportSrt ? String(e.transcript_srt_url || "") : "";
 
@@ -2128,7 +2139,7 @@ export class LiveView {
             this.awaitingLiveResult = false;
             if (!this.audioStreaming) {
                 this.remoteState = "ready";
-                this.setStatus("ready", "Transcript ready. Download TXT, SRT, or WAV.");
+                this.setStatus("ready", "Transcript ready. Download TXT, SRT, WAV, or P/C.");
             }
             const rev = Number(result.transcript_revision || 0);
             const qualityAlreadyLoaded = (
@@ -2176,6 +2187,8 @@ export class LiveView {
             ? this.resultWavUrl
             : normalized === "srt"
                 ? this.resultSrtUrl
+                : normalized === "pc"
+                    ? this.resultPcUrl
                 : "";
         if (!url) {
             this.appendLog(`No ${normalized || "transcript"} export available yet`);
@@ -2286,6 +2299,7 @@ export class LiveView {
             this.el.downloadTxtBtn.disabled = !txt;
         }
         if (this.el.downloadSrtBtn) this.el.downloadSrtBtn.disabled = !this.resultCanExportSrt;
+        if (this.el.downloadPcBtn) this.el.downloadPcBtn.disabled = !this.resultCanExportPc;
 
         if (this.el.sessionId) {
             const sid = this.sessionService ? this.sessionService.getSessionId() : "";
