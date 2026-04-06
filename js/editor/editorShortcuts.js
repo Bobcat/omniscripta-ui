@@ -16,6 +16,8 @@ export function handleModalHotkeys({
     closeSettingsModal,
     filterModal,
     closeFilterModal,
+    exportModal,
+    closeExportModal,
 }) {
     if (isOpen(historyModal)) {
         if (event.key === 'Escape') { event.preventDefault(); closeHistoryModal(); }
@@ -47,6 +49,11 @@ export function handleModalHotkeys({
         return true;
     }
 
+    if (isOpen(exportModal)) {
+        if (event.key === 'Escape') { event.preventDefault(); closeExportModal(); }
+        return true;
+    }
+
     return false;
 }
 
@@ -68,6 +75,8 @@ export function wireEditorHotkeys({
     closeSettingsModal,
     filterModal,
     closeFilterModal,
+    exportModal,
+    closeExportModal,
     getSpeakerDropdownEl,
     closeSpeakerDropdown,
     getSpeakerDropdownIndex,
@@ -153,6 +162,8 @@ export function wireEditorHotkeys({
             closeSettingsModal,
             filterModal,
             closeFilterModal,
+            exportModal,
+            closeExportModal,
         })) return;
 
         const speakerDropdownEl = getSpeakerDropdownEl();

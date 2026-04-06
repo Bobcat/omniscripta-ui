@@ -6,7 +6,8 @@ import { AudioPlayer } from "../components/AudioPlayer.js";
 import {
   secondsToSrtTimecode,
   suggestSrtName as _suggestSrtName,
-  saveSrtLocally as _saveSrtLocally
+  saveSrtLocally as _saveSrtLocally,
+  exportDocumentsLocally as _exportDocumentsLocally
 } from "./editorSave.js";
 import {
   findNext as _findNext,
@@ -82,6 +83,7 @@ export function mountEditor(options = {}) {
     modeTextBtn,
     saveBtn,
     saveAsBtn,
+    exportDocBtn,
     historyBtn,
     historyModal,
     closeHistoryBtn,
@@ -1010,6 +1012,92 @@ export function mountEditor(options = {}) {
     getAutoAssignSplitTs: () => autoAssignSplitTs,
     setAutoAssignSplitTs: (value) => { autoAssignSplitTs = value; },
   });
+
+  const exportModal = document.getElementById('exportModal');
+  const exportCard = exportModal ? exportModal.querySelector('.export-card') : null;
+  const exportDragHandle = document.getElementById('exportDragHandle');
+  const cancelExportBtn = document.getElementById('cancelExportBtn');
+  const downloadExportBtn = document.getElementById('downloadExportBtn');
+  const exportFormatList = document.getElementById('exportFormatList');
+
+  const exportDrag = createDialogDragController((x, y) => {
+    if (exportCard) {
+      exportCard.style.setProperty('--drag-x', `${x}px`);
+      exportCard.style.setProperty('--drag-y', `${y}px`);
+    }
+  });
+
+  function resetExportDrag() { exportDrag.reset(); }
+  function onExportDragUp() { exportDrag.onUp(); }
+
+  if (exportDragHandle) {
+    exportDragHandle.addEventListener('mousedown', exportDrag.onMouseDown);
+  }
+
+  const exportModalController = exportModal
+    ? new ModalController(exportModal, {
+      backdropEvent: 'mousedown',
+      onBackdrop: () => closeExportModal(),
+    })
+    : null;
+
+  function getSelectedExportFormats() {
+    if (!exportFormatList) return [];
+    const checkboxes = exportFormatList.querySelectorAll('input[type="checkbox"]:not([disabled])');
+    const selected = [];
+    for (const cb of checkboxes) {
+      if (cb.checked) selected.push(String(cb.value || '').trim().toLowerCase());
+    }
+    return selected;
+  }
+
+  function syncExportDownloadButton() {
+    if (!downloadExportBtn) return;
+    downloadExportBtn.disabled = getSelectedExportFormats().length === 0;
+  }
+
+  function openExportModal() {
+    if (!exportModalController) return;
+    flushPendingText();
+    try { player.pause(); } catch { }
+    resetExportDrag();
+    syncExportDownloadButton();
+    exportModalController.open();
+  }
+
+  function closeExportModal() {
+    if (!exportModalController) return;
+    onExportDragUp();
+    exportModalController.close();
+  }
+
+  if (exportDocBtn) exportDocBtn.addEventListener('click', openExportModal);
+  if (cancelExportBtn) cancelExportBtn.addEventListener('click', closeExportModal);
+  if (exportFormatList) {
+    exportFormatList.addEventListener('change', () => syncExportDownloadButton());
+  }
+  if (downloadExportBtn) {
+    downloadExportBtn.addEventListener('click', async () => {
+      const formats = getSelectedExportFormats();
+      if (formats.length === 0) {
+        showToast("Select at least one format");
+        return;
+      }
+      try {
+        const result = await _exportDocumentsLocally(formats, ctx);
+        if (result && result.archive) {
+          showToast(`Downloaded: ${result.archiveName || "export.zip"}`);
+        } else {
+          const names = (result && Array.isArray(result.downloaded)) ? result.downloaded : [];
+          showToast(`Downloaded: ${names[0] || "document"}`);
+        }
+        closeExportModal();
+      } catch (e) {
+        const msg = (e && e.message) ? e.message : "Export failed";
+        showToast(msg);
+      }
+    });
+  }
 
 
   let segments = [];
@@ -2333,6 +2421,8 @@ export function mountEditor(options = {}) {
     closeSettingsModal,
     filterModal,
     closeFilterModal,
+    exportModal,
+    closeExportModal,
     getSpeakerDropdownEl: () => speakerDropdown.getSpeakerDropdownEl(),
     closeSpeakerDropdown,
     getSpeakerDropdownIndex: () => speakerDropdown.getSpeakerDropdownIndex(),
@@ -2525,36 +2615,45 @@ export function mountEditor(options = {}) {
 
   const moreMenuBtn = document.getElementById('moreMenuBtn');
   const headerMoreMenu = document.getElementById('headerMoreMenu');
+  const moreMenus = [
+    (moreMenuBtn && headerMoreMenu) ? { trigger: moreMenuBtn, menu: headerMoreMenu } : null,
+  ].filter(Boolean);
 
-  if (moreMenuBtn && headerMoreMenu) {
-    const setMoreMenuOpen = (open) => {
-      headerMoreMenu.classList.toggle('show-menu', !!open);
-      moreMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (moreMenus.length > 0) {
+    const setMenuOpen = (entry, open) => {
+      const isOpen = !!open;
+      entry.menu.classList.toggle('show-menu', isOpen);
+      entry.trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     };
 
-    moreMenuBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      setMoreMenuOpen(!headerMoreMenu.classList.contains('show-menu'));
-    });
+    const closeAllMoreMenus = () => {
+      for (const entry of moreMenus) setMenuOpen(entry, false);
+    };
+
+    for (const entry of moreMenus) {
+      entry.trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const willOpen = !entry.menu.classList.contains('show-menu');
+        closeAllMoreMenus();
+        setMenuOpen(entry, willOpen);
+      });
+
+      entry.menu.addEventListener('click', (e) => {
+        const item = e.target instanceof Element ? e.target.closest('.more-menu-item') : null;
+        if (item) closeAllMoreMenus();
+      }, true);
+    }
 
     document.addEventListener('click', (e) => {
-      if (!headerMoreMenu.contains(e.target) && e.target !== moreMenuBtn) {
-        setMoreMenuOpen(false);
-      }
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      const inside = moreMenus.some(({ trigger, menu }) => trigger.contains(target) || menu.contains(target));
+      if (!inside) closeAllMoreMenus();
     });
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        setMoreMenuOpen(false);
-      }
+      if (e.key === 'Escape') closeAllMoreMenus();
     });
-
-    headerMoreMenu.addEventListener('click', (e) => {
-      const item = e.target instanceof Element ? e.target.closest('.more-menu-item') : null;
-      if (item) {
-        setMoreMenuOpen(false);
-      }
-    }, true);
   }
 }
 

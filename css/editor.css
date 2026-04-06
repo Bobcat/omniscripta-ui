@@ -705,6 +705,7 @@
     .find-card,
     .help-card,
     .filter-card,
+    .export-card,
     .live-audio-panel-card,
     .history-card {
       overflow: hidden;
@@ -1197,6 +1198,54 @@
       justify-content: space-between;
       gap: 8px;
       padding-top: 10px;
+    }
+
+    .export-card {
+      width: min(420px, calc(100vw - 24px));
+    }
+
+    .export-body {
+      overflow: auto;
+    }
+
+    .export-lead {
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .export-hint {
+      margin: -2px 0 10px;
+      font-size: 0.85rem;
+      line-height: 1.3;
+    }
+
+    .export-format-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .export-format {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+      min-width: 0;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+    }
+
+    .export-format-disabled {
+      opacity: 0.55;
+    }
+
+    .export-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
     }
 
 
@@ -1867,7 +1916,6 @@
       margin: 4px 4px;
       background: var(--border);
     }
-
 
     /* --- Custom Audio Player --- */
     #customPlayer {

@@ -277,6 +277,41 @@ export class EditorView {
       </div>
     </div>
   </div>
+
+  <div aria-label="Export document" aria-modal="true" class="modal hidden" id="exportModal" role="dialog">
+    <div class="modal-card dialog-card export-card">
+      <div class="dialog-topbar dialog-drag-handle" id="exportDragHandle" title="Drag to move">
+        <div class="dialog-title">Export document</div>
+        <div aria-hidden="true" class="dialog-grip">⋮⋮</div>
+      </div>
+      <div class="dialog-body export-body">
+        <div class="export-lead">Choose export formats:</div>
+        <div class="muted export-hint">If you select multiple formats, they are downloaded as one ZIP file.</div>
+        <div class="export-format-list" id="exportFormatList">
+          <label class="chk export-format">
+            <input id="exportFmtTxt" type="checkbox" value="txt" />
+            <span>TXT</span>
+          </label>
+          <label class="chk export-format">
+            <input id="exportFmtSrt" type="checkbox" value="srt" />
+            <span>SRT</span>
+          </label>
+          <label class="chk export-format export-format-disabled">
+            <input disabled type="checkbox" value="pdf" />
+            <span>PDF</span>
+          </label>
+          <label class="chk export-format export-format-disabled">
+            <input disabled type="checkbox" value="docx" />
+            <span>DOCX</span>
+          </label>
+        </div>
+        <div class="export-actions">
+          <button class="btn-small" id="cancelExportBtn" type="button">Cancel</button>
+          <button class="btn-small primary" id="downloadExportBtn" type="button">Download</button>
+        </div>
+      </div>
+    </div>
+  </div>
     `;
   }
 

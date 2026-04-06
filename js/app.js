@@ -35,6 +35,10 @@ class App {
         this.liveNavIcon = this.liveNavLink ? this.liveNavLink.querySelector('.material-symbols-outlined') : null;
         this.liveNavText = this.liveNavLink ? this.liveNavLink.querySelector('.link-text') : null;
         this.mobileLiveRecordingIndicator = document.getElementById('mobile-live-recording-indicator');
+        this.mobileEditorActions = document.getElementById('mobile-editor-actions');
+        this.mobileEditorMenuBtn = document.getElementById('mobile-editor-menu-btn');
+        this.mobileEditorMenu = document.getElementById('mobile-editor-menu');
+        this.mobileEditorExportBtn = document.getElementById('mobile-editor-export-btn');
         this.liveNavBaseText = this.liveNavText
             ? String(this.liveNavText.textContent || 'Live recording').trim()
             : 'Live recording';
@@ -152,6 +156,7 @@ class App {
                 }
 
                 this.updateNavHighlight(viewName);
+                this.updateMobileEditorActionsVisibility(viewName);
                 this.renderProjects(); // Re-render sidebar to update project highlights
                 return viewData;
             },
@@ -239,6 +244,34 @@ class App {
         if (this.menuToggle) {
             this.menuToggle.addEventListener('click', () => {
                 this.toggleSidebar();
+            });
+        }
+
+        if (this.mobileEditorMenuBtn && this.mobileEditorMenu && this.mobileEditorExportBtn) {
+            this.mobileEditorMenuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const willOpen = !this.mobileEditorMenu.classList.contains('show-menu');
+                this.setMobileEditorMenuOpen(willOpen);
+            });
+
+            this.mobileEditorExportBtn.addEventListener('click', () => {
+                this.setMobileEditorMenuOpen(false);
+                this.triggerMobileEditorExport();
+            });
+
+            document.addEventListener('click', (e) => {
+                const target = e.target;
+                if (!(target instanceof Element)) return;
+                const insideMenu = this.mobileEditorActions && this.mobileEditorActions.contains(target);
+                if (!insideMenu) {
+                    this.setMobileEditorMenuOpen(false);
+                }
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    this.setMobileEditorMenuOpen(false);
+                }
             });
         }
 
@@ -426,6 +459,7 @@ class App {
             // Reset sidebar state based on device
             this.shellState.syncSidebarForDevice("checkDevice.syncSidebarForDevice");
         }
+        this.updateMobileEditorActionsVisibility(this.state.currentView);
     }
 
     isMobile() {
@@ -473,6 +507,31 @@ class App {
 
     applySidebarState(sidebarOpen) {
         this.sidebar.classList.toggle('expanded', !!sidebarOpen);
+        this.updateMobileEditorActionsVisibility(this.state.currentView);
+    }
+
+    setMobileEditorMenuOpen(open) {
+        if (!this.mobileEditorMenu || !this.mobileEditorMenuBtn) return;
+        const isOpen = !!open;
+        this.mobileEditorMenu.classList.toggle('show-menu', isOpen);
+        this.mobileEditorMenuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    }
+
+    updateMobileEditorActionsVisibility(viewName = this.state.currentView) {
+        if (!this.mobileEditorActions) return;
+        const isCollapsed = this.sidebar ? !this.sidebar.classList.contains('expanded') : false;
+        const shouldShow = this.isMobile() && isCollapsed && viewName === 'editor';
+        this.mobileEditorActions.classList.toggle('hidden', !shouldShow);
+        this.mobileEditorActions.setAttribute('aria-hidden', shouldShow ? 'false' : 'true');
+        if (this.mobileEditorMenuBtn) this.mobileEditorMenuBtn.disabled = !shouldShow;
+        if (!shouldShow) this.setMobileEditorMenuOpen(false);
+    }
+
+    triggerMobileEditorExport() {
+        if (this.state.currentView !== 'editor') return;
+        const exportBtn = document.getElementById('exportDocBtn');
+        if (!exportBtn) return;
+        exportBtn.click();
     }
 
     parseHashRoute(hash) {
