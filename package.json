@@ -1,5 +1,5 @@
 {
-  "name": "omniscripta-app",
+  "name": "omniscripta-ui",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -8,15 +8,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Bobcat/omniscripta-app.git"
+    "url": "git+https://github.com/Bobcat/omniscripta-ui.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Bobcat/omniscripta-app/issues"
+    "url": "https://github.com/Bobcat/omniscripta-ui/issues"
   },
-  "homepage": "https://github.com/Bobcat/omniscripta-app#readme",
+  "homepage": "https://github.com/Bobcat/omniscripta-ui#readme",
   "dependencies": {
     "@spa-foundation/core": "file:../../../home/gunnar/projects/spa-foundation/core"
   },

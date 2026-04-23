@@ -2,22 +2,15 @@
 set -e
 
 # Configuration
-APP_DIR="/var/www/omniscripta-app"
-TARGET_DIR="/srv/transcribe/static"
+APP_DIR="/var/www/omniscripta-ui"
+TARGET_DIR="/srv/omniscripta/static"
 ESBUILD="$APP_DIR/node_modules/.bin/esbuild"
-VERSION_FILE="$APP_DIR/.version"
 FOUNDATION_CORE_DIR="/home/gunnar/projects/spa-foundation/core"
 
 echo "🚀 Starting deployment to: $TARGET_DIR"
-# 0. Handle Versioning
-if [ -f "$VERSION_FILE" ]; then
-    VERSION=$(cat "$VERSION_FILE")
-    VERSION=$((VERSION + 1))
-else
-    VERSION=1
-fi
-echo "$VERSION" > "$VERSION_FILE"
-echo "🔖 Version incremented to: $VERSION"
+# 0. Generate a stateless cache-busting token for this deploy.
+VERSION="$(date -u +%Y%m%d%H%M%S)-$$"
+echo "🔖 Cache-busting version: $VERSION"
 
 # 0b. Refresh local foundation packages (file: dependencies)
 echo "🔗 Refreshing local foundation packages..."
