@@ -106,6 +106,7 @@ export class LiveView {
         this.resultPcUrl = "";
         this.resultSrtUrl = "";
         this.resultWavUrl = "";
+        this.resultInFlight = false;
         this.qualityEnvelope = null;
         this.qualityInFlight = false;
         this.qualityLoadedSessionId = "";
@@ -123,6 +124,7 @@ export class LiveView {
         this.fixtureWatchdogTimerId = null;
         this.fixtureRunLabel = "";
         this.selectedFixtureKey = DEV_LIVE_FIXTURE_OPTIONS[0] ? DEV_LIVE_FIXTURE_OPTIONS[0].value : "panel120v1";
+        this.selectedInjectAudioFile = null;
         this.selectedLanguage = this.loadPreferredLanguage();
         this.demoLanguageRestore = null;
         this.languageSelectMeasureCanvas = null;
@@ -357,6 +359,19 @@ export class LiveView {
               <button id="liveRunFixturePlayBtn" type="button">Play fixture</button>
               <button id="liveRunFixtureInjectBtn" type="button">Inject fixture</button>
             </div>
+
+            <div class="live-session-row">
+              <div class="muted">Audio file (dev)</div>
+              <div class="live-file-picker">
+                <input id="liveInjectAudioFileInput" class="live-file-input" type="file" accept="audio/*" />
+                <button id="liveChooseAudioFileBtn" type="button">Choose file</button>
+                <div id="liveInjectAudioFileName" class="live-file-name">No file selected</div>
+              </div>
+            </div>
+
+            <div class="live-secondary-row">
+              <button id="liveRunUploadedInjectBtn" type="button">Inject audio file</button>
+            </div>
           </div>
 
           <!-- Run/Benchmark card -->
@@ -536,6 +551,7 @@ export class LiveView {
                         this.awaitingLiveResult = false;
                         this.remoteState = "ready";
                         this.setStatus("ready", "Transcript ready. Download TXT, SRT, WAV, or P/C.");
+                        void this.refreshLiveResult({ quiet: true });
                         this.updateControls();
                         return;
                     }
@@ -658,6 +674,10 @@ export class LiveView {
         this.el.fixtureSelect = document.getElementById("liveFixtureSelect");
         this.el.runFixturePlayBtn = document.getElementById("liveRunFixturePlayBtn");
         this.el.runFixtureInjectBtn = document.getElementById("liveRunFixtureInjectBtn");
+        this.el.injectAudioFileInput = document.getElementById("liveInjectAudioFileInput");
+        this.el.chooseAudioFileBtn = document.getElementById("liveChooseAudioFileBtn");
+        this.el.injectAudioFileName = document.getElementById("liveInjectAudioFileName");
+        this.el.runUploadedInjectBtn = document.getElementById("liveRunUploadedInjectBtn");
         this.el.downloadWavBtn = document.getElementById("liveDownloadWavBtn");
         this.el.downloadTxtBtn = document.getElementById("liveDownloadTxtBtn");
         this.el.downloadSrtBtn = document.getElementById("liveDownloadSrtBtn");
@@ -772,6 +792,24 @@ export class LiveView {
         if (this.el.runFixtureInjectBtn) {
             this.el.runFixtureInjectBtn.addEventListener("click", () => {
                 void this.startSelectedFixtureRun("inject");
+            });
+        }
+        if (this.el.injectAudioFileInput) {
+            this.el.injectAudioFileInput.addEventListener("change", () => {
+                const files = this.el.injectAudioFileInput && this.el.injectAudioFileInput.files;
+                this.selectedInjectAudioFile = files && files[0] ? files[0] : null;
+                this.updateControls();
+            });
+        }
+        if (this.el.chooseAudioFileBtn) {
+            this.el.chooseAudioFileBtn.addEventListener("click", () => {
+                if (!this.el.injectAudioFileInput || this.el.chooseAudioFileBtn.disabled) return;
+                this.el.injectAudioFileInput.click();
+            });
+        }
+        if (this.el.runUploadedInjectBtn) {
+            this.el.runUploadedInjectBtn.addEventListener("click", () => {
+                void this.startUploadedAudioInjectRun();
             });
         }
         if (this.el.downloadWavBtn) {
@@ -2006,6 +2044,28 @@ export class LiveView {
         }
     }
 
+    async refreshLiveResult(options = {}) {
+        const quiet = options.quiet === true;
+        const sid = this.getCurrentSessionId();
+        if (!sid || !this.sessionService || typeof this.sessionService.fetchResult !== "function") return false;
+        if (this.resultInFlight) return false;
+        this.resultInFlight = true;
+        try {
+            const envelope = await this.sessionService.fetchResult(sid);
+            this.applyLiveResultEnvelope(envelope);
+            return true;
+        } catch (err) {
+            if (!quiet) {
+                const msg = err && err.message ? err.message : String(err);
+                this.appendLog(`Result fetch failed: ${msg}`);
+            }
+            return false;
+        } finally {
+            this.resultInFlight = false;
+            this.updateControls();
+        }
+    }
+
     _appendQualityTimelineEntry(kind, summaryText) {
         const body = String(summaryText || "").trim();
         if (!body) return false;
@@ -2281,15 +2341,26 @@ export class LiveView {
         }
         if (this.el.runFixturePlayBtn) {
             this.el.runFixturePlayBtn.disabled = this.fixtureRunActive || this.audioStreaming || wsConnecting;
-            this.el.runFixturePlayBtn.textContent = this.fixtureRunActive
-                ? (this.fixtureRunLabel ? `Running: ${this.fixtureRunLabel}` : "Fixture running...")
-                : "Play fixture";
+            this.el.runFixturePlayBtn.textContent = "Play fixture";
         }
         if (this.el.runFixtureInjectBtn) {
             this.el.runFixtureInjectBtn.disabled = this.fixtureRunActive || this.audioStreaming || wsConnecting;
-            this.el.runFixtureInjectBtn.textContent = this.fixtureRunActive
-                ? (this.fixtureRunLabel ? `Running: ${this.fixtureRunLabel}` : "Fixture running...")
-                : "Inject fixture";
+            this.el.runFixtureInjectBtn.textContent = "Inject fixture";
+        }
+        if (this.el.injectAudioFileInput) {
+            this.el.injectAudioFileInput.disabled = this.fixtureRunActive || this.audioStreaming || wsConnecting;
+        }
+        if (this.el.chooseAudioFileBtn) {
+            this.el.chooseAudioFileBtn.disabled = this.fixtureRunActive || this.audioStreaming || wsConnecting;
+        }
+        if (this.el.injectAudioFileName) {
+            this.el.injectAudioFileName.textContent = this.selectedInjectAudioFile
+                ? String(this.selectedInjectAudioFile.name || "")
+                : "No file selected";
+        }
+        if (this.el.runUploadedInjectBtn) {
+            this.el.runUploadedInjectBtn.disabled = !this.selectedInjectAudioFile || this.fixtureRunActive || this.audioStreaming || wsConnecting;
+            this.el.runUploadedInjectBtn.textContent = "Inject audio file";
         }
 
         // Download buttons (enabled when export is ready)
@@ -2727,6 +2798,67 @@ export class LiveView {
         }
     }
 
+    async decodeAudioArrayBufferToMono(bytes) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) throw new Error("Web Audio API not available in this browser.");
+        const ctx = new Ctx({ latencyHint: "interactive" });
+        try {
+            const audioBuf = await ctx.decodeAudioData(bytes.slice(0));
+            const channels = Math.max(1, Number(audioBuf.numberOfChannels || 1));
+            const frameLength = Math.max(0, Number(audioBuf.length || 0));
+            const mixed = new Float32Array(frameLength);
+            for (let c = 0; c < channels; c += 1) {
+                const data = audioBuf.getChannelData(c);
+                if (!data || data.length !== frameLength) continue;
+                for (let i = 0; i < frameLength; i += 1) mixed[i] += data[i];
+            }
+            if (channels > 1) {
+                for (let i = 0; i < frameLength; i += 1) mixed[i] /= channels;
+            }
+            return {
+                sampleRate: Number(audioBuf.sampleRate || 0) || 0,
+                samples: mixed,
+            };
+        } finally {
+            try {
+                await ctx.close();
+            } catch {
+                // ignore
+            }
+        }
+    }
+
+    async streamDecodedAudioRealtime(pcmFrames, sampleRate, token, logLabel = "Audio inject") {
+        const targetRate = (this.audioService && Number(this.audioService.targetSampleRate)) || 16000;
+        const chunkMs = (this.audioService && Number(this.audioService.chunkMs)) || 40;
+        const chunkSamples = Math.max(80, Math.round((targetRate * chunkMs) / 1000));
+        const mono16k = downsampleBuffer(pcmFrames, Number(sampleRate || targetRate), targetRate);
+        const totalChunks = Math.ceil((mono16k.length || 0) / chunkSamples);
+        this.appendLog(`${String(logLabel || "Audio inject")} decoded: ${mono16k.length} samples @${targetRate}Hz (~${(mono16k.length / targetRate).toFixed(2)}s), chunks=${totalChunks}`);
+        let nextDue = performance.now();
+        for (let off = 0; off < mono16k.length; off += chunkSamples) {
+            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
+            if (!this.sessionService || !this.sessionService.isOpen()) {
+                throw new Error("Live socket closed during audio inject");
+            }
+            const frame = mono16k.slice(off, Math.min(mono16k.length, off + chunkSamples));
+            const pcm = float32ToPcm16LeBuffer(frame);
+            const ok = this.sessionService.sendAudioChunk(pcm);
+            if (!ok) {
+                throw new Error("Socket not writable during audio inject");
+            }
+            nextDue += chunkMs;
+            const wait = Math.max(0, nextDue - performance.now());
+            if (wait > 0) {
+                await new Promise((resolve) => {
+                    window.setTimeout(resolve, wait);
+                });
+            } else {
+                await Promise.resolve();
+            }
+        }
+    }
+
     async startFixtureInjectRun(fixture) {
         const cfg = fixture && typeof fixture === "object" ? fixture : null;
         if (!cfg || !cfg.url) return;
@@ -2746,70 +2878,6 @@ export class LiveView {
         const waitMs = (ms) => new Promise((resolve) => {
             window.setTimeout(resolve, Math.max(0, Number(ms || 0)));
         });
-
-        const decodeFixtureToMono = async (url) => {
-            const res = await fetch(String(url), { cache: "no-store" });
-            if (!res.ok) {
-                throw new Error(`Fixture fetch failed (${res.status})`);
-            }
-            const bytes = await res.arrayBuffer();
-            const Ctx = window.AudioContext || window.webkitAudioContext;
-            if (!Ctx) throw new Error("Web Audio API not available in this browser.");
-            const ctx = new Ctx({ latencyHint: "interactive" });
-            try {
-                const audioBuf = await ctx.decodeAudioData(bytes.slice(0));
-                const channels = Math.max(1, Number(audioBuf.numberOfChannels || 1));
-                const frameLength = Math.max(0, Number(audioBuf.length || 0));
-                const mixed = new Float32Array(frameLength);
-                for (let c = 0; c < channels; c += 1) {
-                    const data = audioBuf.getChannelData(c);
-                    if (!data || data.length !== frameLength) continue;
-                    for (let i = 0; i < frameLength; i += 1) mixed[i] += data[i];
-                }
-                if (channels > 1) {
-                    for (let i = 0; i < frameLength; i += 1) mixed[i] /= channels;
-                }
-                return {
-                    sampleRate: Number(audioBuf.sampleRate || 0) || 0,
-                    samples: mixed,
-                };
-            } finally {
-                try {
-                    await ctx.close();
-                } catch {
-                    // ignore
-                }
-            }
-        };
-
-        const streamPcmToSocketRealtime = async (pcmFrames, sampleRate) => {
-            const targetRate = (this.audioService && Number(this.audioService.targetSampleRate)) || 16000;
-            const chunkMs = (this.audioService && Number(this.audioService.chunkMs)) || 40;
-            const chunkSamples = Math.max(80, Math.round((targetRate * chunkMs) / 1000));
-            const mono16k = downsampleBuffer(pcmFrames, Number(sampleRate || targetRate), targetRate);
-            const totalChunks = Math.ceil((mono16k.length || 0) / chunkSamples);
-            this.appendLog(`Fixture inject decoded: ${mono16k.length} samples @${targetRate}Hz (~${(mono16k.length / targetRate).toFixed(2)}s), chunks=${totalChunks}`);
-            let nextDue = performance.now();
-            for (let off = 0, idx = 0; off < mono16k.length; off += chunkSamples, idx += 1) {
-                if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-                if (!this.sessionService || !this.sessionService.isOpen()) {
-                    throw new Error("Live socket closed during fixture inject");
-                }
-                const frame = mono16k.slice(off, Math.min(mono16k.length, off + chunkSamples));
-                const pcm = float32ToPcm16LeBuffer(frame);
-                const ok = this.sessionService.sendAudioChunk(pcm);
-                if (!ok) {
-                    throw new Error("Socket not writable during fixture inject");
-                }
-                nextDue += chunkMs;
-                const wait = Math.max(0, nextDue - performance.now());
-                if (wait > 0) {
-                    await waitMs(wait);
-                } else {
-                    await Promise.resolve();
-                }
-            }
-        };
 
         try {
             this.appendLog(`Fixture inject run start: ${cfg.id || "fixture"} -> ${cfg.url}`);
@@ -2852,10 +2920,14 @@ export class LiveView {
             await waitMs(Number(cfg.startDelayMs || 0));
             if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
 
-            const decoded = await decodeFixtureToMono(cfg.url);
+            const fixtureRes = await fetch(String(cfg.url), { cache: "no-store" });
+            if (!fixtureRes.ok) {
+                throw new Error(`Fixture fetch failed (${fixtureRes.status})`);
+            }
+            const decoded = await this.decodeAudioArrayBufferToMono(await fixtureRes.arrayBuffer());
             if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
             this.startRecordingTimer();
-            await streamPcmToSocketRealtime(decoded.samples, decoded.sampleRate);
+            await this.streamDecodedAudioRealtime(decoded.samples, decoded.sampleRate, token, "Fixture inject");
             if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
 
             this.appendLog(`Fixture inject completed: ${cfg.id || "fixture"}; stopping recording...`);
@@ -2877,6 +2949,87 @@ export class LiveView {
                 this.fixtureRunActive = false;
                 this.fixtureRunLabel = "";
                 this.restoreDemoLanguage();
+                if (this.audioStreaming) {
+                    this.stopMic();
+                }
+                this.updateControls();
+            }
+        }
+    }
+
+    async startUploadedAudioInjectRun() {
+        const file = this.selectedInjectAudioFile instanceof File ? this.selectedInjectAudioFile : null;
+        if (!file) {
+            this.appendLog("Audio file inject ignored (no file selected)");
+            return;
+        }
+        if (this.fixtureRunActive || this.audioStreaming) {
+            this.appendLog("Audio file inject ignored (already active or recording)");
+            return;
+        }
+
+        this.cancelFixtureRun("replace");
+        this.fixtureRunActive = true;
+        this.fixtureRunLabel = `${String(file.name || "audio file")} (inject)`;
+        const token = this.fixtureRunToken + 1;
+        this.fixtureRunToken = token;
+        this.updateControls();
+
+        const waitMs = (ms) => new Promise((resolve) => {
+            window.setTimeout(resolve, Math.max(0, Number(ms || 0)));
+        });
+
+        try {
+            this.appendLog(`Audio file inject run start: ${String(file.name || "audio file")}`);
+            const connectStarted = await this.connectSession();
+            if (!connectStarted) throw new Error("Live session connect failed");
+            if (this.sessionService && this.sessionService.isConnecting()) {
+                const opened = await this.waitForSocketOpen(5000);
+                if (!opened) throw new Error("WebSocket did not open in time");
+            }
+            if (!this.sessionService || !this.sessionService.isOpen()) {
+                throw new Error("Live connection is not open");
+            }
+
+            this.stopRecordingTimer({ reset: true });
+            this.audioStreaming = true;
+            this.audioPaused = false;
+            this.awaitingLiveResult = false;
+            this.remoteState = "listening";
+            this.sessionService.sendControl("start");
+            this.setStatus("listening", "Audio file inject in progress.");
+            this.currentFixtureMeta = null;
+            this.updatePartialPlaceholder();
+            this.updateQualityPlaceholder();
+            this.updateControls();
+
+            await waitMs(700);
+            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
+
+            const decoded = await this.decodeAudioArrayBufferToMono(await file.arrayBuffer());
+            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
+            this.startRecordingTimer();
+            await this.streamDecodedAudioRealtime(decoded.samples, decoded.sampleRate, token, "Audio file inject");
+            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
+
+            this.appendLog(`Audio file inject completed: ${String(file.name || "audio file")}; stopping recording...`);
+            this.fixtureStopTimerId = window.setTimeout(() => {
+                this.fixtureStopTimerId = null;
+                if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
+                this.fixtureRunActive = false;
+                this.fixtureRunLabel = "";
+                try {
+                    void this.stopMic();
+                } finally {
+                    this.updateControls();
+                }
+            }, 1200);
+        } catch (err) {
+            const msg = err && err.message ? err.message : String(err);
+            if (this.fixtureRunActive && this.fixtureRunToken === token) {
+                this.appendLog(`Audio file inject run failed: ${msg}`);
+                this.fixtureRunActive = false;
+                this.fixtureRunLabel = "";
                 if (this.audioStreaming) {
                     this.stopMic();
                 }
@@ -3087,6 +3240,7 @@ export class LiveView {
             this.remoteState = "ended";
             this.setStatus("ready", `Recording finished (${payload.reason || "unknown"}).`);
             this.updatePartialPlaceholder();
+            void this.refreshLiveResult({ quiet: true });
         } else if (t === "error") {
             const msg = String(payload.message || "Live error");
             this.setStatus("error", msg);

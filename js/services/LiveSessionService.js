@@ -221,6 +221,16 @@ export class LiveSessionService {
         return await r.json();
     }
 
+    async fetchResult(sessionId) {
+        const sid = String(sessionId || this.getSessionId() || "").trim();
+        if (!sid) throw new Error("Missing session id");
+        const r = await fetch(getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}/result`), {
+            cache: "no-store",
+        });
+        if (!r.ok) throw new Error(`Fetch live result failed: ${r.status}`);
+        return await r.json();
+    }
+
     async fetchUiSettings(options = {}) {
         return await fetchUiSettingsEnvelope(options);
     }

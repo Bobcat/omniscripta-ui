@@ -895,6 +895,24 @@
       cursor: not-allowed;
     }
 
+    .live-file-picker {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .live-file-input {
+      display: none;
+    }
+
+    .live-file-name {
+      min-height: 18px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
     .live-session-row code {
       font-family: inherit;
       font-size: 0.85rem;
