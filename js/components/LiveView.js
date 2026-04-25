@@ -360,6 +360,10 @@ export class LiveView {
               <button id="liveRunFixtureInjectBtn" type="button">Inject fixture</button>
             </div>
 
+            <div class="live-secondary-row">
+              <button id="liveOpenBenchmarkMatrixBtn" type="button">Benchmark matrix</button>
+            </div>
+
             <div class="live-session-row">
               <div class="muted">Audio file (dev)</div>
               <div class="live-file-picker">
@@ -460,6 +464,22 @@ export class LiveView {
         }
     }
 
+    isMobileLayout() {
+        if (this.app && typeof this.app.isMobile === "function") {
+            return !!this.app.isMobile();
+        }
+        if (typeof document !== "undefined" && document.body && document.body.classList.contains("mobile")) {
+            return true;
+        }
+        return typeof window !== "undefined" && window.innerWidth <= 600;
+    }
+
+    getReadyDownloadStatusMessage() {
+        return this.isMobileLayout()
+            ? "Transcript ready. Download TXT, SRT, or WAV."
+            : "Transcript ready. Download TXT, SRT, WAV, or P/C.";
+    }
+
     shouldHoldScreenWakeLock() {
         return !!(this.audioStreaming || this.awaitingLiveResult || this.fixtureRunActive);
     }
@@ -550,7 +570,7 @@ export class LiveView {
                     if (keepFinishedState) {
                         this.awaitingLiveResult = false;
                         this.remoteState = "ready";
-                        this.setStatus("ready", "Transcript ready. Download TXT, SRT, WAV, or P/C.");
+                        this.setStatus("ready", this.getReadyDownloadStatusMessage());
                         void this.refreshLiveResult({ quiet: true });
                         this.updateControls();
                         return;
@@ -674,6 +694,7 @@ export class LiveView {
         this.el.fixtureSelect = document.getElementById("liveFixtureSelect");
         this.el.runFixturePlayBtn = document.getElementById("liveRunFixturePlayBtn");
         this.el.runFixtureInjectBtn = document.getElementById("liveRunFixtureInjectBtn");
+        this.el.openBenchmarkMatrixBtn = document.getElementById("liveOpenBenchmarkMatrixBtn");
         this.el.injectAudioFileInput = document.getElementById("liveInjectAudioFileInput");
         this.el.chooseAudioFileBtn = document.getElementById("liveChooseAudioFileBtn");
         this.el.injectAudioFileName = document.getElementById("liveInjectAudioFileName");
@@ -792,6 +813,11 @@ export class LiveView {
         if (this.el.runFixtureInjectBtn) {
             this.el.runFixtureInjectBtn.addEventListener("click", () => {
                 void this.startSelectedFixtureRun("inject");
+            });
+        }
+        if (this.el.openBenchmarkMatrixBtn) {
+            this.el.openBenchmarkMatrixBtn.addEventListener("click", () => {
+                this.app.navigateTo("livebench");
             });
         }
         if (this.el.injectAudioFileInput) {
@@ -2199,7 +2225,7 @@ export class LiveView {
             this.awaitingLiveResult = false;
             if (!this.audioStreaming) {
                 this.remoteState = "ready";
-                this.setStatus("ready", "Transcript ready. Download TXT, SRT, WAV, or P/C.");
+                this.setStatus("ready", this.getReadyDownloadStatusMessage());
             }
             const rev = Number(result.transcript_revision || 0);
             const qualityAlreadyLoaded = (

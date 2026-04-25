@@ -2,6 +2,7 @@ import { UploadView } from "./components/UploadView.js";
 import { EditorView } from "./components/EditorView.js";
 import { SettingsView } from "./components/SettingsView.js";
 import { LiveView } from "./components/LiveView.js";
+import { LiveBenchmarkView } from "./components/LiveBenchmarkView.js";
 import { ProjectService } from "./services/ProjectService.js";
 import { FileHandleService } from "./services/FileHandleService.js";
 import { fetchJobStatus } from "./api.js";
@@ -53,6 +54,7 @@ class App {
             editor: new EditorView(this),
             settings: new SettingsView(this),
             live: new LiveView(this),
+            livebench: new LiveBenchmarkView(this),
         };
 
         this.projectActionMenu = null;

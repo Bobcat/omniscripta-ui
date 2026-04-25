@@ -120,3 +120,19 @@ export async function fetchLiveSession(sessionId) {
     if (!r.ok) throw new Error(`Fetch live session failed: ${r.status}`);
     return await r.json();
 }
+
+export async function fetchLiveBenchmarks(options = {}) {
+    const qs = new URLSearchParams();
+    const limit = Number(options && options.limit);
+    const mode = String(options && options.mode || "").trim().toLowerCase();
+    if (Number.isFinite(limit) && limit > 0) {
+        qs.set("limit", String(Math.max(1, Math.min(200, Math.round(limit)))));
+    }
+    if (mode === "inject" || mode === "playback") {
+        qs.set("mode", mode);
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    const r = await fetch(getApiUrl(`/api/demo/live/benchmarks${suffix}`), { cache: "no-store" });
+    if (!r.ok) throw new Error(`Fetch live benchmarks failed: ${r.status}`);
+    return await r.json();
+}

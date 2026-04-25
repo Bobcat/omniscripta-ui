@@ -1148,6 +1148,10 @@
         font-size: 0.8rem;
       }
 
+      body.mobile .live-float-finished #liveDownloadPcBtn {
+        display: none !important;
+      }
+
       /* Content area takes remaining space */
       body.mobile .live-content-area,
       .live-content-area {
