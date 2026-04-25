@@ -96,8 +96,6 @@ export class LiveView {
         this.recordingStartedAtMs = 0;
         this.recordingTimerId = null;
 
-        this.lastStatsSummary = "";
-
         this.awaitingLiveResult = false;
         this.resultEnvelope = null;
         this.resultCanExportPc = false;
@@ -113,6 +111,9 @@ export class LiveView {
         this.qualityLoadedRevision = -1;
         this.qualitySummaryText = "";
         this.runMetricsSummaryText = "";
+        this.engineRuntimeSummaryText = "";
+        this.lastEngineInflightSummaryText = "";
+        this.engineRuntimeInflightStale = false;
         this.qualityTimelineEntries = [];
         this.cadenceStats = this.createCadenceStats();
         this.currentFixtureMeta = null;
@@ -381,19 +382,24 @@ export class LiveView {
           <!-- Run/Benchmark card -->
           <div class="live-card live-run-panels">
 
-            <div class="live-partial-row">
+            <div class="live-run-panel-card">
               <div class="live-label">Status / processing</div>
-              <div class="live-partial-text" id="livePartialText" data-placeholder="Chunk status appears here."></div>
+              <div class="live-partial-text" id="livePartialText" data-placeholder="Processing summary appears here."></div>
             </div>
 
-            <div class="live-partial-row">
+            <div class="live-run-panel-card">
               <div class="live-label">Cadence / snappiness</div>
               <div class="live-partial-text live-quality-report" id="liveCadenceText" data-placeholder="Cadence indicator appears once the visible transcript starts updating."></div>
             </div>
 
-            <div class="live-partial-row">
+            <div class="live-run-panel-card live-run-panel-card-wide">
               <div class="live-label">Run metrics / benchmark</div>
               <div class="live-partial-text live-quality-report" id="liveQualityText" data-placeholder="Quality score appears here for fixture runs."></div>
+            </div>
+
+            <div class="live-run-panel-card">
+              <div class="live-label">Engine runtime</div>
+              <div class="live-partial-text live-quality-report" id="liveEngineText" data-placeholder="Engine runtime details appear here once live results start arriving."></div>
             </div>
           </div>
 
@@ -704,10 +710,10 @@ export class LiveView {
         this.el.downloadSrtBtn = document.getElementById("liveDownloadSrtBtn");
         this.el.downloadPcBtn = document.getElementById("liveDownloadPcBtn");
         this.el.qualityText = document.getElementById("liveQualityText");
+        this.el.engineText = document.getElementById("liveEngineText");
         this.el.cadenceText = document.getElementById("liveCadenceText");
         this.el.devToggleBtn = document.getElementById("liveDevToggleBtn");
         this.el.devSection = document.getElementById("liveDevSection");
-        this.el.speakerLabelsToggleBtn = document.getElementById("liveSpeakerLabelsToggleBtn");
         this.el.finalText = document.getElementById("liveFinalText");
         this.el.finalTextMain = document.getElementById("liveFinalTextMain");
         this.el.finalTextPreview = document.getElementById("liveFinalTextPreview");
@@ -853,11 +859,6 @@ export class LiveView {
         if (this.el.devToggleBtn) {
             this.el.devToggleBtn.addEventListener("click", () => this.toggleDeveloperTools());
         }
-        if (this.el.speakerLabelsToggleBtn) {
-            this.el.speakerLabelsToggleBtn.addEventListener("click", () => {
-                this.setSpeakerLabelsEnabled(!this.devSpeakerLabelsEnabled);
-            });
-        }
         if (this.el.demoInjectBtn) {
             this.el.demoInjectBtn.addEventListener("click", () => {
                 this.hideLiveDemoOverlay();
@@ -934,10 +935,6 @@ export class LiveView {
 
     setSpeakerLabelsEnabled(enabled) {
         this.devSpeakerLabelsEnabled = !!enabled;
-        if (this.el.speakerLabelsToggleBtn) {
-            this.el.speakerLabelsToggleBtn.textContent = this.devSpeakerLabelsEnabled ? "On" : "Off";
-            this.el.speakerLabelsToggleBtn.setAttribute("aria-pressed", this.devSpeakerLabelsEnabled ? "true" : "false");
-        }
         this.renderTranscriptText();
     }
 
@@ -1254,7 +1251,6 @@ export class LiveView {
 
     clearOutput() {
         this.partialText = "";
-        this.lastStatsSummary = "";
         this.resetLiveResultState();
         this.currentFixtureMeta = null;
         this.previewText = "";
@@ -1262,6 +1258,7 @@ export class LiveView {
 
         this.renderTranscriptText();
         if (this.el.partialText) this.el.partialText.textContent = "";
+        if (this.el.engineText) this.el.engineText.textContent = "";
         if (this.el.cadenceText) this.el.cadenceText.textContent = "";
         if (this.el.qualityText) this.el.qualityText.textContent = "";
 
@@ -1272,34 +1269,18 @@ export class LiveView {
         this.updateControls();
     }
 
-    setStatus(kind, text) {
-        // setStatus is kept for internal calls; the visible badge is now
-        // driven entirely by setUiPhase() via updateControls().
+    setStatus(kind, _text) {
+        // Visible status is driven by setUiPhase() via updateControls();
+        // keep setStatus for internal state transitions and call sites.
         const normalized = String(kind || "idle").toLowerCase();
         if (!this.audioStreaming) {
             this.remoteState = normalized;
         }
-        if (this.el.statusText) {
-            this.el.statusText.textContent = String(text || "");
-        }
     }
 
 
-    appendLog(line) {
-        if (!this.el.log) return;
-        const now = new Date();
-        const stamp = now.toISOString().slice(11, 19);
-        const msg = `[${stamp}] ${String(line || "")}`;
-        this.el.log.textContent = this.el.log.textContent ? `${this.el.log.textContent}\n${msg}` : msg;
-        this.el.log.scrollTop = this.el.log.scrollHeight;
-    }
-
-    setDevStats(text) {
-        this.lastStatsSummary = String(text || "");
-        if (this.el.devStats) {
-            this.el.devStats.textContent = this.lastStatsSummary || "No stats yet";
-            this.el.devStats.title = this.lastStatsSummary || "No stats yet";
-        }
+    appendLog(_line) {
+        // The old inline Dev Tools event log has been removed from this view.
     }
 
     createVadState() {
@@ -1468,6 +1449,9 @@ export class LiveView {
         this.qualityLoadedRevision = -1;
         this.qualitySummaryText = "";
         this.runMetricsSummaryText = "";
+        this.engineRuntimeSummaryText = "";
+        this.lastEngineInflightSummaryText = "";
+        this.engineRuntimeInflightStale = false;
         this.qualityTimelineEntries = [];
         this.previewText = "";
         this.previewSeq = -1;
@@ -1561,6 +1545,25 @@ export class LiveView {
         return `${(value / 1000).toFixed(2)}s`;
     }
 
+    _formatPositiveCountSummary(source, options = {}) {
+        const emptyLabel = String(options.emptyLabel || "none");
+        const maxEntriesRaw = Number(options.maxEntries);
+        const maxEntries = Number.isFinite(maxEntriesRaw) && maxEntriesRaw > 0
+            ? Math.round(maxEntriesRaw)
+            : 4;
+        const entries = source && typeof source === "object"
+            ? Object.entries(source)
+                .map(([key, value]) => [String(key || "").trim(), Number(value)])
+                .filter(([key, value]) => key && Number.isFinite(value) && value > 0)
+                .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+            : [];
+        if (!entries.length) return emptyLabel;
+        const visible = entries.slice(0, maxEntries)
+            .map(([key, value]) => `${key}=${Math.round(value)}`);
+        const hiddenCount = entries.length - visible.length;
+        return hiddenCount > 0 ? `${visible.join(", ")} +${hiddenCount} more` : visible.join(", ");
+    }
+
     recordCadenceVisibleUpdate({ finalChanged = false, previewChanged = false } = {}) {
         const stats = this.ensureCadenceStarted(this.recordingStartedAtMs > 0 ? this.recordingStartedAtMs : Date.now());
         const visibleState = this._buildVisibleTranscriptState(this.finalSegments, this.previewText);
@@ -1591,20 +1594,16 @@ export class LiveView {
             : (this.recordingStartedAtMs > 0 ? this.recordingStartedAtMs : 0);
         const nowMs = Date.now();
 
-        if (stats.visibleUpdateCount <= 0) {
-            if (startMs > 0) {
-                return [
-                    "Waiting for first visible transcript update...",
-                    `Elapsed since start: ${this._formatCadenceDuration(Math.max(0, nowMs - startMs))}`,
-                ].join("\n");
-            }
+        if (startMs <= 0 && stats.visibleUpdateCount <= 0) {
             return "";
         }
 
+        const hasVisibleUpdate = stats.visibleUpdateCount > 0;
         const firstLatencyMs = (startMs > 0 && stats.firstVisibleUpdateAtMs > 0)
             ? Math.max(0, stats.firstVisibleUpdateAtMs - startMs)
             : null;
         const medianGapMs = this._percentile(stats.gapMs, 0.5);
+        const p90GapMs = this._percentile(stats.gapMs, 0.9);
         const p95GapMs = this._percentile(stats.gapMs, 0.95);
         const sampleEndMs = stats.lastVisibleUpdateAtMs > 0 ? stats.lastVisibleUpdateAtMs : nowMs;
         const elapsedForRateMs = (startMs > 0 && sampleEndMs > startMs) ? (sampleEndMs - startMs) : 0;
@@ -1614,32 +1613,19 @@ export class LiveView {
         const currentGapMs = stats.lastVisibleUpdateAtMs > 0
             ? Math.max(0, nowMs - stats.lastVisibleUpdateAtMs)
             : null;
+        const showCurrentGap = this.audioStreaming || this.awaitingLiveResult || this.fixtureRunActive || this.remoteState === "finalizing";
 
-        const lines = [];
-        const medianText = medianGapMs !== null ? this._formatCadenceDuration(medianGapMs) : "n/a";
-        const p95Text = p95GapMs !== null ? this._formatCadenceDuration(p95GapMs) : "n/a";
-        lines.push(`Median visible gap: ${medianText} | p95 ${p95Text}`);
-
-        const firstLineParts = [];
-        if (firstLatencyMs !== null) {
-            firstLineParts.push(`First visible update: ${this._formatCadenceDuration(firstLatencyMs)}`);
-        }
-        if (
-            currentGapMs !== null
-            && (this.audioStreaming || this.awaitingLiveResult || this.fixtureRunActive)
-        ) {
-            firstLineParts.push(`Current gap: ${this._formatCadenceDuration(currentGapMs)}`);
-        }
-        if (firstLineParts.length) {
-            lines.push(firstLineParts.join(" | "));
-        }
-
-        lines.push(
+        return [
+            `State: ${hasVisibleUpdate ? "Active" : "Waiting for first visible transcript update"}`,
+            `First visible update: ${firstLatencyMs !== null ? this._formatCadenceDuration(firstLatencyMs) : "n/a"}`
+                + ` | current gap: ${showCurrentGap && currentGapMs !== null ? this._formatCadenceDuration(currentGapMs) : "n/a"}`,
+            `Visible gap: median ${medianGapMs !== null ? this._formatCadenceDuration(medianGapMs) : "n/a"}`
+                + ` | p90 ${p90GapMs !== null ? this._formatCadenceDuration(p90GapMs) : "n/a"}`
+                + ` | p95 ${p95GapMs !== null ? this._formatCadenceDuration(p95GapMs) : "n/a"}`,
             `Visible updates: ${stats.visibleUpdateCount}`
-            + (updatesPerMin !== null && Number.isFinite(updatesPerMin) ? ` (${updatesPerMin.toFixed(1)}/min)` : "")
-        );
-        lines.push(`Preview changes: ${stats.previewChangeCount} | final growth: ${stats.finalChangeCount}`);
-        return lines.join("\n");
+                + (updatesPerMin !== null && Number.isFinite(updatesPerMin) ? ` (${updatesPerMin.toFixed(1)}/min)` : " (n/a/min)")
+                + ` | preview ${stats.previewChangeCount} | final ${stats.finalChangeCount}`,
+        ].join("\n");
     }
 
     updateCadenceIndicator() {
@@ -1849,14 +1835,10 @@ export class LiveView {
         }, 0);
         const durMs = Number(r.recording_duration_ms || 0);
 
-        const parts = [
-            `Processing state: ${fstateLabel}`,
-            `Chunks ${done}/${total} (pending ${pending}, failed ${failed})`,
-            `Transcript rev ${rev}`,
-        ];
-
         const engineState = this._extractEngineState(r);
         const vadObj = engineState.vad && typeof engineState.vad === "object" ? engineState.vad : null;
+        let vadLabel = "n/a";
+        let vadCountersLine = "VAD counters: n/a";
         if (vadObj && vadObj.enabled === true) {
             const vadCfg = vadObj.config && typeof vadObj.config === "object" ? vadObj.config : {};
             const vadState = vadObj.state && typeof vadObj.state === "object" ? vadObj.state : {};
@@ -1874,52 +1856,137 @@ export class LiveView {
                     vadPhase = "hangover";
                 }
             }
-            const vadLabel = this._vadLabelForPhase(vadPhase);
-            if (vadLabel) {
-                parts.push(`VAD: ${vadLabel}`);
-            }
-            if (
-                Number.isFinite(checksRaw)
-                || Number.isFinite(speechRaw)
-                || Number.isFinite(hangoverRaw)
-                || Number.isFinite(silenceRaw)
-            ) {
-                parts.push(
-                    `VAD counters: checks=${Number.isFinite(checksRaw) ? checksRaw : "?"}`
-                    + ` speech=${Number.isFinite(speechRaw) ? speechRaw : "?"}`
-                    + ` hangover=${Number.isFinite(hangoverRaw) ? hangoverRaw : "?"}`
-                    + ` silence=${Number.isFinite(silenceRaw) ? silenceRaw : "?"}`
-                );
-            }
-        }
-        if (durMs > 0) {
-            parts.push(`Recording ${(durMs / 1000).toFixed(1)}s`);
-        }
-        if (chars > 0) {
-            parts.push(`${chars} chars`);
+            vadLabel = this._vadLabelForPhase(vadPhase) || "enabled";
+            vadCountersLine =
+                `VAD counters: checks=${Number.isFinite(checksRaw) ? Math.round(checksRaw) : "?"}`
+                + ` | speech=${Number.isFinite(speechRaw) ? Math.round(speechRaw) : "?"}`
+                + ` | hangover=${Number.isFinite(hangoverRaw) ? Math.round(hangoverRaw) : "?"}`
+                + ` | silence=${Number.isFinite(silenceRaw) ? Math.round(silenceRaw) : "?"}`;
+        } else if (vadObj && vadObj.enabled === false) {
+            vadLabel = "Off";
+            vadCountersLine = "VAD counters: disabled";
         }
 
         const reasonCounts = r.chunk_reason_counts && typeof r.chunk_reason_counts === "object"
             ? r.chunk_reason_counts
             : null;
-        if (reasonCounts && Object.keys(reasonCounts).length) {
-            const reasonPairs = Object.entries(reasonCounts).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-            parts.push(`Chunk triggers: ${reasonPairs.map(([k, v]) => `${k}=${v}`).join(", ")}`);
-        }
-
         const rowsCount = Number(r.chunk_results_rows_count || 0);
         const uniqueCount = Number(r.chunk_results_unique_count || 0);
         const dupRows = Number(r.chunk_results_duplicate_index_rows || 0);
         const invalidRows = Number(r.chunk_results_invalid_index_rows || 0);
-        if (rowsCount > 0 && (dupRows > 0 || invalidRows > 0 || (uniqueCount > 0 && uniqueCount !== rowsCount))) {
-            parts.push(
-                `Chunk rows: ${rowsCount} rows / ${uniqueCount || rowsCount} unique`
-                + (dupRows > 0 ? ` (duplicates ${dupRows})` : "")
-                + (invalidRows > 0 ? ` (invalid-index ${invalidRows})` : "")
-            );
-        }
+        return [
+            `Processing state: ${fstateLabel}`,
+            `Chunks: ${done}/${total} | pending ${pending} | failed ${failed}`,
+            `Transcript: rev ${rev} | chars ${chars}`,
+            `Recording: ${durMs > 0 ? `${(durMs / 1000).toFixed(1)}s` : "n/a"} | VAD ${vadLabel}`,
+            vadCountersLine,
+            `Chunk triggers: ${this._formatPositiveCountSummary(reasonCounts, { maxEntries: 4 })}`,
+            `Chunk rows: rows ${Math.max(0, Math.round(rowsCount))}`
+                + ` | unique ${Math.max(0, Math.round(uniqueCount || rowsCount))}`
+                + ` | dup ${Math.max(0, Math.round(dupRows))}`
+                + ` | invalid ${Math.max(0, Math.round(invalidRows))}`,
+        ].join("\n");
+    }
 
-        return parts.join("\n");
+    formatEngineRuntimeSummary(result) {
+        const r = result && typeof result === "object" ? result : {};
+        const runtime = r.engine_runtime && typeof r.engine_runtime === "object" ? r.engine_runtime : {};
+        const engineState = runtime.engine_state && typeof runtime.engine_state === "object"
+            ? runtime.engine_state
+            : {};
+        const speechGate = engineState.speech_gate && typeof engineState.speech_gate === "object"
+            ? engineState.speech_gate
+            : {};
+        const guardrails = engineState.guardrails && typeof engineState.guardrails === "object"
+            ? engineState.guardrails
+            : {};
+        const debug = engineState.debug && typeof engineState.debug === "object" ? engineState.debug : {};
+        const debugState = debug.state && typeof debug.state === "object" ? debug.state : {};
+        const inflight = debugState.inflight && typeof debugState.inflight === "object"
+            ? debugState.inflight
+            : null;
+
+        const recMs = Number(r.recording_duration_ms || 0);
+        const coveredMs = Number(r.final_covered_ms || 0);
+        const uncommittedMs = Number(runtime.uncommitted_audio_ms || 0);
+        const processedMs = Number(debugState.processed_offset_ms);
+        const decodeMs = Number(debugState.decode_offset_ms);
+        const submittedMs = Number(debugState.last_submitted_t1_ms);
+        const previewChars = Number(debugState.preview_chars);
+        let inflightSummary = "none";
+        let inflightStale = false;
+        if (inflight) {
+            const seq = Number(inflight.sequence_id);
+            const t0Ms = Number(inflight.t0_ms);
+            const t1Ms = Number(inflight.t1_ms);
+            const inflightParts = [];
+            if (Number.isFinite(seq) && seq >= 0) inflightParts.push(`seq ${Math.round(seq)}`);
+            if (Number.isFinite(t0Ms) && t0Ms >= 0 && Number.isFinite(t1Ms) && t1Ms >= t0Ms) {
+                inflightParts.push(`${this._formatCadenceDuration(t0Ms)} -> ${this._formatCadenceDuration(t1Ms)}`);
+                inflightParts.push(`len ${this._formatCadenceDuration(Math.max(0, t1Ms - t0Ms))}`);
+            }
+            const language = String(inflight.language || "").trim();
+            if (language) inflightParts.push(`lang ${language}`);
+            if (inflightParts.length) {
+                inflightSummary = inflightParts.join(" | ");
+                this.lastEngineInflightSummaryText = inflightSummary;
+                this.engineRuntimeInflightStale = false;
+            }
+        } else if (String(this.lastEngineInflightSummaryText || "").trim()) {
+            inflightSummary = String(this.lastEngineInflightSummaryText);
+            inflightStale = true;
+        }
+        this.engineRuntimeInflightStale = inflightStale;
+
+        const gateState = String(speechGate.state || "").trim();
+        const recentHits = Number(speechGate.recent_hits_count);
+        const silenceElapsedMs = Number(speechGate.silence_elapsed_ms);
+        const rearmFromMs = Number(speechGate.rearm_from_ms);
+        const hardClipCount = Number(guardrails.hard_clip_count);
+        const hardClipDroppedMs = Number(guardrails.hard_clip_dropped_audio_ms);
+        const bufferTrimCount = Number(guardrails.buffer_trim_count);
+        const bufferTrimDroppedMs = Number(guardrails.buffer_trim_dropped_audio_ms);
+        const emitSkips = Number(guardrails.emit_interval_skips);
+        const pacingSkips = Number(guardrails.pacing_slot_skips);
+        const vadErrors = Number(guardrails.vad_errors);
+        const forcedCommits = Number(guardrails.speech_gate_forced_commit_count);
+
+        const reasonCounts = debug.reason_counts && typeof debug.reason_counts === "object" ? debug.reason_counts : {};
+        const workDecision = reasonCounts.work_decision && typeof reasonCounts.work_decision === "object"
+            ? reasonCounts.work_decision
+            : {};
+        const applyDecision = reasonCounts.apply_decision && typeof reasonCounts.apply_decision === "object"
+            ? reasonCounts.apply_decision
+            : {};
+        const hardClipText = Number.isFinite(hardClipCount) && hardClipCount > 0
+            ? `${Math.round(hardClipCount)}/${Number.isFinite(hardClipDroppedMs) && hardClipDroppedMs > 0 ? this._formatCadenceDuration(hardClipDroppedMs) : "0ms"}`
+            : "0";
+        const bufferTrimText = Number.isFinite(bufferTrimCount) && bufferTrimCount > 0
+            ? `${Math.round(bufferTrimCount)}/${Number.isFinite(bufferTrimDroppedMs) && bufferTrimDroppedMs > 0 ? this._formatCadenceDuration(bufferTrimDroppedMs) : "0ms"}`
+            : "0";
+
+        return [
+            `Coverage: recording ${recMs > 0 ? this._formatCadenceDuration(recMs) : "n/a"}`
+                + ` | covered ${coveredMs > 0 ? this._formatCadenceDuration(coveredMs) : "n/a"}`
+                + ` | uncommitted ${uncommittedMs > 0 ? this._formatCadenceDuration(uncommittedMs) : "0ms"}`,
+            `Offsets: processed ${Number.isFinite(processedMs) && processedMs >= 0 ? this._formatCadenceDuration(processedMs) : "n/a"}`
+                + ` | decode ${Number.isFinite(decodeMs) && decodeMs >= 0 ? this._formatCadenceDuration(decodeMs) : "n/a"}`
+                + ` | submitted ${Number.isFinite(submittedMs) && submittedMs >= 0 ? this._formatCadenceDuration(submittedMs) : "n/a"}`
+                + ` | preview ${Number.isFinite(previewChars) && previewChars >= 0 ? Math.round(previewChars) : "n/a"} chars`,
+            `Inflight: ${inflightSummary}`,
+            `Speech gate: state ${gateState || "n/a"}`
+                + ` | hits ${Number.isFinite(recentHits) && recentHits >= 0 ? Math.round(recentHits) : 0}`
+                + ` | silence ${Number.isFinite(silenceElapsedMs) && silenceElapsedMs >= 0 ? this._formatCadenceDuration(silenceElapsedMs) : "n/a"}`
+                + ` | rearm_from ${Number.isFinite(rearmFromMs) && rearmFromMs > 0 ? this._formatCadenceDuration(rearmFromMs) : "n/a"}`,
+            `Guardrails: clip ${hardClipText}`
+                + ` | trim ${bufferTrimText}`
+                + ` | emit ${Number.isFinite(emitSkips) && emitSkips >= 0 ? Math.round(emitSkips) : 0}`
+                + ` | pacing ${Number.isFinite(pacingSkips) && pacingSkips >= 0 ? Math.round(pacingSkips) : 0}`
+                + ` | vad ${Number.isFinite(vadErrors) && vadErrors >= 0 ? Math.round(vadErrors) : 0}`
+                + ` | forced ${Number.isFinite(forcedCommits) && forcedCommits >= 0 ? Math.round(forcedCommits) : 0}`,
+            `Decisions: work ${this._formatPositiveCountSummary(workDecision, { maxEntries: 3 })}`
+                + ` | apply ${this._formatPositiveCountSummary(applyDecision, { maxEntries: 3 })}`,
+        ].join("\n");
     }
 
     formatQualitySummary(envelope) {
@@ -1936,7 +2003,6 @@ export class LiveView {
         const wordRatio = score.word_count_ratio_live_to_ref;
         const editDist = Number(score.word_edit_distance || 0);
         const recMs = Number(run.recording_duration_ms || 0);
-        const stopToReadyMs = run.stop_to_ready_ms == null ? null : Number(run.stop_to_ready_ms);
         const chunksTotal = Number(run.chunks_total || 0);
         const chunksFailed = Number(run.chunks_failed || 0);
         const chunksDone = Number(run.chunks_done || 0);
@@ -1944,52 +2010,26 @@ export class LiveView {
         const chunkReasons = run.chunk_reason_counts && typeof run.chunk_reason_counts === "object"
             ? run.chunk_reason_counts
             : {};
-        const pollErrors = Number(run.poll_error_count || 0);
-        const chunkErrors = Number(run.chunk_error_count || 0);
         const gpuProxyTranscribeTimeS = run.gpu_proxy_transcribe_total_s == null ? null : Number(run.gpu_proxy_transcribe_total_s);
         const gpuProxyPipelineTimeS = run.gpu_proxy_pipeline_total_s == null ? null : Number(run.gpu_proxy_pipeline_total_s);
         const gpuProxyTranscribePct = run.gpu_proxy_transcribe_pct_of_recording == null ? null : Number(run.gpu_proxy_transcribe_pct_of_recording);
         const gpuProxyPipelinePct = run.gpu_proxy_pipeline_pct_of_recording == null ? null : Number(run.gpu_proxy_pipeline_pct_of_recording);
 
-        const lines = [];
-        if (Number.isFinite(uploadScore)) {
-            lines.push(`Upload Similarity Score: ${Math.round(uploadScore)}/100${fixtureId ? ` (${fixtureId})` : ""}`);
-        } else {
-            lines.push(`Fixture benchmark available${fixtureId ? ` (${fixtureId})` : ""}`);
-        }
-        lines.push(
-            `Words: live ${wordLive} / ref ${wordRef}`
-            + (wordRatio === null || wordRatio === undefined ? "" : ` (${Number(wordRatio).toFixed(3)}x)`)
-            + `, edit distance ${editDist}`
-        );
-        lines.push(
-            `Run: ${chunksDone}/${chunksTotal} chunks ready`
-            + ` (failed ${chunksFailed}, pending ${chunksPending})`
-            + (recMs > 0 ? ` | recording ${(recMs / 1000).toFixed(1)}s` : "")
-            + (stopToReadyMs !== null && Number.isFinite(stopToReadyMs) ? ` | stop->ready ${(stopToReadyMs / 1000).toFixed(2)}s` : "")
-        );
-        const reasonPairs = Object.entries(chunkReasons).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-        if (reasonPairs.length) {
-            lines.push(`Chunk reasons: ${reasonPairs.map(([k, v]) => `${k}=${v}`).join(", ")}`);
-        }
-        if (gpuProxyTranscribeTimeS !== null && Number.isFinite(gpuProxyTranscribeTimeS)) {
-            lines.push(
-                `GPU proxy transcribe time: ${gpuProxyTranscribeTimeS.toFixed(2)}s`
-                + (gpuProxyTranscribePct !== null && Number.isFinite(gpuProxyTranscribePct) ? ` (${gpuProxyTranscribePct.toFixed(1)}% of recording)` : "")
-            );
-        }
-        if (gpuProxyPipelineTimeS !== null && Number.isFinite(gpuProxyPipelineTimeS)) {
-            lines.push(
-                `GPU proxy pipeline time: ${gpuProxyPipelineTimeS.toFixed(2)}s`
-                + (gpuProxyPipelinePct !== null && Number.isFinite(gpuProxyPipelinePct) ? ` (${gpuProxyPipelinePct.toFixed(1)}% of recording)` : "")
-            );
-        }
-        lines.push(`Health: poll_errors=${pollErrors} chunk_errors=${chunkErrors}`);
-        const refMeta = fixture.reference_meta && typeof fixture.reference_meta === "object" ? fixture.reference_meta : {};
-        if (Object.prototype.hasOwnProperty.call(refMeta, "boundary_partial_end")) {
-            lines.push(`Ref boundary_partial_end=${String(refMeta.boundary_partial_end)}`);
-        }
-        return lines.join("\n");
+        return [
+            Number.isFinite(uploadScore)
+                ? `Fixture benchmark: ${Math.round(uploadScore)}/100${fixtureId ? ` (${fixtureId})` : ""}`
+                : `Fixture benchmark: pending${fixtureId ? ` (${fixtureId})` : ""}`,
+            `Words: live ${wordLive} | ref ${wordRef}`
+                + ` | ratio ${wordRatio === null || wordRatio === undefined ? "n/a" : `${Number(wordRatio).toFixed(3)}x`}`
+                + ` | edit ${editDist}`,
+            `Run: ${chunksDone}/${chunksTotal} ready | failed ${chunksFailed} | pending ${chunksPending}`
+                + ` | recording ${recMs > 0 ? `${(recMs / 1000).toFixed(1)}s` : "n/a"}`,
+            `Chunk reasons: ${this._formatPositiveCountSummary(chunkReasons, { maxEntries: 4 })}`,
+            `GPU proxy: transcribe ${gpuProxyTranscribeTimeS !== null && Number.isFinite(gpuProxyTranscribeTimeS) ? `${gpuProxyTranscribeTimeS.toFixed(2)}s` : "n/a"}`
+                + ` (${gpuProxyTranscribePct !== null && Number.isFinite(gpuProxyTranscribePct) ? `${gpuProxyTranscribePct.toFixed(1)}%` : "n/a"})`
+                + ` | pipeline ${gpuProxyPipelineTimeS !== null && Number.isFinite(gpuProxyPipelineTimeS) ? `${gpuProxyPipelineTimeS.toFixed(2)}s` : "n/a"}`
+                + ` (${gpuProxyPipelinePct !== null && Number.isFinite(gpuProxyPipelinePct) ? `${gpuProxyPipelinePct.toFixed(1)}%` : "n/a"})`,
+        ].join("\n");
     }
 
     formatRunMetricsSummaryFromResult(result) {
@@ -2010,25 +2050,15 @@ export class LiveView {
         const gpuProxyTranscribePct = recordingS > 0 ? (gpuProxyTranscribeTimeS / recordingS) * 100 : null;
         const gpuProxyPipelinePct = recordingS > 0 ? (gpuProxyPipelineTimeS / recordingS) * 100 : null;
 
-        const lines = [];
-        lines.push(
-            `Run: ${chunksDone}/${chunksTotal} chunks ready`
-            + ` (failed ${chunksFailed}, pending ${chunksPending})`
-            + (recMs > 0 ? ` | recording ${(recMs / 1000).toFixed(1)}s` : "")
-        );
-        const reasonPairs = Object.entries(chunkReasons).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-        if (reasonPairs.length) {
-            lines.push(`Chunk reasons: ${reasonPairs.map(([k, v]) => `${k}=${v}`).join(", ")}`);
-        }
-        lines.push(
-            `GPU proxy transcribe time: ${gpuProxyTranscribeTimeS.toFixed(2)}s`
-            + (gpuProxyTranscribePct !== null && Number.isFinite(gpuProxyTranscribePct) ? ` (${gpuProxyTranscribePct.toFixed(1)}% of recording)` : "")
-        );
-        lines.push(
-            `GPU proxy pipeline time: ${gpuProxyPipelineTimeS.toFixed(2)}s`
-            + (gpuProxyPipelinePct !== null && Number.isFinite(gpuProxyPipelinePct) ? ` (${gpuProxyPipelinePct.toFixed(1)}% of recording)` : "")
-        );
-        return lines.join("\n");
+        return [
+            `Run: ${chunksDone}/${chunksTotal} ready | failed ${chunksFailed} | pending ${chunksPending}`
+                + ` | recording ${recMs > 0 ? `${(recMs / 1000).toFixed(1)}s` : "n/a"}`,
+            `Chunk reasons: ${this._formatPositiveCountSummary(chunkReasons, { maxEntries: 4 })}`,
+            `GPU proxy: transcribe ${gpuProxyTranscribeTimeS.toFixed(2)}s`
+                + ` (${gpuProxyTranscribePct !== null && Number.isFinite(gpuProxyTranscribePct) ? `${gpuProxyTranscribePct.toFixed(1)}%` : "n/a"})`
+                + ` | pipeline ${gpuProxyPipelineTimeS.toFixed(2)}s`
+                + ` (${gpuProxyPipelinePct !== null && Number.isFinite(gpuProxyPipelinePct) ? `${gpuProxyPipelinePct.toFixed(1)}%` : "n/a"})`,
+        ].join("\n");
     }
 
     applyLiveQualityEnvelope(envelope) {
@@ -2205,8 +2235,10 @@ export class LiveView {
 
         this.partialText = this.formatLiveSummary(result);
         this.runMetricsSummaryText = this.formatRunMetricsSummaryFromResult(result);
+        this.engineRuntimeSummaryText = this.formatEngineRuntimeSummary(result);
         this.applyVadStateFromResult(result);
         this.updatePartialPlaceholder();
+        this.updateEnginePlaceholder();
         this.updateCadenceIndicator();
         this.currentFixtureMeta = String(result.fixture_id || "").trim()
             ? {
@@ -2219,7 +2251,6 @@ export class LiveView {
 
         const finalizationState = String(result.finalization_state || "").trim().toLowerCase();
         const ready = !!e.ready || finalizationState === "ready";
-        const fixtureIdForBenchmark = String(result.fixture_id || (this.currentFixtureMeta && this.currentFixtureMeta.fixture_id) || "").trim();
 
         if (ready) {
             this.awaitingLiveResult = false;
@@ -2288,53 +2319,9 @@ export class LiveView {
         a.remove();
     }
 
-    formatStatsPayload(payload) {
-        const p = payload && typeof payload === "object" ? payload : {};
-        const num = (key, fallback = 0) => Number(p[key] ?? fallback);
-        const boolish = (key) => {
-            const v = p[key];
-            if (v === undefined || v === null) return "?";
-            return String(v);
-        };
-
-        const lines = [
-            `bytes=${num("bytes_received")} frames=${num("frames_received")} uptime=${num("uptime_s").toFixed(2)}s`,
-            `mode=${String(p.live_mode || "single_lane")} recording=${boolish("live_recording_state")} finalization=${boolish("live_finalization_state")}`,
-            `rec_ms=${num("live_recording_duration_ms")} chunks=${num("live_commits_done")}/${num("live_commits_total")} failed=${num("live_commits_failed")}`,
-            `jobs pending=${num("live_jobs_pending")} inflight=${boolish("live_inflight")}`,
-        ];
-        const g = p.rolling_guardrails && typeof p.rolling_guardrails === "object" ? p.rolling_guardrails : null;
-        if (g) {
-            const checks = Number(g.vad_checks);
-            const speech = Number(g.vad_speech_allows);
-            const hangover = Number(g.vad_hangover_allows);
-            const silence = Number(g.vad_silence_skips);
-            if (Number.isFinite(checks) || Number.isFinite(speech) || Number.isFinite(hangover) || Number.isFinite(silence)) {
-                lines.push(
-                    `vad checks=${Number.isFinite(checks) ? checks : "?"}`
-                    + ` speech=${Number.isFinite(speech) ? speech : "?"}`
-                    + ` hangover=${Number.isFinite(hangover) ? hangover : "?"}`
-                    + ` silence=${Number.isFinite(silence) ? silence : "?"}`
-                );
-            }
-        }
-
-        const extra = Object.keys(p)
-            .filter((k) => k !== "type" && k !== "session_id" && k !== "seq")
-            .sort()
-            .map((k) => `${k}: ${typeof p[k] === "object" ? JSON.stringify(p[k]) : String(p[k])}`);
-        if (extra.length) {
-            lines.push("");
-            lines.push("raw:");
-            lines.push(...extra);
-        }
-        return lines.join("\n");
-    }
-
     updateControls() {
         void this.syncScreenWakeLock();
         const wsConnecting = !!(this.sessionService && this.sessionService.isConnecting());
-        const wsOpen = !!(this.sessionService && this.sessionService.isOpen());
 
         // Determine UI phase
         let phase = "idle";
@@ -2402,6 +2389,7 @@ export class LiveView {
             const sid = this.sessionService ? this.sessionService.getSessionId() : "";
             this.el.sessionId.textContent = sid || "(none)";
         }
+        this.updateEnginePlaceholder();
         if (this.audioSettingsPanelOpen) {
             this.refreshAudioSettingsPanel({ readCurrent: true });
         }
@@ -3201,7 +3189,7 @@ export class LiveView {
         this.el.partialText.textContent = "";
         this.el.partialText.setAttribute("data-empty", "1");
 
-        let placeholder = "Chunk status appears here.";
+        let placeholder = "Processing summary appears here.";
         if (this.audioStreaming && this.audioPaused) {
             placeholder = "Recording paused.";
         } else if (this.audioStreaming) {
@@ -3214,6 +3202,45 @@ export class LiveView {
             placeholder = "Recording finished. Waiting for final transcript batches.";
         }
         this.el.partialText.setAttribute("data-placeholder", placeholder);
+    }
+
+    updateEnginePlaceholder() {
+        if (!this.el.engineText) return;
+
+        const text = !!String(this.engineRuntimeSummaryText || "").trim()
+            ? String(this.engineRuntimeSummaryText)
+            : "";
+        if (text) {
+            const lines = text.split("\n");
+            this.el.engineText.textContent = "";
+            const frag = document.createDocumentFragment();
+            for (let i = 0; i < lines.length; i += 1) {
+                const line = document.createElement("span");
+                line.textContent = lines[i];
+                if (i === 2 && this.engineRuntimeInflightStale) {
+                    line.className = "live-engine-stale-line";
+                }
+                frag.appendChild(line);
+                if (i < lines.length - 1) {
+                    frag.appendChild(document.createElement("br"));
+                }
+            }
+            this.el.engineText.appendChild(frag);
+            this.el.engineText.setAttribute("data-empty", "0");
+            this.el.engineText.setAttribute("data-placeholder", "");
+            return;
+        }
+
+        this.el.engineText.textContent = "";
+        this.el.engineText.setAttribute("data-empty", "1");
+
+        let placeholder = "Engine runtime details appear here once live results start arriving.";
+        if (this.audioStreaming || this.fixtureRunActive || this.awaitingLiveResult || this.remoteState === "finalizing") {
+            placeholder = "Engine runtime details appear after the live engine has emitted result state.";
+        } else if (this.resultEnvelope && this.resultEnvelope.result) {
+            placeholder = "No engine runtime details were captured for this run.";
+        }
+        this.el.engineText.setAttribute("data-placeholder", placeholder);
     }
 
     handleServerMessage(raw) {
@@ -3248,17 +3275,9 @@ export class LiveView {
                 this.setStatus(this.remoteState || "connected", `Control received: ${ctl || "ack"}`);
             }
         } else if (t === "pong") {
-            // Keep the end-user status copy stable; pong remains visible in the event log.
+            // Keep the visible status stable; pong is ignored in the Dev Tools cards.
         } else if (t === "stats") {
-            const b = Number(payload.bytes_received || 0);
-            const f = Number(payload.frames_received || 0);
-            const s = Number(payload.uptime_s || 0);
-            const decodeMs = Number(payload.decode_ms_last || 0);
-            const rtf = Number(payload.rtf || 0);
             this.applyVadStateFromStats(payload);
-            this.setDevStats(
-                `Stats: ${b} bytes, ${f} frames, ${s.toFixed(2)}s, decode ${decodeMs.toFixed(2)}ms, rtf ${rtf.toFixed(3)}\n\n${this.formatStatsPayload(payload)}`
-            );
         } else if (t === "ended") {
             this.stopAudioCapture({ quiet: true });
             this.stopRecordingTimer({ reset: false });
