@@ -1545,6 +1545,13 @@ export class LiveView {
         return `${(value / 1000).toFixed(2)}s`;
     }
 
+    _formatTimingSeconds(sec) {
+        const value = Number(sec);
+        if (!Number.isFinite(value) || value < 0) return "n/a";
+        if (value < 1) return `${Math.round(value * 1000)}ms`;
+        return `${value.toFixed(2)}s`;
+    }
+
     _formatPositiveCountSummary(source, options = {}) {
         const emptyLabel = String(options.emptyLabel || "none");
         const maxEntriesRaw = Number(options.maxEntries);
@@ -1994,7 +2001,6 @@ export class LiveView {
         const q = qenv.quality && typeof qenv.quality === "object" ? qenv.quality : {};
         const fixture = q.fixture && typeof q.fixture === "object" ? q.fixture : {};
         const score = q.score && typeof q.score === "object" ? q.score : {};
-        const run = q.run_metrics && typeof q.run_metrics === "object" ? q.run_metrics : {};
 
         const fixtureId = String(qenv.fixture_id || fixture.fixture_id || "").trim();
         const uploadScore = Number(score.upload_similarity_score);
@@ -2002,18 +2008,6 @@ export class LiveView {
         const wordRef = Number(score.word_count_reference || 0);
         const wordRatio = score.word_count_ratio_live_to_ref;
         const editDist = Number(score.word_edit_distance || 0);
-        const recMs = Number(run.recording_duration_ms || 0);
-        const chunksTotal = Number(run.chunks_total || 0);
-        const chunksFailed = Number(run.chunks_failed || 0);
-        const chunksDone = Number(run.chunks_done || 0);
-        const chunksPending = Number(run.chunks_pending || 0);
-        const chunkReasons = run.chunk_reason_counts && typeof run.chunk_reason_counts === "object"
-            ? run.chunk_reason_counts
-            : {};
-        const gpuProxyTranscribeTimeS = run.gpu_proxy_transcribe_total_s == null ? null : Number(run.gpu_proxy_transcribe_total_s);
-        const gpuProxyPipelineTimeS = run.gpu_proxy_pipeline_total_s == null ? null : Number(run.gpu_proxy_pipeline_total_s);
-        const gpuProxyTranscribePct = run.gpu_proxy_transcribe_pct_of_recording == null ? null : Number(run.gpu_proxy_transcribe_pct_of_recording);
-        const gpuProxyPipelinePct = run.gpu_proxy_pipeline_pct_of_recording == null ? null : Number(run.gpu_proxy_pipeline_pct_of_recording);
 
         return [
             Number.isFinite(uploadScore)
@@ -2022,13 +2016,6 @@ export class LiveView {
             `Words: live ${wordLive} | ref ${wordRef}`
                 + ` | ratio ${wordRatio === null || wordRatio === undefined ? "n/a" : `${Number(wordRatio).toFixed(3)}x`}`
                 + ` | edit ${editDist}`,
-            `Run: ${chunksDone}/${chunksTotal} ready | failed ${chunksFailed} | pending ${chunksPending}`
-                + ` | recording ${recMs > 0 ? `${(recMs / 1000).toFixed(1)}s` : "n/a"}`,
-            `Chunk reasons: ${this._formatPositiveCountSummary(chunkReasons, { maxEntries: 4 })}`,
-            `GPU proxy: transcribe ${gpuProxyTranscribeTimeS !== null && Number.isFinite(gpuProxyTranscribeTimeS) ? `${gpuProxyTranscribeTimeS.toFixed(2)}s` : "n/a"}`
-                + ` (${gpuProxyTranscribePct !== null && Number.isFinite(gpuProxyTranscribePct) ? `${gpuProxyTranscribePct.toFixed(1)}%` : "n/a"})`
-                + ` | pipeline ${gpuProxyPipelineTimeS !== null && Number.isFinite(gpuProxyPipelineTimeS) ? `${gpuProxyPipelineTimeS.toFixed(2)}s` : "n/a"}`
-                + ` (${gpuProxyPipelinePct !== null && Number.isFinite(gpuProxyPipelinePct) ? `${gpuProxyPipelinePct.toFixed(1)}%` : "n/a"})`,
         ].join("\n");
     }
 
@@ -2043,21 +2030,60 @@ export class LiveView {
             ? r.chunk_reason_counts
             : {};
 
-        const gpuProxyTranscribeTimeS = Number(r.gpu_proxy_transcribe_s || 0);
-        const gpuProxyPipelineTimeS = Number(r.gpu_proxy_pipeline_s || 0);
+        const asrTranscribeTimeS = Number(r.asr_transcribe_s || 0);
+        const asrLoadAudioTimeS = Number(r.asr_load_audio_s || 0);
+        const asrRunnerWallTimeS = Number(r.asr_runner_wall_s || 0);
+        const asrPoolWallTimeS = Number(r.asr_pool_wall_s || 0);
+        const asrPoolIngestTimeS = Number(r.asr_pool_ingest_s || 0);
+        const asrPoolQueueTimeS = Number(r.asr_pool_queue_wait_s || 0);
+        const asrPoolOutsideRunnerTimeS = Number(r.asr_pool_outside_runner_s || 0);
+        const asrBackendWallTimeS = Number(r.asr_backend_wall_s || 0);
+        const asrBackendWavWriteTimeS = Number(r.asr_backend_wav_write_s || 0);
+        const asrBackendSubmitTimeS = Number(r.asr_backend_submit_s || 0);
+        const asrBackendCollectTimeS = Number(r.asr_backend_result_collect_s || 0);
+        const asrBackendOutsidePoolTimeS = Number(r.asr_backend_outside_pool_s || 0);
 
-        const recordingS = recMs > 0 ? recMs / 1000 : 0;
-        const gpuProxyTranscribePct = recordingS > 0 ? (gpuProxyTranscribeTimeS / recordingS) * 100 : null;
-        const gpuProxyPipelinePct = recordingS > 0 ? (gpuProxyPipelineTimeS / recordingS) * 100 : null;
+        const transcribeBaselineS = Number.isFinite(asrTranscribeTimeS) && asrTranscribeTimeS > 0
+            ? asrTranscribeTimeS
+            : null;
+        const formatTranscribeRelativePct = (value) => (
+            transcribeBaselineS !== null && Number.isFinite(value)
+                ? `${((Number(value) / transcribeBaselineS) * 100).toFixed(1)}%`
+                : "n/a"
+        );
+        const formatRunnerCumulativePct = (extraValue) => (
+            transcribeBaselineS !== null && Number.isFinite(extraValue)
+                ? `${(100 + ((Number(extraValue) / transcribeBaselineS) * 100)).toFixed(1)}%`
+                : "n/a"
+        );
+        const timingNotes = [
+            "Timing notes:",
+            "- percentages use ASR runner transcribe = 100%",
+            "- submit overlaps with pool wall; non-pool is exclusive",
+        ];
 
         return [
             `Run: ${chunksDone}/${chunksTotal} ready | failed ${chunksFailed} | pending ${chunksPending}`
                 + ` | recording ${recMs > 0 ? `${(recMs / 1000).toFixed(1)}s` : "n/a"}`,
             `Chunk reasons: ${this._formatPositiveCountSummary(chunkReasons, { maxEntries: 4 })}`,
-            `GPU proxy: transcribe ${gpuProxyTranscribeTimeS.toFixed(2)}s`
-                + ` (${gpuProxyTranscribePct !== null && Number.isFinite(gpuProxyTranscribePct) ? `${gpuProxyTranscribePct.toFixed(1)}%` : "n/a"})`
-                + ` | pipeline ${gpuProxyPipelineTimeS.toFixed(2)}s`
-                + ` (${gpuProxyPipelinePct !== null && Number.isFinite(gpuProxyPipelinePct) ? `${gpuProxyPipelinePct.toFixed(1)}%` : "n/a"})`,
+            ...timingNotes,
+            `ASR runner: transcribe ${this._formatTimingSeconds(asrTranscribeTimeS)}`
+                + ` (${transcribeBaselineS !== null ? "100%" : "n/a"})`
+                + ` | load_audio ${this._formatTimingSeconds(asrLoadAudioTimeS)}`
+                + ` (${formatRunnerCumulativePct(asrLoadAudioTimeS)})`
+                + ` | wall ${this._formatTimingSeconds(asrRunnerWallTimeS)}`
+                + ` (${formatTranscribeRelativePct(asrRunnerWallTimeS)})`,
+            `Pool: wall ${this._formatTimingSeconds(asrPoolWallTimeS)}`
+                + ` (${formatTranscribeRelativePct(asrPoolWallTimeS)})`
+                + ` | ingest ${this._formatTimingSeconds(asrPoolIngestTimeS)}`
+                + ` | queue ${this._formatTimingSeconds(asrPoolQueueTimeS)}`
+                + ` | non-runner ${this._formatTimingSeconds(asrPoolOutsideRunnerTimeS)}`,
+            `Backend: wall ${this._formatTimingSeconds(asrBackendWallTimeS)}`
+                + ` (${formatTranscribeRelativePct(asrBackendWallTimeS)})`
+                + ` | wav ${this._formatTimingSeconds(asrBackendWavWriteTimeS)}`
+                + ` | submit ${this._formatTimingSeconds(asrBackendSubmitTimeS)}`
+                + ` | collect ${this._formatTimingSeconds(asrBackendCollectTimeS)}`
+                + ` | non-pool ${this._formatTimingSeconds(asrBackendOutsidePoolTimeS)}`,
         ].join("\n");
     }
 
@@ -2070,9 +2096,7 @@ export class LiveView {
 
         const sid = String(e.session_id || this.getCurrentSessionId() || "").trim();
         const revision = Number(
-            e && e.quality && e.quality.run_metrics && e.quality.run_metrics.transcript_revision
-                ? e.quality.run_metrics.transcript_revision
-                : (this.resultEnvelope && this.resultEnvelope.result ? this.resultEnvelope.result.transcript_revision : 0)
+            this.resultEnvelope && this.resultEnvelope.result ? this.resultEnvelope.result.transcript_revision : 0
         );
         this.qualityLoadedSessionId = sid;
         this.qualityLoadedRevision = Number.isFinite(revision) ? revision : -1;
