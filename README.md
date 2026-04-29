@@ -180,3 +180,7 @@ static deployment targets. Adjust them for your own deployment layout.
 ### Live Recording Dev Tools
 
 ![Live recording diagnostics](landing-screenshots/omniscripta_live_recording_diagnostics.png)
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
