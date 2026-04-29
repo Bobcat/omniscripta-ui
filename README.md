@@ -8,8 +8,6 @@ transcript editing, document review, topic navigation, and export workflows.
 The app is built as a lightweight JavaScript/CSS frontend and deploys its build
 artifacts into the `static/` directory of the Omniscripta backend repo.
 
-![Omniscripta live recording](landing-screenshots/omniscripta_live_recording.png)
-
 ## Index
 
 - [What It Does](#what-it-does)
@@ -162,6 +160,8 @@ Those scripts contain environment-specific defaults for local checkout paths and
 static deployment targets. Adjust them for your own deployment layout.
 
 ## Screenshots
+
+![Omniscripta live recording](landing-screenshots/omniscripta_live_recording.png)
 
 ![Upload transcription progress](landing-screenshots/omniscripta_upload_transcribing.png)
 
