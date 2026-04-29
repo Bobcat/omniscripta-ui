@@ -161,12 +161,22 @@ static deployment targets. Adjust them for your own deployment layout.
 
 ## Screenshots
 
+### Live Recording
+
 ![Omniscripta live recording](landing-screenshots/omniscripta_live_recording.png)
 
-![Live recording diagnostics](landing-screenshots/omniscripta_live_recording_diagnostics.png)
+### Upload Transcription
 
 ![Upload transcription progress](landing-screenshots/omniscripta_upload_transcribing.png)
 
+### Transcript Editor
+
 ![Transcript editor](landing-screenshots/omniscripta_transcript_editor.png)
 
+### Document Topics
+
 ![Document topics](landing-screenshots/omniscripta_document_topics.png)
+
+### Live Recording Dev Tools
+
+![Live recording diagnostics](landing-screenshots/omniscripta_live_recording_diagnostics.png)
