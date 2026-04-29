@@ -19,6 +19,7 @@ artifacts into the `static/` directory of the Omniscripta backend repo.
 - [Development](#development)
 - [Build And Deploy](#build-and-deploy)
 - [Screenshots](#screenshots)
+- [License](#license)
 
 ## What It Does
 
