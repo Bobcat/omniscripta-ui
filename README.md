@@ -163,6 +163,8 @@ static deployment targets. Adjust them for your own deployment layout.
 
 ![Omniscripta live recording](landing-screenshots/omniscripta_live_recording.png)
 
+![Live recording diagnostics](landing-screenshots/omniscripta_live_recording_diagnostics.png)
+
 ![Upload transcription progress](landing-screenshots/omniscripta_upload_transcribing.png)
 
 ![Transcript editor](landing-screenshots/omniscripta_transcript_editor.png)
