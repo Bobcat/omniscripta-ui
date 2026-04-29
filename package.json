@@ -1,7 +1,7 @@
 {
   "name": "omniscripta-ui",
   "version": "1.0.0",
-  "description": "",
+  "description": "Frontend source for Omniscripta: live recording, uploaded-audio transcription, transcript editing, document review, and topic navigation.",
   "main": "index.js",
   "scripts": {
     "build:js": "esbuild js/app.js --bundle --outfile=/tmp/omniscripta-ui-check-app.bundle.js --target=es2020 --log-level=error",
@@ -15,13 +15,12 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
   "bugs": {
     "url": "https://github.com/Bobcat/omniscripta-ui/issues"
   },
   "homepage": "https://github.com/Bobcat/omniscripta-ui#readme",
   "dependencies": {
-    "@spa-foundation/core": "file:../../../home/gunnar/projects/spa-foundation/core"
+    "@spa-foundation/core": "file:../spa-foundation/core"
   },
   "devDependencies": {
     "esbuild": "^0.27.2"

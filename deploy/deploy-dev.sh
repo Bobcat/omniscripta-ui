@@ -23,6 +23,7 @@ if [ ! -d "$FOUNDATION_CORE_DIR" ]; then
 fi
 rm -rf "$APP_DIR/node_modules/@spa-foundation/core"
 npm --prefix "$APP_DIR" install --no-audit --no-fund \
+  --no-save \
   "@spa-foundation/core@file:$FOUNDATION_CORE_DIR" >/dev/null
 
 # 1. Clean legacy files
