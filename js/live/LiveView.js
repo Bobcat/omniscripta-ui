@@ -1,7 +1,41 @@
-import { LiveAudioService, downsampleBuffer, float32ToPcm16LeBuffer } from "../services/LiveAudioService.js";
-import { LiveSessionService } from "../services/LiveSessionService.js";
+import { LiveAudioService } from "./LiveAudioService.js";
+import { LiveSessionService } from "./LiveSessionService.js";
 import { TRANSCRIPT_LANGUAGES } from "../constants/languages.js";
-import { buildSpeakerParagraphs, DEFAULT_TRANSCRIPT_PARAGRAPH_RULES } from "../text/paragraphs.js";
+import { DEV_LIVE_FIXTURE_OPTIONS, LIVE_DEMO_LANGUAGE_CODE, LIVE_DEMO_QUERY_VALUE } from "./dev/liveFixtures.js";
+import {
+    cancelFixtureRun as cancelLiveFixtureRun,
+    decodeAudioArrayBufferToMono as decodeFixtureAudioArrayBufferToMono,
+    getSelectedFixtureConfig as getSelectedLiveFixtureConfig,
+    startFixtureInjectRun as startLiveFixtureInjectRun,
+    startFixtureRun as startLiveFixtureRun,
+    startSelectedFixtureRun as startSelectedLiveFixtureRun,
+    startUploadedAudioInjectRun as startUploadedLiveAudioInjectRun,
+    streamDecodedAudioRealtime as streamDecodedFixtureAudioRealtime,
+} from "./dev/liveFixtureRuns.js";
+import { formatDurationMs, percentile } from "./dev/summaryFormatters.js";
+import {
+    formatEngineRuntimeSummaryPanel,
+    formatLiveSummaryPanel,
+    formatQualitySummaryPanel,
+    formatRunMetricsSummaryPanel,
+} from "./dev/summaryPanels.js";
+import {
+    DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES,
+    buildVisibleTranscriptState,
+    formatPreviewSuffixText,
+    formatSegmentBlocksDiarizeHardPresentation,
+    normalizeSegmentText,
+    speakerLabelFromToken,
+} from "./transcript/transcriptFormatting.js";
+import {
+    createLiveVadState,
+    extractEngineState,
+    nextLiveVadStateFromResult,
+    nextLiveVadStateFromStats,
+    shouldShowLiveVadSpeechBadge,
+    vadLabelForPhase,
+} from "./transcript/vadState.js";
+import { renderLiveViewHtml } from "./liveViewTemplate.js";
 import { createDialogDragController } from "@spa-foundation/core";
 
 const STATUS_LABELS = {
@@ -18,53 +52,7 @@ const STATUS_LABELS = {
     error: "Error",
 };
 
-const LIVE_VAD_PHASE_LABELS = {
-    speech: "Speech detected",
-    hangover: "Recent speech",
-    silence: "No speech",
-    disabled: "Disabled",
-    unknown: "Unknown",
-};
-const LIVE_VAD_SPEECH_BADGE_MAX_AGE_MS = 220;
-const LIVE_VAD_SPEECH_BADGE_HOLD_MS = 900;
-
-const DEV_LIVE_FIXTURES = {
-    panel120v1: {
-        id: "panel_120s_v1",
-        version: "v1",
-        label: "Run panel fixture (120s)",
-        url: "/dev-fixtures/panel_discussion_120s.mp3",
-        durationMs: 120000,
-        startDelayMs: 700,
-        tailDelayMs: 1200,
-        mode: "playback",
-    },
-    panel120v1Inject: {
-        id: "panel_120s_v1",
-        version: "v1",
-        label: "Run panel fixture (inject, 120s)",
-        url: "/dev-fixtures/panel_discussion_120s.mp3",
-        durationMs: 120000,
-        startDelayMs: 700,
-        tailDelayMs: 1200,
-        mode: "inject",
-    },
-};
-
-const DEV_LIVE_FIXTURE_OPTIONS = [
-    {
-        value: "panel120v1",
-        label: "Panel discussion (120s) · v1",
-    },
-];
-
-const LIVE_DEMO_QUERY_VALUE = "live-demo";
-
-const LIVE_SPEAKER_TAG_PREFIX_RE = /^\s*\[?\s*(speaker[_ ]?\d+|spk[_ ]?\d+)\s*\]?\s*[:\-]/i;
-const LIVE_SPEAKER_TAG_GLOBAL_RE = /\[?\s*(speaker[_ ]?\d+|spk[_ ]?\d+)\s*\]?\s*[:\-]\s*/gi;
-const DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES = { ...DEFAULT_TRANSCRIPT_PARAGRAPH_RULES };
 const LIVE_LANGUAGE_STORAGE_KEY = "omniscripta_live_language_v1";
-const LIVE_DEMO_LANGUAGE_CODE = "en";
 
 export class LiveView {
     constructor(app) {
@@ -82,7 +70,7 @@ export class LiveView {
         this.previewSeq = -1;
         this.partialText = "";
         this.developerToolsOpen = false;
-        this.vadState = this.createVadState();
+        this.vadState = createLiveVadState();
 
         this.audioStreaming = false;
         this.audioPaused = false;
@@ -150,263 +138,7 @@ export class LiveView {
     }
 
     getHtml() {
-        const langOptions = [
-            "<option value=\"\">Auto detect</option>",
-            ...TRANSCRIPT_LANGUAGES.map((l) => (`<option value=\"${String(l.code || "")}\">${String(l.flag || "")} ${String(l.name || l.code || "")}</option>`)),
-        ].join("");
-        return `
-      <div class="live-wrap">
-        <h1 class="sr-only">Live Recording Session</h1>
-
-        <!-- Main content area (always 100vh) -->
-        <div class="live-main">
-
-        <!-- Top bar: badge + timer -->
-        <header class="live-header">
-          <div class="header-left">
-            <span class="live-status-badge status-idle" id="liveStatusBadge">Ready</span>
-          </div>
-          <div class="header-right">
-            <span class="live-vad-badge hidden" id="liveVadBadge" aria-live="polite">Listening...</span>
-            <div class="timer timer-top hidden" id="liveDurationTextTop">00:00</div>
-          </div>
-        </header>
-
-        <!-- Content area (no card, full height) -->
-        <div class="live-content-area" id="liveTranscriptArea">
-          <div class="live-demo-overlay hidden" id="liveDemoOverlay" aria-live="polite">
-            <div class="live-demo-dialog">
-              <div class="live-demo-eyebrow">Demo mode</div>
-              <h2>Choose a live demo</h2>
-              <p class="live-demo-copy">
-                Try the real live transcription view with a prerecorded sample. Pick the path that fits what you want to experience.
-              </p>
-              <div class="live-demo-option">
-                <button class="btn-primary-start live-demo-primary" id="liveDemoInjectBtn" type="button">Instant demo</button>
-                <p>
-                  Demo mode: A prerecorded sample is fed directly into live transcription. Transcript text appears immediately, but you will not hear the audio through your speakers.
-                </p>
-              </div>
-              <div class="live-demo-option">
-                <button class="btn-outline live-demo-secondary" id="liveDemoPlaybackBtn" type="button">Speaker + mic demo</button>
-                <p>
-                  Plays the sample through your speakers and records it through your microphone. More realistic, but it depends on your browser, speaker volume, and mic setup.
-                </p>
-              </div>
-              <div class="live-demo-actions">
-                <button class="btn-outline live-demo-skip" id="liveDemoSkipBtn" type="button">Use live view normally</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Idle placeholder -->
-          <div class="live-placeholder" id="livePlaceholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-              <line x1="12" y1="19" x2="12" y2="22"></line>
-            </svg>
-            <span>Click start to begin recording...</span>
-
-            <!-- Idle: round start button moved inside placeholder -->
-            <div class="live-float-idle" id="liveFloatIdle" style="margin-top: 16px;">
-              <button class="btn-primary-start" id="liveStartBtn" type="button" title="Start Recording" aria-label="Start Recording"></button>
-            </div>
-          </div>
-
-          <!-- Transcript text (hidden when idle) -->
-          <div id="liveFinalText" class="live-final-text hidden" aria-live="polite" tabindex="0">
-            <span id="liveFinalTextMain" class="live-final-text-main"></span><span id="liveFinalTextPreview" class="live-final-text-preview hidden"></span>
-          </div>
-
-        </div>
-
-        <!-- Fixed Bottom Controls -->
-        <div class="live-bottom-bar" id="liveControlsFloat">
-
-          <!-- Left: Desktop Timer + Language -->
-          <div class="controls-left">
-            <div class="timer timer-bottom-desktop" id="liveDurationTextBottom">00:00</div>
-            <div class="live-language-picker" id="liveLanguagePicker">
-              <button
-                id="liveAudioSettingsBtn"
-                class="live-audio-settings-btn"
-                type="button"
-                title="Advanced audio options"
-                aria-label="Advanced audio options"
-                aria-expanded="false"
-              >
-                <span class="material-symbols-outlined" aria-hidden="true">settings</span>
-              </button>
-              <select id="liveLanguageSelect" class="live-select live-language-select" title="Auto is recommended unless you are sure about the spoken language.">
-                ${langOptions}
-              </select>
-            </div>
-          </div>
-
-          <!-- Center: Actions -->
-          <div class="controls-center">
-            <!-- Listening: Pause + Finish -->
-            <div class="live-float-listening hidden" id="liveFloatListening">
-              <button class="btn-secondary" id="livePauseBtn" type="button">Pause</button>
-              <button class="btn-danger" id="liveStopBtn" type="button">Finish</button>
-            </div>
-
-            <!-- Paused: Resume + Finish -->
-            <div class="live-float-paused hidden" id="liveFloatPaused">
-              <button class="btn-secondary" id="liveResumeBtn" type="button">Resume</button>
-              <button class="btn-danger" id="liveStopPausedBtn" type="button">Finish</button>
-            </div>
-
-            <!-- Connecting / Finalizing: status message -->
-            <div class="live-float-processing hidden" id="liveFloatProcessing">
-              <span class="live-float-processing-text" id="liveProcessingText">Connecting...</span>
-            </div>
-          </div>
-
-          <!-- Right: Exports + Dev Toggle -->
-          <div class="controls-right" style="flex-wrap: nowrap; justify-content: flex-end;">
-            <!-- Finished: downloads + clear -->
-            <div class="live-float-finished hidden" id="liveFloatFinished" style="display: flex; gap: 6px; flex-wrap: nowrap; justify-content: flex-end;">
-              <button class="btn-outline btn-compact" id="liveDownloadWavBtn" type="button" disabled>WAV</button>
-              <button class="btn-outline btn-compact" id="liveDownloadTxtBtn" type="button" disabled>TXT</button>
-              <button class="btn-outline btn-compact" id="liveDownloadSrtBtn" type="button" disabled>SRT</button>
-              <button class="btn-outline btn-compact" id="liveDownloadPcBtn" type="button" disabled>P/C</button>
-              <button class="btn-outline btn-compact" id="liveClearBtn" type="button" style="color: var(--accent-red); border-color: transparent;">Clear</button>
-            </div>
-
-            <!-- Dev Tools toggle (always visible) -->
-            <button class="btn-outline btn-dev-toggle" id="liveDevToggleBtn" type="button" aria-expanded="false" title="Dev Tools">
-              <span class="dev-toggle-icon">⚙</span>
-              <span class="dev-toggle-text">Dev Tools</span>
-            </button>
-          </div>
-
-        </div>
-
-        </div>
-        <!-- /live-main -->
-
-        <!-- Advanced audio panel -->
-        <div class="live-audio-panel hidden" id="liveAudioPanel" role="dialog" aria-modal="false" aria-label="Advanced audio options">
-          <div class="live-audio-panel-card dialog-card" id="liveAudioPanelCard">
-            <div class="dialog-topbar dialog-drag-handle" id="liveAudioPanelDragHandle" title="Drag to move">
-              <div class="dialog-title">Advanced audio</div>
-              <div class="dialog-grip" aria-hidden="true">⋮⋮</div>
-            </div>
-            <div class="dialog-body live-audio-panel-body">
-              <div class="live-audio-pregain">
-                <div class="live-audio-pregain-head">
-                  <label for="liveAudioPreGain">Mic pre-gain</label>
-                  <span class="live-audio-ui-value" id="liveAudioPreGainUiValue">1.0x</span>
-                </div>
-                <input id="liveAudioPreGain" type="range" min="0.5" max="3.0" step="0.1" value="1.0" />
-              </div>
-
-              <div class="live-vu-meter-wrap">
-                <div class="live-vu-meter-label">Input level</div>
-                <div class="live-vu-meter-bar">
-                  <canvas id="liveAudioVUMeter" width="200" height="20"></canvas>
-                </div>
-              </div>
-
-              <div class="live-audio-toggles">
-                <label class="live-audio-toggle">
-                  <input id="liveAudioAutoGainControl" type="checkbox" />
-                  <span>Auto gain control</span>
-                </label>
-              </div>
-
-              <div class="live-audio-sep"></div>
-
-              <div class="live-audio-kv"><span class="muted">Device</span><span id="liveAudioCurrentDevice">Start recording to read</span></div>
-              <div class="live-audio-kv"><span class="muted">Input sample rate</span><span id="liveAudioCurrentSampleRate">Start recording to read</span></div>
-              <div class="live-audio-kv"><span class="muted">Channel count</span><span id="liveAudioCurrentChannelCount">Start recording to read</span></div>
-              <div class="live-audio-kv"><span class="muted">Chunk cadence</span><span id="liveAudioCurrentChunkMs">40 ms</span></div>
-
-              <div class="live-audio-panel-actions">
-                <button class="mini live-audio-panel-reset" id="liveAudioPanelResetBtn" type="button">Reset to defaults</button>
-                <div class="live-audio-panel-actions-right">
-                  <button class="mini live-audio-panel-record" id="liveAudioPanelRecordBtn" type="button">Start Recording</button>
-                  <button class="mini live-audio-panel-close" id="liveAudioPanelCloseBtn" type="button">Close</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-
-        <!-- Dev section (hidden by default) -->
-        <div class="live-dev-section hidden" id="liveDevSection">
-
-          <!-- Session card -->
-          <div class="live-card live-controls">
-
-            <div class="live-session-row">
-              <div class="muted">Session ID</div>
-              <code id="liveSessionId">(none)</code>
-            </div>
-
-            <div class="live-session-row">
-              <div class="muted">Fixture (dev)</div>
-              <select id="liveFixtureSelect" class="live-select">
-                ${DEV_LIVE_FIXTURE_OPTIONS.map((opt) => (
-            `<option value="${String(opt.value || "")}">${String(opt.label || opt.value || "")}</option>`
-        )).join("")}
-              </select>
-            </div>
-
-            <div class="live-secondary-row live-secondary-row-2up">
-              <button id="liveRunFixturePlayBtn" type="button">Play fixture</button>
-              <button id="liveRunFixtureInjectBtn" type="button">Inject fixture</button>
-            </div>
-
-            <div class="live-secondary-row">
-              <button id="liveOpenBenchmarkMatrixBtn" type="button">Benchmark matrix</button>
-            </div>
-
-            <div class="live-session-row">
-              <div class="muted">Audio file (dev)</div>
-              <div class="live-file-picker">
-                <input id="liveInjectAudioFileInput" class="live-file-input" type="file" accept="audio/*" />
-                <button id="liveChooseAudioFileBtn" type="button">Choose file</button>
-                <div id="liveInjectAudioFileName" class="live-file-name">No file selected</div>
-              </div>
-            </div>
-
-            <div class="live-secondary-row">
-              <button id="liveRunUploadedInjectBtn" type="button">Inject audio file</button>
-            </div>
-          </div>
-
-          <!-- Run/Benchmark card -->
-          <div class="live-card live-run-panels">
-
-            <div class="live-run-panel-card">
-              <div class="live-label">Status / processing</div>
-              <div class="live-partial-text" id="livePartialText" data-placeholder="Processing summary appears here."></div>
-            </div>
-
-            <div class="live-run-panel-card">
-              <div class="live-label">Cadence / snappiness</div>
-              <div class="live-partial-text live-quality-report" id="liveCadenceText" data-placeholder="Cadence indicator appears once the visible transcript starts updating."></div>
-            </div>
-
-            <div class="live-run-panel-card live-run-panel-card-wide">
-              <div class="live-label">Run metrics / benchmark</div>
-              <div class="live-partial-text live-quality-report" id="liveQualityText" data-placeholder="Quality score appears here for fixture runs."></div>
-            </div>
-
-            <div class="live-run-panel-card">
-              <div class="live-label">Engine runtime</div>
-              <div class="live-partial-text live-quality-report" id="liveEngineText" data-placeholder="Engine runtime details appear here once live results start arriving."></div>
-            </div>
-          </div>
-
-        </div>
-
-      </div>
-    `;
+        return renderLiveViewHtml();
     }
 
 
@@ -547,12 +279,11 @@ export class LiveView {
                     this.setStatus("connected", "Connected. Ready for recording.");
                     this.updateControls();
                 },
-                onClose: (ev) => {
+                onClose: () => {
                     const remoteStateBeforeClose = String(this.remoteState || "").toLowerCase();
                     const awaitingResultBeforeClose = !!this.awaitingLiveResult;
-                    this.cancelFixtureRun("session_socket_closed");
-                    this.appendLog(`Socket closed (code=${ev && ev.code !== undefined ? ev.code : "?"}, reason=${ev && ev.reason ? ev.reason : "none"})`);
-                    this.stopAudioCapture({ quiet: true });
+                    this.cancelFixtureRun();
+                    this.stopAudioCapture();
                     this.stopRecordingTimer({ reset: false });
                     const hasRenderedTranscript = this.el.finalText
                         ? !!String(this.el.finalText.innerText || "").trim()
@@ -577,7 +308,7 @@ export class LiveView {
                         this.awaitingLiveResult = false;
                         this.remoteState = "ready";
                         this.setStatus("ready", this.getReadyDownloadStatusMessage());
-                        void this.refreshLiveResult({ quiet: true });
+                        void this.refreshLiveResult();
                         this.updateControls();
                         return;
                     }
@@ -596,15 +327,11 @@ export class LiveView {
                     this.updateControls();
                 },
                 onError: () => {
-                    this.appendLog("Socket error");
                     this.setStatus("error", "WebSocket error");
                     this.updateControls();
                 },
                 onMessage: (raw) => {
                     this.handleServerMessage(raw);
-                },
-                onLog: (line) => {
-                    this.appendLog(line);
                 },
             });
         }
@@ -615,22 +342,15 @@ export class LiveView {
                 chunkMs: 40,
                 onChunk: (chunk) => {
                     if (!this.sessionService || !this.sessionService.isOpen()) return;
-                    const sent = this.sessionService.sendAudioChunk(chunk);
-                    if (!sent) {
-                        this.appendLog("Audio chunk dropped (socket not writable)");
-                    }
+                    this.sessionService.sendAudioChunk(chunk);
                 },
                 onError: (err) => {
                     const msg = err && err.message ? err.message : String(err);
-                    this.appendLog(`Audio error: ${msg}`);
                     this.setStatus("error", `Audio error: ${msg}`);
                     if (this.app && typeof this.app.showAlert === "function") {
                         this.app.showAlert("Microphone error", msg);
                     }
                     this.updateControls();
-                },
-                onLog: (line) => {
-                    this.appendLog(line);
                 },
             });
         }
@@ -743,7 +463,6 @@ export class LiveView {
                         payload: {
                             language: this.getRequestedSessionLanguage() || "auto",
                         },
-                        log: false,
                     });
                 }
             });
@@ -1279,159 +998,29 @@ export class LiveView {
     }
 
 
-    appendLog(_line) {
-        // The old inline Dev Tools event log has been removed from this view.
-    }
-
-    createVadState() {
-        return {
-            enabled: false,
-            phase: "disabled",
-            label: "",
-            speechHintUntilMs: 0,
-            lastSpeechAgeMs: null,
-            hangoverMs: null,
-            checks: 0,
-            speechAllows: 0,
-            hangoverAllows: 0,
-            silenceSkips: 0,
-        };
-    }
-
-    _normalizeVadPhase(value) {
-        const v = String(value || "").trim().toLowerCase();
-        if (v === "speech" || v === "hangover" || v === "silence") return v;
-        if (v === "disabled") return "disabled";
-        return "unknown";
-    }
-
-    _vadLabelForPhase(phase) {
-        const p = this._normalizeVadPhase(phase);
-        return LIVE_VAD_PHASE_LABELS[p] || LIVE_VAD_PHASE_LABELS.unknown;
-    }
-
-    _extractEngineState(result) {
-        const r = result && typeof result === "object" ? result : {};
-        const runtime = r.engine_runtime && typeof r.engine_runtime === "object" ? r.engine_runtime : {};
-        const engineState = runtime.engine_state && typeof runtime.engine_state === "object"
-            ? runtime.engine_state
-            : runtime;
-        return engineState && typeof engineState === "object" ? engineState : {};
-    }
-
     applyVadStateFromResult(result) {
-        const nowMs = Date.now();
-        const state = this.vadState && typeof this.vadState === "object" ? this.vadState : this.createVadState();
-        const engineState = this._extractEngineState(result);
-        const vad = engineState.vad && typeof engineState.vad === "object" ? engineState.vad : null;
-        if (!vad || vad.enabled !== true) {
-            this.vadState = {
-                ...state,
-                enabled: false,
-                phase: "disabled",
-                label: "",
-                speechHintUntilMs: 0,
-            };
-            this.updateVadIndicator();
-            return;
-        }
-
-        const cfg = vad.config && typeof vad.config === "object" ? vad.config : {};
-        const st = vad.state && typeof vad.state === "object" ? vad.state : {};
-        const ageRaw = Number(st.last_speech_age_ms);
-        const ageMs = Number.isFinite(ageRaw) && ageRaw >= 0 ? ageRaw : null;
-        const hangoverRaw = Number(cfg.hangover_ms);
-        const hangoverMs = Number.isFinite(hangoverRaw) && hangoverRaw >= 0 ? hangoverRaw : null;
-        const phase = (ageMs !== null && ageMs <= LIVE_VAD_SPEECH_BADGE_MAX_AGE_MS) ? "speech" : "silence";
-        const speechHintUntilMs = phase === "speech"
-            ? Math.max(Number(state.speechHintUntilMs || 0), nowMs + LIVE_VAD_SPEECH_BADGE_HOLD_MS)
-            : 0;
-        this.vadState = {
-            ...state,
-            enabled: true,
-            phase,
-            label: this._vadLabelForPhase(phase),
-            speechHintUntilMs,
-            lastSpeechAgeMs: ageMs,
-            hangoverMs,
-            checks: Number.isFinite(Number(st.checks)) ? Number(st.checks) : state.checks,
-            speechAllows: Number.isFinite(Number(st.speech_checks)) ? Number(st.speech_checks) : state.speechAllows,
-            hangoverAllows: Number.isFinite(Number(st.hangover_allows)) ? Number(st.hangover_allows) : state.hangoverAllows,
-            silenceSkips: Number.isFinite(Number(st.silence_checks)) ? Number(st.silence_checks) : state.silenceSkips,
-        };
+        this.vadState = nextLiveVadStateFromResult(this.vadState, result);
         this.updateVadIndicator();
     }
 
     applyVadStateFromStats(payload) {
-        const nowMs = Date.now();
-        const p = payload && typeof payload === "object" ? payload : {};
-        const g = p.rolling_guardrails && typeof p.rolling_guardrails === "object" ? p.rolling_guardrails : null;
-        if (!g) return;
-
-        const nextChecks = Number(g.vad_checks);
-        const nextSpeech = Number(g.vad_speech_allows);
-        const nextHangover = Number(g.vad_hangover_allows);
-        const nextSilence = Number(g.vad_silence_skips);
-        if (
-            !Number.isFinite(nextChecks)
-            || !Number.isFinite(nextSpeech)
-            || !Number.isFinite(nextHangover)
-            || !Number.isFinite(nextSilence)
-        ) {
-            return;
-        }
-
-        const state = this.vadState && typeof this.vadState === "object" ? this.vadState : this.createVadState();
-        const seemsEnabled = !!state.enabled || nextChecks > 0 || nextSpeech > 0 || nextHangover > 0 || nextSilence > 0;
-        if (!seemsEnabled) return;
-        const prevChecks = Number(state.checks || 0);
-        const prevSpeech = Number(state.speechAllows || 0);
-        const prevHangover = Number(state.hangoverAllows || 0);
-        const prevSilence = Number(state.silenceSkips || 0);
-        let phase = this._normalizeVadPhase(state.phase);
-        let speechHintUntilMs = Number(state.speechHintUntilMs || 0);
-        if (nextSpeech > prevSpeech) {
-            phase = "speech";
-            speechHintUntilMs = nowMs + LIVE_VAD_SPEECH_BADGE_HOLD_MS;
-        } else if (nextSilence > prevSilence) {
-            phase = "silence";
-            speechHintUntilMs = 0;
-        } else if (nextChecks > prevChecks && phase === "unknown") {
-            phase = "silence";
-            speechHintUntilMs = 0;
-        } else if (nextHangover > prevHangover) {
-            phase = "silence";
-            speechHintUntilMs = 0;
-        }
-
-        this.vadState = {
-            ...state,
-            enabled: true,
-            phase,
-            label: this._vadLabelForPhase(phase),
-            speechHintUntilMs,
-            checks: nextChecks,
-            speechAllows: nextSpeech,
-            hangoverAllows: nextHangover,
-            silenceSkips: nextSilence,
-        };
+        const nextState = nextLiveVadStateFromStats(this.vadState, payload);
+        if (!nextState) return;
+        this.vadState = nextState;
         this.updateVadIndicator();
     }
 
     updateVadIndicator() {
         if (!this.el.vadBadge) return;
-        const phase = this._normalizeVadPhase(this.vadState && this.vadState.phase);
-        const enabled = !!(this.vadState && this.vadState.enabled);
-        const speechHintUntilMs = Number(this.vadState && this.vadState.speechHintUntilMs || 0);
-        const nowMs = Date.now();
-        const speechActive = phase === "speech" && speechHintUntilMs > nowMs;
-        const sessionActive = this.audioStreaming || this.remoteState === "listening";
-        const show = enabled && sessionActive && speechActive;
+        const show = shouldShowLiveVadSpeechBadge(this.vadState, {
+            audioStreaming: this.audioStreaming,
+            remoteState: this.remoteState,
+        });
         this.el.vadBadge.classList.toggle("hidden", !show);
         this.el.vadBadge.classList.remove("vad-speech", "vad-hangover", "vad-silence");
         if (!show) return;
         this.el.vadBadge.classList.add("vad-speech");
-        this.el.vadBadge.textContent = this._vadLabelForPhase("speech");
+        this.el.vadBadge.textContent = vadLabelForPhase("speech");
     }
 
     resetLiveResultState() {
@@ -1458,7 +1047,7 @@ export class LiveView {
         this.finalSegments = [];
         this.finalSegmentsSignature = "";
         this.cadenceStats = this.createCadenceStats();
-        this.vadState = this.createVadState();
+        this.vadState = createLiveVadState();
         this.updateVadIndicator();
     }
 
@@ -1491,16 +1080,12 @@ export class LiveView {
         return stats;
     }
 
-    _normalizeSegmentText(value) {
-        return String(value || "").replace(/\s+/g, " ").trim();
-    }
-
     _segmentsSignature(segments) {
         if (!Array.isArray(segments) || !segments.length) return "";
         const rows = [];
         for (let i = 0; i < segments.length; i += 1) {
             const seg = segments[i] && typeof segments[i] === "object" ? segments[i] : {};
-            const text = this._normalizeSegmentText(seg.text);
+            const text = normalizeSegmentText(seg.text);
             const t0Raw = Number(seg.t0_ms);
             const t1Raw = Number(seg.t1_ms);
             const t0 = Number.isFinite(t0Raw) ? Math.max(0, Math.round(t0Raw)) : 0;
@@ -1510,70 +1095,12 @@ export class LiveView {
         return rows.join("|");
     }
 
-    _buildVisibleTranscriptState(finalSegments, previewText) {
-        const diarizePresentation = this._formatSegmentBlocksDiarizeHardPresentation(finalSegments);
-        const finalValue = (diarizePresentation && diarizePresentation.text)
-            ? String(diarizePresentation.text)
-            : "";
-        const previewSuffix = this._formatPreviewSuffixText(finalValue, previewText);
-        return {
-            finalText: finalValue,
-            previewSuffix,
-            signature: `${finalValue}\n@@preview@@${previewSuffix}`,
-        };
-    }
-
-    _percentile(values, fraction) {
-        const rows = Array.isArray(values)
-            ? values.filter((value) => Number.isFinite(value) && value >= 0).sort((a, b) => a - b)
-            : [];
-        if (!rows.length) return null;
-        if (rows.length === 1) return rows[0];
-        const clamped = Math.max(0, Math.min(1, Number(fraction)));
-        const pos = (rows.length - 1) * clamped;
-        const lower = Math.floor(pos);
-        const upper = Math.ceil(pos);
-        if (lower === upper) return rows[lower];
-        const weight = pos - lower;
-        return rows[lower] + ((rows[upper] - rows[lower]) * weight);
-    }
-
-    _formatCadenceDuration(ms) {
-        const value = Number(ms);
-        if (!Number.isFinite(value) || value < 0) return "n/a";
-        if (value < 1000) return `${Math.round(value)}ms`;
-        return `${(value / 1000).toFixed(2)}s`;
-    }
-
-    _formatTimingSeconds(sec) {
-        const value = Number(sec);
-        if (!Number.isFinite(value) || value < 0) return "n/a";
-        if (value < 1) return `${Math.round(value * 1000)}ms`;
-        return `${value.toFixed(2)}s`;
-    }
-
-    _formatPositiveCountSummary(source, options = {}) {
-        const emptyLabel = String(options.emptyLabel || "none");
-        const maxEntriesRaw = Number(options.maxEntries);
-        const maxEntries = Number.isFinite(maxEntriesRaw) && maxEntriesRaw > 0
-            ? Math.round(maxEntriesRaw)
-            : 4;
-        const entries = source && typeof source === "object"
-            ? Object.entries(source)
-                .map(([key, value]) => [String(key || "").trim(), Number(value)])
-                .filter(([key, value]) => key && Number.isFinite(value) && value > 0)
-                .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
-            : [];
-        if (!entries.length) return emptyLabel;
-        const visible = entries.slice(0, maxEntries)
-            .map(([key, value]) => `${key}=${Math.round(value)}`);
-        const hiddenCount = entries.length - visible.length;
-        return hiddenCount > 0 ? `${visible.join(", ")} +${hiddenCount} more` : visible.join(", ");
-    }
-
     recordCadenceVisibleUpdate({ finalChanged = false, previewChanged = false } = {}) {
         const stats = this.ensureCadenceStarted(this.recordingStartedAtMs > 0 ? this.recordingStartedAtMs : Date.now());
-        const visibleState = this._buildVisibleTranscriptState(this.finalSegments, this.previewText);
+        const visibleState = buildVisibleTranscriptState(this.finalSegments, this.previewText, {
+            formatRules: this.liveTranscriptFormatRules,
+            speakerLabelsEnabled: this.devSpeakerLabelsEnabled,
+        });
         const signature = String(visibleState.signature || "");
         if (!signature || signature === String(stats.lastVisibleSignature || "")) {
             return false;
@@ -1609,9 +1136,9 @@ export class LiveView {
         const firstLatencyMs = (startMs > 0 && stats.firstVisibleUpdateAtMs > 0)
             ? Math.max(0, stats.firstVisibleUpdateAtMs - startMs)
             : null;
-        const medianGapMs = this._percentile(stats.gapMs, 0.5);
-        const p90GapMs = this._percentile(stats.gapMs, 0.9);
-        const p95GapMs = this._percentile(stats.gapMs, 0.95);
+        const medianGapMs = percentile(stats.gapMs, 0.5);
+        const p90GapMs = percentile(stats.gapMs, 0.9);
+        const p95GapMs = percentile(stats.gapMs, 0.95);
         const sampleEndMs = stats.lastVisibleUpdateAtMs > 0 ? stats.lastVisibleUpdateAtMs : nowMs;
         const elapsedForRateMs = (startMs > 0 && sampleEndMs > startMs) ? (sampleEndMs - startMs) : 0;
         const updatesPerMin = elapsedForRateMs > 0
@@ -1624,11 +1151,11 @@ export class LiveView {
 
         return [
             `State: ${hasVisibleUpdate ? "Active" : "Waiting for first visible transcript update"}`,
-            `First visible update: ${firstLatencyMs !== null ? this._formatCadenceDuration(firstLatencyMs) : "n/a"}`
-                + ` | current gap: ${showCurrentGap && currentGapMs !== null ? this._formatCadenceDuration(currentGapMs) : "n/a"}`,
-            `Visible gap: median ${medianGapMs !== null ? this._formatCadenceDuration(medianGapMs) : "n/a"}`
-                + ` | p90 ${p90GapMs !== null ? this._formatCadenceDuration(p90GapMs) : "n/a"}`
-                + ` | p95 ${p95GapMs !== null ? this._formatCadenceDuration(p95GapMs) : "n/a"}`,
+            `First visible update: ${firstLatencyMs !== null ? formatDurationMs(firstLatencyMs) : "n/a"}`
+                + ` | current gap: ${showCurrentGap && currentGapMs !== null ? formatDurationMs(currentGapMs) : "n/a"}`,
+            `Visible gap: median ${medianGapMs !== null ? formatDurationMs(medianGapMs) : "n/a"}`
+                + ` | p90 ${p90GapMs !== null ? formatDurationMs(p90GapMs) : "n/a"}`
+                + ` | p95 ${p95GapMs !== null ? formatDurationMs(p95GapMs) : "n/a"}`,
             `Visible updates: ${stats.visibleUpdateCount}`
                 + (updatesPerMin !== null && Number.isFinite(updatesPerMin) ? ` (${updatesPerMin.toFixed(1)}/min)` : " (n/a/min)")
                 + ` | preview ${stats.previewChangeCount} | final ${stats.finalChangeCount}`,
@@ -1656,65 +1183,6 @@ export class LiveView {
             placeholder = "No cadence data captured for this run in this browser session.";
         }
         this.el.cadenceText.setAttribute("data-placeholder", placeholder);
-    }
-
-    _stripSpeakerTagsFromText(text) {
-        return this._normalizeSegmentText(String(text || "").replace(LIVE_SPEAKER_TAG_GLOBAL_RE, " "));
-    }
-
-    _speakerLabelFromToken(token) {
-        const raw = String(token || "").trim();
-        if (!raw) return "";
-        const m = raw.match(/(?:speaker|spk)[_ ]?(\d+)/i);
-        if (!m) return "";
-        const idx = Number(m[1]);
-        if (!Number.isFinite(idx) || idx < 0) return "";
-        return `Speaker ${idx + 1}`;
-    }
-
-    _formatRules() {
-        const src = this.liveTranscriptFormatRules && typeof this.liveTranscriptFormatRules === "object"
-            ? this.liveTranscriptFormatRules
-            : DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES;
-        const out = { ...DEFAULT_LIVE_TRANSCRIPT_FORMAT_RULES };
-        Object.keys(out).forEach((k) => {
-            const v = Number(src[k]);
-            if (Number.isFinite(v)) out[k] = v;
-        });
-        return out;
-    }
-
-    _formatSegmentBlocksDiarizeHardPresentation(finalSegments) {
-        if (!Array.isArray(finalSegments) || !finalSegments.length) return { text: "", paragraphs: [] };
-        const rules = this._formatRules();
-
-        const rows = [];
-        for (let i = 0; i < finalSegments.length; i += 1) {
-            const seg = finalSegments[i] && typeof finalSegments[i] === "object" ? finalSegments[i] : {};
-            const rawText = String(seg.text || "");
-            const text = this._stripSpeakerTagsFromText(rawText);
-            if (!text) continue;
-            const tagged = rawText.match(LIVE_SPEAKER_TAG_PREFIX_RE);
-            const inferredSpeaker = tagged ? String(tagged[1] || "").trim().toUpperCase().replace(" ", "_") : "";
-            const speaker = String(seg.speaker || "").trim() || inferredSpeaker;
-            rows.push({ text, speaker });
-        }
-        return buildSpeakerParagraphs(rows, {
-            rules,
-            normalizeParagraphText: (value) => this._normalizeSegmentText(value),
-            carrySentenceCapitalization: true,
-        });
-    }
-
-    _formatPreviewSuffixText(finalText, previewText) {
-        const finalValue = String(finalText || "");
-        const rawPreview = String(previewText || "").trim();
-        if (!rawPreview) return "";
-        const previewValue = this.devSpeakerLabelsEnabled
-            ? rawPreview
-            : this._stripSpeakerTagsFromText(rawPreview);
-        if (!previewValue) return "";
-        return /\s$/.test(finalValue) ? previewValue : (" " + previewValue);
     }
 
     _renderFinalMainText(text) {
@@ -1752,7 +1220,7 @@ export class LiveView {
         const frag = document.createDocumentFragment();
         for (let i = 0; i < rows.length; i += 1) {
             const row = rows[i] && typeof rows[i] === "object" ? rows[i] : {};
-            const text = this._normalizeSegmentText(row.text);
+            const text = normalizeSegmentText(row.text);
             if (!text) continue;
             const breakBefore = String(row.breakBefore || "heuristic");
             if (i > 0) {
@@ -1766,7 +1234,7 @@ export class LiveView {
             }
 
             if (this.devSpeakerLabelsEnabled) {
-                const label = this._speakerLabelFromToken(row.speaker);
+                const label = speakerLabelFromToken(row.speaker);
                 if (label) {
                     const labelEl = document.createElement("span");
                     labelEl.className = "live-speaker-label";
@@ -1780,11 +1248,13 @@ export class LiveView {
     }
 
     renderTranscriptText() {
-        const diarizePresentation = this._formatSegmentBlocksDiarizeHardPresentation(this.finalSegments);
+        const diarizePresentation = formatSegmentBlocksDiarizeHardPresentation(this.finalSegments, this.liveTranscriptFormatRules);
         const finalValue = (diarizePresentation && diarizePresentation.text)
             ? String(diarizePresentation.text)
             : "";
-        const previewSuffix = this._formatPreviewSuffixText(finalValue, this.previewText);
+        const previewSuffix = formatPreviewSuffixText(finalValue, this.previewText, {
+            speakerLabelsEnabled: this.devSpeakerLabelsEnabled,
+        });
 
         // Remember if user was at bottom before adding new content
         const wasAtBottom = this._isAtBottom();
@@ -1818,273 +1288,27 @@ export class LiveView {
     }
 
     formatLiveSummary(result) {
-        const r = result && typeof result === "object" ? result : {};
-        const total = Number(r.chunks_total || 0);
-        const done = Number(r.chunks_done || 0);
-        const failed = Number(r.chunks_failed || 0);
-        const pending = Number(r.chunks_pending || Math.max(0, total - done - failed));
-        const fstate = String(r.finalization_state || "").trim() || "idle";
-        const fstateLabel = ({
-            idle: "Idle",
-            recording: "Recording",
-            processing_chunks: "Processing chunks",
-            finalizing: "Finalizing",
-            recording_finalized: "Recording finalized",
-            finalized: "Ready",
-            ready: "Ready",
-            error: "Error",
-        })[fstate] || fstate.replace(/_/g, " ");
-        const rev = Number(r.transcript_revision || 0);
-        const segs = Array.isArray(r.final_segments) ? r.final_segments : [];
-        const chars = segs.reduce((acc, seg) => {
-            const text = seg && typeof seg === "object" ? String(seg.text || "").trim() : "";
-            return acc + (text ? text.length : 0);
-        }, 0);
-        const durMs = Number(r.recording_duration_ms || 0);
-
-        const engineState = this._extractEngineState(r);
-        const vadObj = engineState.vad && typeof engineState.vad === "object" ? engineState.vad : null;
-        let vadLabel = "n/a";
-        let vadCountersLine = "VAD counters: n/a";
-        if (vadObj && vadObj.enabled === true) {
-            const vadCfg = vadObj.config && typeof vadObj.config === "object" ? vadObj.config : {};
-            const vadState = vadObj.state && typeof vadObj.state === "object" ? vadObj.state : {};
-            const lastSpeechAgeMsRaw = Number(vadState.last_speech_age_ms);
-            const hangoverMsRaw = Number(vadCfg.hangover_ms);
-            const checksRaw = Number(vadState.checks);
-            const speechRaw = Number(vadState.speech_checks);
-            const hangoverRaw = Number(vadState.hangover_allows);
-            const silenceRaw = Number(vadState.silence_checks);
-            let vadPhase = "silence";
-            if (Number.isFinite(lastSpeechAgeMsRaw) && lastSpeechAgeMsRaw >= 0) {
-                if (lastSpeechAgeMsRaw <= 250) {
-                    vadPhase = "speech";
-                } else if (Number.isFinite(hangoverMsRaw) && hangoverMsRaw > 0 && lastSpeechAgeMsRaw <= hangoverMsRaw) {
-                    vadPhase = "hangover";
-                }
-            }
-            vadLabel = this._vadLabelForPhase(vadPhase) || "enabled";
-            vadCountersLine =
-                `VAD counters: checks=${Number.isFinite(checksRaw) ? Math.round(checksRaw) : "?"}`
-                + ` | speech=${Number.isFinite(speechRaw) ? Math.round(speechRaw) : "?"}`
-                + ` | hangover=${Number.isFinite(hangoverRaw) ? Math.round(hangoverRaw) : "?"}`
-                + ` | silence=${Number.isFinite(silenceRaw) ? Math.round(silenceRaw) : "?"}`;
-        } else if (vadObj && vadObj.enabled === false) {
-            vadLabel = "Off";
-            vadCountersLine = "VAD counters: disabled";
-        }
-
-        const reasonCounts = r.chunk_reason_counts && typeof r.chunk_reason_counts === "object"
-            ? r.chunk_reason_counts
-            : null;
-        const rowsCount = Number(r.chunk_results_rows_count || 0);
-        const uniqueCount = Number(r.chunk_results_unique_count || 0);
-        const dupRows = Number(r.chunk_results_duplicate_index_rows || 0);
-        const invalidRows = Number(r.chunk_results_invalid_index_rows || 0);
-        return [
-            `Processing state: ${fstateLabel}`,
-            `Chunks: ${done}/${total} | pending ${pending} | failed ${failed}`,
-            `Transcript: rev ${rev} | chars ${chars}`,
-            `Recording: ${durMs > 0 ? `${(durMs / 1000).toFixed(1)}s` : "n/a"} | VAD ${vadLabel}`,
-            vadCountersLine,
-            `Chunk triggers: ${this._formatPositiveCountSummary(reasonCounts, { maxEntries: 4 })}`,
-            `Chunk rows: rows ${Math.max(0, Math.round(rowsCount))}`
-                + ` | unique ${Math.max(0, Math.round(uniqueCount || rowsCount))}`
-                + ` | dup ${Math.max(0, Math.round(dupRows))}`
-                + ` | invalid ${Math.max(0, Math.round(invalidRows))}`,
-        ].join("\n");
+        return formatLiveSummaryPanel(result, {
+            engineState: extractEngineState(result),
+            vadLabelForPhase,
+        });
     }
 
     formatEngineRuntimeSummary(result) {
-        const r = result && typeof result === "object" ? result : {};
-        const runtime = r.engine_runtime && typeof r.engine_runtime === "object" ? r.engine_runtime : {};
-        const engineState = runtime.engine_state && typeof runtime.engine_state === "object"
-            ? runtime.engine_state
-            : {};
-        const speechGate = engineState.speech_gate && typeof engineState.speech_gate === "object"
-            ? engineState.speech_gate
-            : {};
-        const guardrails = engineState.guardrails && typeof engineState.guardrails === "object"
-            ? engineState.guardrails
-            : {};
-        const debug = engineState.debug && typeof engineState.debug === "object" ? engineState.debug : {};
-        const debugState = debug.state && typeof debug.state === "object" ? debug.state : {};
-        const inflight = debugState.inflight && typeof debugState.inflight === "object"
-            ? debugState.inflight
-            : null;
-
-        const recMs = Number(r.recording_duration_ms || 0);
-        const coveredMs = Number(r.final_covered_ms || 0);
-        const uncommittedMs = Number(runtime.uncommitted_audio_ms || 0);
-        const processedMs = Number(debugState.processed_offset_ms);
-        const decodeMs = Number(debugState.decode_offset_ms);
-        const submittedMs = Number(debugState.last_submitted_t1_ms);
-        const previewChars = Number(debugState.preview_chars);
-        let inflightSummary = "none";
-        let inflightStale = false;
-        if (inflight) {
-            const seq = Number(inflight.sequence_id);
-            const t0Ms = Number(inflight.t0_ms);
-            const t1Ms = Number(inflight.t1_ms);
-            const inflightParts = [];
-            if (Number.isFinite(seq) && seq >= 0) inflightParts.push(`seq ${Math.round(seq)}`);
-            if (Number.isFinite(t0Ms) && t0Ms >= 0 && Number.isFinite(t1Ms) && t1Ms >= t0Ms) {
-                inflightParts.push(`${this._formatCadenceDuration(t0Ms)} -> ${this._formatCadenceDuration(t1Ms)}`);
-                inflightParts.push(`len ${this._formatCadenceDuration(Math.max(0, t1Ms - t0Ms))}`);
-            }
-            const language = String(inflight.language || "").trim();
-            if (language) inflightParts.push(`lang ${language}`);
-            if (inflightParts.length) {
-                inflightSummary = inflightParts.join(" | ");
-                this.lastEngineInflightSummaryText = inflightSummary;
-                this.engineRuntimeInflightStale = false;
-            }
-        } else if (String(this.lastEngineInflightSummaryText || "").trim()) {
-            inflightSummary = String(this.lastEngineInflightSummaryText);
-            inflightStale = true;
-        }
-        this.engineRuntimeInflightStale = inflightStale;
-
-        const gateState = String(speechGate.state || "").trim();
-        const recentHits = Number(speechGate.recent_hits_count);
-        const silenceElapsedMs = Number(speechGate.silence_elapsed_ms);
-        const rearmFromMs = Number(speechGate.rearm_from_ms);
-        const hardClipCount = Number(guardrails.hard_clip_count);
-        const hardClipDroppedMs = Number(guardrails.hard_clip_dropped_audio_ms);
-        const bufferTrimCount = Number(guardrails.buffer_trim_count);
-        const bufferTrimDroppedMs = Number(guardrails.buffer_trim_dropped_audio_ms);
-        const emitSkips = Number(guardrails.emit_interval_skips);
-        const pacingSkips = Number(guardrails.pacing_slot_skips);
-        const vadErrors = Number(guardrails.vad_errors);
-        const forcedCommits = Number(guardrails.speech_gate_forced_commit_count);
-
-        const reasonCounts = debug.reason_counts && typeof debug.reason_counts === "object" ? debug.reason_counts : {};
-        const workDecision = reasonCounts.work_decision && typeof reasonCounts.work_decision === "object"
-            ? reasonCounts.work_decision
-            : {};
-        const applyDecision = reasonCounts.apply_decision && typeof reasonCounts.apply_decision === "object"
-            ? reasonCounts.apply_decision
-            : {};
-        const hardClipText = Number.isFinite(hardClipCount) && hardClipCount > 0
-            ? `${Math.round(hardClipCount)}/${Number.isFinite(hardClipDroppedMs) && hardClipDroppedMs > 0 ? this._formatCadenceDuration(hardClipDroppedMs) : "0ms"}`
-            : "0";
-        const bufferTrimText = Number.isFinite(bufferTrimCount) && bufferTrimCount > 0
-            ? `${Math.round(bufferTrimCount)}/${Number.isFinite(bufferTrimDroppedMs) && bufferTrimDroppedMs > 0 ? this._formatCadenceDuration(bufferTrimDroppedMs) : "0ms"}`
-            : "0";
-
-        return [
-            `Coverage: recording ${recMs > 0 ? this._formatCadenceDuration(recMs) : "n/a"}`
-                + ` | covered ${coveredMs > 0 ? this._formatCadenceDuration(coveredMs) : "n/a"}`
-                + ` | uncommitted ${uncommittedMs > 0 ? this._formatCadenceDuration(uncommittedMs) : "0ms"}`,
-            `Offsets: processed ${Number.isFinite(processedMs) && processedMs >= 0 ? this._formatCadenceDuration(processedMs) : "n/a"}`
-                + ` | decode ${Number.isFinite(decodeMs) && decodeMs >= 0 ? this._formatCadenceDuration(decodeMs) : "n/a"}`
-                + ` | submitted ${Number.isFinite(submittedMs) && submittedMs >= 0 ? this._formatCadenceDuration(submittedMs) : "n/a"}`
-                + ` | preview ${Number.isFinite(previewChars) && previewChars >= 0 ? Math.round(previewChars) : "n/a"} chars`,
-            `Inflight: ${inflightSummary}`,
-            `Speech gate: state ${gateState || "n/a"}`
-                + ` | hits ${Number.isFinite(recentHits) && recentHits >= 0 ? Math.round(recentHits) : 0}`
-                + ` | silence ${Number.isFinite(silenceElapsedMs) && silenceElapsedMs >= 0 ? this._formatCadenceDuration(silenceElapsedMs) : "n/a"}`
-                + ` | rearm_from ${Number.isFinite(rearmFromMs) && rearmFromMs > 0 ? this._formatCadenceDuration(rearmFromMs) : "n/a"}`,
-            `Guardrails: clip ${hardClipText}`
-                + ` | trim ${bufferTrimText}`
-                + ` | emit ${Number.isFinite(emitSkips) && emitSkips >= 0 ? Math.round(emitSkips) : 0}`
-                + ` | pacing ${Number.isFinite(pacingSkips) && pacingSkips >= 0 ? Math.round(pacingSkips) : 0}`
-                + ` | vad ${Number.isFinite(vadErrors) && vadErrors >= 0 ? Math.round(vadErrors) : 0}`
-                + ` | forced ${Number.isFinite(forcedCommits) && forcedCommits >= 0 ? Math.round(forcedCommits) : 0}`,
-            `Decisions: work ${this._formatPositiveCountSummary(workDecision, { maxEntries: 3 })}`
-                + ` | apply ${this._formatPositiveCountSummary(applyDecision, { maxEntries: 3 })}`,
-        ].join("\n");
+        const summary = formatEngineRuntimeSummaryPanel(result, {
+            lastInflightSummaryText: this.lastEngineInflightSummaryText,
+        });
+        this.lastEngineInflightSummaryText = String(summary.lastInflightSummaryText || "");
+        this.engineRuntimeInflightStale = !!summary.inflightStale;
+        return String(summary.text || "");
     }
 
     formatQualitySummary(envelope) {
-        const qenv = envelope && typeof envelope === "object" ? envelope : {};
-        const q = qenv.quality && typeof qenv.quality === "object" ? qenv.quality : {};
-        const fixture = q.fixture && typeof q.fixture === "object" ? q.fixture : {};
-        const score = q.score && typeof q.score === "object" ? q.score : {};
-
-        const fixtureId = String(qenv.fixture_id || fixture.fixture_id || "").trim();
-        const uploadScore = Number(score.upload_similarity_score);
-        const wordLive = Number(score.word_count_live || 0);
-        const wordRef = Number(score.word_count_reference || 0);
-        const wordRatio = score.word_count_ratio_live_to_ref;
-        const editDist = Number(score.word_edit_distance || 0);
-
-        return [
-            Number.isFinite(uploadScore)
-                ? `Fixture benchmark: ${Math.round(uploadScore)}/100${fixtureId ? ` (${fixtureId})` : ""}`
-                : `Fixture benchmark: pending${fixtureId ? ` (${fixtureId})` : ""}`,
-            `Words: live ${wordLive} | ref ${wordRef}`
-                + ` | ratio ${wordRatio === null || wordRatio === undefined ? "n/a" : `${Number(wordRatio).toFixed(3)}x`}`
-                + ` | edit ${editDist}`,
-        ].join("\n");
+        return formatQualitySummaryPanel(envelope);
     }
 
     formatRunMetricsSummaryFromResult(result) {
-        const r = result && typeof result === "object" ? result : {};
-        const recMs = Number(r.recording_duration_ms || 0);
-        const chunksTotal = Number(r.chunks_total || 0);
-        const chunksDone = Number(r.chunks_done || 0);
-        const chunksFailed = Number(r.chunks_failed || 0);
-        const chunksPending = Number(r.chunks_pending || Math.max(0, chunksTotal - chunksDone - chunksFailed));
-        const chunkReasons = r.chunk_reason_counts && typeof r.chunk_reason_counts === "object"
-            ? r.chunk_reason_counts
-            : {};
-
-        const asrTranscribeTimeS = Number(r.asr_transcribe_s || 0);
-        const asrLoadAudioTimeS = Number(r.asr_load_audio_s || 0);
-        const asrRunnerWallTimeS = Number(r.asr_runner_wall_s || 0);
-        const asrPoolWallTimeS = Number(r.asr_pool_wall_s || 0);
-        const asrPoolIngestTimeS = Number(r.asr_pool_ingest_s || 0);
-        const asrPoolQueueTimeS = Number(r.asr_pool_queue_wait_s || 0);
-        const asrPoolOutsideRunnerTimeS = Number(r.asr_pool_outside_runner_s || 0);
-        const asrBackendWallTimeS = Number(r.asr_backend_wall_s || 0);
-        const asrBackendWavWriteTimeS = Number(r.asr_backend_wav_write_s || 0);
-        const asrBackendSubmitTimeS = Number(r.asr_backend_submit_s || 0);
-        const asrBackendCollectTimeS = Number(r.asr_backend_result_collect_s || 0);
-        const asrBackendOutsidePoolTimeS = Number(r.asr_backend_outside_pool_s || 0);
-
-        const transcribeBaselineS = Number.isFinite(asrTranscribeTimeS) && asrTranscribeTimeS > 0
-            ? asrTranscribeTimeS
-            : null;
-        const formatTranscribeRelativePct = (value) => (
-            transcribeBaselineS !== null && Number.isFinite(value)
-                ? `${((Number(value) / transcribeBaselineS) * 100).toFixed(1)}%`
-                : "n/a"
-        );
-        const formatRunnerCumulativePct = (extraValue) => (
-            transcribeBaselineS !== null && Number.isFinite(extraValue)
-                ? `${(100 + ((Number(extraValue) / transcribeBaselineS) * 100)).toFixed(1)}%`
-                : "n/a"
-        );
-        const timingNotes = [
-            "Timing notes:",
-            "- percentages use ASR runner transcribe = 100%",
-            "- submit overlaps with pool wall; non-pool is exclusive",
-        ];
-
-        return [
-            `Run: ${chunksDone}/${chunksTotal} ready | failed ${chunksFailed} | pending ${chunksPending}`
-                + ` | recording ${recMs > 0 ? `${(recMs / 1000).toFixed(1)}s` : "n/a"}`,
-            `Chunk reasons: ${this._formatPositiveCountSummary(chunkReasons, { maxEntries: 4 })}`,
-            ...timingNotes,
-            `ASR runner: transcribe ${this._formatTimingSeconds(asrTranscribeTimeS)}`
-                + ` (${transcribeBaselineS !== null ? "100%" : "n/a"})`
-                + ` | load_audio ${this._formatTimingSeconds(asrLoadAudioTimeS)}`
-                + ` (${formatRunnerCumulativePct(asrLoadAudioTimeS)})`
-                + ` | wall ${this._formatTimingSeconds(asrRunnerWallTimeS)}`
-                + ` (${formatTranscribeRelativePct(asrRunnerWallTimeS)})`,
-            `Pool: wall ${this._formatTimingSeconds(asrPoolWallTimeS)}`
-                + ` (${formatTranscribeRelativePct(asrPoolWallTimeS)})`
-                + ` | ingest ${this._formatTimingSeconds(asrPoolIngestTimeS)}`
-                + ` | queue ${this._formatTimingSeconds(asrPoolQueueTimeS)}`
-                + ` | non-runner ${this._formatTimingSeconds(asrPoolOutsideRunnerTimeS)}`,
-            `Backend: wall ${this._formatTimingSeconds(asrBackendWallTimeS)}`
-                + ` (${formatTranscribeRelativePct(asrBackendWallTimeS)})`
-                + ` | wav ${this._formatTimingSeconds(asrBackendWavWriteTimeS)}`
-                + ` | submit ${this._formatTimingSeconds(asrBackendSubmitTimeS)}`
-                + ` | collect ${this._formatTimingSeconds(asrBackendCollectTimeS)}`
-                + ` | non-pool ${this._formatTimingSeconds(asrBackendOutsidePoolTimeS)}`,
-        ].join("\n");
+        return formatRunMetricsSummaryPanel(result);
     }
 
     applyLiveQualityEnvelope(envelope) {
@@ -2102,8 +1326,7 @@ export class LiveView {
         this.qualityLoadedRevision = Number.isFinite(revision) ? revision : -1;
     }
 
-    async refreshLiveQuality(options = {}) {
-        const quiet = options.quiet === true;
+    async refreshLiveQuality() {
         const sid = this.getCurrentSessionId();
         if (!sid || !this.sessionService) return false;
         if (this.qualityInFlight) return false;
@@ -2112,11 +1335,7 @@ export class LiveView {
             const envelope = await this.sessionService.fetchQuality(sid);
             this.applyLiveQualityEnvelope(envelope);
             return true;
-        } catch (err) {
-            if (!quiet) {
-                const msg = err && err.message ? err.message : String(err);
-                this.appendLog(`Quality fetch failed: ${msg}`);
-            }
+        } catch {
             return false;
         } finally {
             this.qualityInFlight = false;
@@ -2124,8 +1343,7 @@ export class LiveView {
         }
     }
 
-    async refreshLiveResult(options = {}) {
-        const quiet = options.quiet === true;
+    async refreshLiveResult() {
         const sid = this.getCurrentSessionId();
         if (!sid || !this.sessionService || typeof this.sessionService.fetchResult !== "function") return false;
         if (this.resultInFlight) return false;
@@ -2134,11 +1352,7 @@ export class LiveView {
             const envelope = await this.sessionService.fetchResult(sid);
             this.applyLiveResultEnvelope(envelope);
             return true;
-        } catch (err) {
-            if (!quiet) {
-                const msg = err && err.message ? err.message : String(err);
-                this.appendLog(`Result fetch failed: ${msg}`);
-            }
+        } catch {
             return false;
         } finally {
             this.resultInFlight = false;
@@ -2288,7 +1502,7 @@ export class LiveView {
                 && Number(this.qualityLoadedRevision) === rev
             );
             if (String(result.fixture_id || "").trim() && !qualityAlreadyLoaded) {
-                void this.refreshLiveQuality({ quiet: true });
+                void this.refreshLiveQuality();
             }
         } else if (!this.audioStreaming) {
             if (finalizationState === "error") {
@@ -2309,7 +1523,6 @@ export class LiveView {
         if (normalized === "txt") {
             const text = this.el.finalText ? String(this.el.finalText.innerText || "").trim() : "";
             if (!text) {
-                this.appendLog("No txt export available yet");
                 return;
             }
             const blob = new Blob([text + "\n"], { type: "text/plain;charset=utf-8" });
@@ -2332,7 +1545,6 @@ export class LiveView {
                     ? this.resultPcUrl
                 : "";
         if (!url) {
-            this.appendLog(`No ${normalized || "transcript"} export available yet`);
             return;
         }
         const a = document.createElement("a");
@@ -2503,8 +1715,7 @@ export class LiveView {
             return true;
         } catch (err) {
             const msg = err && err.message ? err.message : String(err);
-            this.appendLog(`Connect failed: ${msg}`);
-            this.stopAudioCapture({ quiet: true });
+            this.stopAudioCapture();
             if (this.sessionService) {
                 this.sessionService.destroy("connect_failed", { sendStop: false });
             }
@@ -2578,7 +1789,6 @@ export class LiveView {
             if (this.sessionService.isConnecting()) {
                 const opened = await this.waitForSocketOpen(5000);
                 if (!opened) {
-                    this.appendLog("WebSocket did not open in time");
                     this.setStatus("error", "Could not open live connection");
                     this.updateControls();
                     return;
@@ -2587,7 +1797,6 @@ export class LiveView {
         }
 
         if (!this.sessionService.isOpen()) {
-            this.appendLog("Cannot start microphone, websocket is not open.");
             this.setStatus("error", "Live connection is not open");
             this.updateControls();
             return;
@@ -2616,7 +1825,6 @@ export class LiveView {
         } catch (err) {
             const msg = err && err.message ? err.message : String(err);
             const permissionHelp = this.buildMicPermissionGuidance(err);
-            this.appendLog(`Microphone start failed: ${msg}`);
             this.setStatus("error", permissionHelp ? permissionHelp.shortMessage : `Microphone start failed: ${msg}`);
             if (this.app && typeof this.app.showAlert === "function") {
                 this.app.showAlert("Microphone access failed", permissionHelp ? permissionHelp.alertMessage : msg);
@@ -2652,440 +1860,45 @@ export class LiveView {
         this.updateControls();
     }
 
-    cancelFixtureRun(reason = "cancelled") {
-        if (this.fixtureStopTimerId !== null) {
-            window.clearTimeout(this.fixtureStopTimerId);
-            this.fixtureStopTimerId = null;
-        }
-        if (this.fixtureWatchdogTimerId !== null) {
-            window.clearTimeout(this.fixtureWatchdogTimerId);
-            this.fixtureWatchdogTimerId = null;
-        }
-        if (this.fixtureAudio) {
-            try {
-                this.fixtureAudio.pause();
-            } catch {
-                // ignore
-            }
-            try {
-                this.fixtureAudio.src = "";
-            } catch {
-                // ignore
-            }
-            this.fixtureAudio = null;
-        }
-
-        const wasActive = this.fixtureRunActive;
-        this.fixtureRunActive = false;
-        this.fixtureRunLabel = "";
-        this.fixtureRunToken += 1;
-        this.restoreDemoLanguage();
-        if (wasActive) {
-            this.appendLog(`Fixture run cancelled (${reason})`);
-        }
-        this.updateControls();
+    cancelFixtureRun() {
+        return cancelLiveFixtureRun(this);
     }
 
     getSelectedFixtureConfig(mode = "playback") {
-        const selected = String(
-            (this.el.fixtureSelect && this.el.fixtureSelect.value)
-            || this.selectedFixtureKey
-            || (DEV_LIVE_FIXTURE_OPTIONS[0] ? DEV_LIVE_FIXTURE_OPTIONS[0].value : "panel120v1")
-        ).trim();
-        const normalizedMode = String(mode || "playback").trim().toLowerCase();
-        const key = normalizedMode === "inject" ? `${selected}Inject` : selected;
-        return DEV_LIVE_FIXTURES[key] || DEV_LIVE_FIXTURES.panel120v1;
+        return getSelectedLiveFixtureConfig(this, mode);
     }
 
     async startSelectedFixtureRun(mode = "playback") {
-        const cfg = this.getSelectedFixtureConfig(mode);
-        return this.startFixtureRun(cfg);
+        return startSelectedLiveFixtureRun(this, mode);
     }
 
     async startFixtureRun(fixture) {
-        const cfg = fixture && typeof fixture === "object" ? fixture : null;
-        if (!cfg || !cfg.url) return;
-        const mode = String(cfg.mode || "playback").trim().toLowerCase();
-        if (mode === "inject") {
-            return this.startFixtureInjectRun(cfg);
-        }
-        if (this.fixtureRunActive || this.audioStreaming) {
-            this.appendLog("Fixture run ignored (already active or recording)");
-            return;
-        }
-
-        this.cancelFixtureRun("replace");
-        this.activateDemoLanguage(LIVE_DEMO_LANGUAGE_CODE);
-        this.fixtureRunActive = true;
-        this.fixtureRunLabel = String(cfg.id || "fixture");
-        const token = this.fixtureRunToken + 1;
-        this.fixtureRunToken = token;
-        this.updateControls();
-
-        const waitMs = (ms) => new Promise((resolve) => {
-            window.setTimeout(resolve, Math.max(0, Number(ms || 0)));
-        });
-
-        const audio = new Audio(String(cfg.url));
-        audio.preload = "auto";
-        this.fixtureAudio = audio;
-        let finishRequested = false;
-
-        const finishIfStillCurrent = async (why) => {
-            if (finishRequested) return;
-            finishRequested = true;
-            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-            if (this.fixtureWatchdogTimerId !== null) {
-                window.clearTimeout(this.fixtureWatchdogTimerId);
-                this.fixtureWatchdogTimerId = null;
-            }
-            this.appendLog(`Fixture playback ended (${why}), stopping recording...`);
-            this.fixtureStopTimerId = window.setTimeout(() => {
-                this.fixtureStopTimerId = null;
-                if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-                this.fixtureRunActive = false;
-                this.fixtureRunLabel = "";
-                try {
-                    void this.stopMic();
-                } finally {
-                    if (this.fixtureAudio) {
-                        try {
-                            this.fixtureAudio.pause();
-                        } catch {
-                            // ignore
-                        }
-                        this.fixtureAudio = null;
-                    }
-                    this.updateControls();
-                }
-            }, Math.max(0, Number(cfg.tailDelayMs || 0)));
-        };
-
-        audio.addEventListener("ended", () => {
-            void finishIfStillCurrent("ended");
-        }, { once: true });
-
-        audio.addEventListener("error", () => {
-            const err = audio.error;
-            const msg = err && err.message ? err.message : "Audio playback failed";
-            if (this.fixtureRunActive && this.fixtureRunToken === token) {
-                this.appendLog(`Fixture playback error: ${msg}`);
-                this.fixtureRunActive = false;
-                this.fixtureRunLabel = "";
-                this.restoreDemoLanguage();
-                this.updateControls();
-                if (this.audioStreaming) {
-                    this.stopMic();
-                }
-            }
-        }, { once: true });
-
-        try {
-            this.appendLog(`Fixture run start: ${cfg.id || "fixture"} -> ${cfg.url}`);
-            await this.startMic();
-            if (!this.audioStreaming) {
-                throw new Error("Recording did not start");
-            }
-            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-
-            this.currentFixtureMeta = {
-                fixture_id: String(cfg.id || "").trim(),
-                fixture_version: String(cfg.version || "").trim(),
-                fixture_test_mode: "playback",
-            };
-            if (this.sessionService && this.currentFixtureMeta.fixture_id) {
-                try {
-                    await this.sessionService.setFixtureMetadata(this.currentFixtureMeta);
-                    this.appendLog(`Fixture metadata registered (${this.currentFixtureMeta.fixture_id})`);
-                } catch (e) {
-                    const msg = e && e.message ? e.message : String(e);
-                    this.appendLog(`Fixture metadata register failed: ${msg}`);
-                }
-            }
-            this.updateQualityPlaceholder();
-
-            await waitMs(Number(cfg.startDelayMs || 0));
-            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-
-            const playPromise = audio.play();
-            if (playPromise && typeof playPromise.then === "function") {
-                await playPromise;
-            }
-            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-            this.appendLog(`Fixture playback started: ${cfg.id || "fixture"}`);
-            const durationMs = Math.max(0, Number(cfg.durationMs || 0));
-            if (durationMs > 0) {
-                const watchdogGraceMs = 2500;
-                this.fixtureWatchdogTimerId = window.setTimeout(() => {
-                    this.fixtureWatchdogTimerId = null;
-                    void finishIfStillCurrent("watchdog_timeout");
-                }, durationMs + watchdogGraceMs);
-            }
-        } catch (err) {
-            const msg = err && err.message ? err.message : String(err);
-            if (this.fixtureRunActive && this.fixtureRunToken === token) {
-                this.appendLog(`Fixture run failed: ${msg}`);
-                this.fixtureRunActive = false;
-                this.fixtureRunLabel = "";
-                this.restoreDemoLanguage();
-                if (this.audioStreaming) {
-                    this.stopMic();
-                }
-                this.updateControls();
-            }
-        }
+        return startLiveFixtureRun(this, fixture);
     }
 
     async decodeAudioArrayBufferToMono(bytes) {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!Ctx) throw new Error("Web Audio API not available in this browser.");
-        const ctx = new Ctx({ latencyHint: "interactive" });
-        try {
-            const audioBuf = await ctx.decodeAudioData(bytes.slice(0));
-            const channels = Math.max(1, Number(audioBuf.numberOfChannels || 1));
-            const frameLength = Math.max(0, Number(audioBuf.length || 0));
-            const mixed = new Float32Array(frameLength);
-            for (let c = 0; c < channels; c += 1) {
-                const data = audioBuf.getChannelData(c);
-                if (!data || data.length !== frameLength) continue;
-                for (let i = 0; i < frameLength; i += 1) mixed[i] += data[i];
-            }
-            if (channels > 1) {
-                for (let i = 0; i < frameLength; i += 1) mixed[i] /= channels;
-            }
-            return {
-                sampleRate: Number(audioBuf.sampleRate || 0) || 0,
-                samples: mixed,
-            };
-        } finally {
-            try {
-                await ctx.close();
-            } catch {
-                // ignore
-            }
-        }
+        return decodeFixtureAudioArrayBufferToMono(bytes);
     }
 
-    async streamDecodedAudioRealtime(pcmFrames, sampleRate, token, logLabel = "Audio inject") {
-        const targetRate = (this.audioService && Number(this.audioService.targetSampleRate)) || 16000;
-        const chunkMs = (this.audioService && Number(this.audioService.chunkMs)) || 40;
-        const chunkSamples = Math.max(80, Math.round((targetRate * chunkMs) / 1000));
-        const mono16k = downsampleBuffer(pcmFrames, Number(sampleRate || targetRate), targetRate);
-        const totalChunks = Math.ceil((mono16k.length || 0) / chunkSamples);
-        this.appendLog(`${String(logLabel || "Audio inject")} decoded: ${mono16k.length} samples @${targetRate}Hz (~${(mono16k.length / targetRate).toFixed(2)}s), chunks=${totalChunks}`);
-        let nextDue = performance.now();
-        for (let off = 0; off < mono16k.length; off += chunkSamples) {
-            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-            if (!this.sessionService || !this.sessionService.isOpen()) {
-                throw new Error("Live socket closed during audio inject");
-            }
-            const frame = mono16k.slice(off, Math.min(mono16k.length, off + chunkSamples));
-            const pcm = float32ToPcm16LeBuffer(frame);
-            const ok = this.sessionService.sendAudioChunk(pcm);
-            if (!ok) {
-                throw new Error("Socket not writable during audio inject");
-            }
-            nextDue += chunkMs;
-            const wait = Math.max(0, nextDue - performance.now());
-            if (wait > 0) {
-                await new Promise((resolve) => {
-                    window.setTimeout(resolve, wait);
-                });
-            } else {
-                await Promise.resolve();
-            }
-        }
+    async streamDecodedAudioRealtime(pcmFrames, sampleRate, token) {
+        return streamDecodedFixtureAudioRealtime(this, pcmFrames, sampleRate, token);
     }
 
     async startFixtureInjectRun(fixture) {
-        const cfg = fixture && typeof fixture === "object" ? fixture : null;
-        if (!cfg || !cfg.url) return;
-        if (this.fixtureRunActive || this.audioStreaming) {
-            this.appendLog("Fixture inject run ignored (already active or recording)");
-            return;
-        }
-
-        this.cancelFixtureRun("replace");
-        this.activateDemoLanguage(LIVE_DEMO_LANGUAGE_CODE);
-        this.fixtureRunActive = true;
-        this.fixtureRunLabel = String(cfg.id || "fixture") + " (inject)";
-        const token = this.fixtureRunToken + 1;
-        this.fixtureRunToken = token;
-        this.updateControls();
-
-        const waitMs = (ms) => new Promise((resolve) => {
-            window.setTimeout(resolve, Math.max(0, Number(ms || 0)));
-        });
-
-        try {
-            this.appendLog(`Fixture inject run start: ${cfg.id || "fixture"} -> ${cfg.url}`);
-            const connectStarted = await this.connectSession();
-            if (!connectStarted) throw new Error("Live session connect failed");
-            if (this.sessionService && this.sessionService.isConnecting()) {
-                const opened = await this.waitForSocketOpen(5000);
-                if (!opened) throw new Error("WebSocket did not open in time");
-            }
-            if (!this.sessionService || !this.sessionService.isOpen()) {
-                throw new Error("Live connection is not open");
-            }
-
-            this.stopRecordingTimer({ reset: true });
-            this.audioStreaming = true;
-            this.audioPaused = false;
-            this.awaitingLiveResult = false;
-            this.remoteState = "listening";
-            this.sessionService.sendControl("start");
-            this.setStatus("listening", "Fixture inject in progress.");
-            this.updatePartialPlaceholder();
-
-            this.currentFixtureMeta = {
-                fixture_id: String(cfg.id || "").trim(),
-                fixture_version: String(cfg.version || "").trim(),
-                fixture_test_mode: "inject",
-            };
-            if (this.sessionService && this.currentFixtureMeta.fixture_id) {
-                try {
-                    await this.sessionService.setFixtureMetadata(this.currentFixtureMeta);
-                    this.appendLog(`Fixture metadata registered (${this.currentFixtureMeta.fixture_id}, inject)`);
-                } catch (e) {
-                    const msg = e && e.message ? e.message : String(e);
-                    this.appendLog(`Fixture metadata register failed: ${msg}`);
-                }
-            }
-            this.updateQualityPlaceholder();
-            this.updateControls();
-
-            await waitMs(Number(cfg.startDelayMs || 0));
-            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-
-            const fixtureRes = await fetch(String(cfg.url), { cache: "no-store" });
-            if (!fixtureRes.ok) {
-                throw new Error(`Fixture fetch failed (${fixtureRes.status})`);
-            }
-            const decoded = await this.decodeAudioArrayBufferToMono(await fixtureRes.arrayBuffer());
-            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-            this.startRecordingTimer();
-            await this.streamDecodedAudioRealtime(decoded.samples, decoded.sampleRate, token, "Fixture inject");
-            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-
-            this.appendLog(`Fixture inject completed: ${cfg.id || "fixture"}; stopping recording...`);
-            this.fixtureStopTimerId = window.setTimeout(() => {
-                this.fixtureStopTimerId = null;
-                if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-                this.fixtureRunActive = false;
-                this.fixtureRunLabel = "";
-                try {
-                    void this.stopMic();
-                } finally {
-                    this.updateControls();
-                }
-            }, Math.max(0, Number(cfg.tailDelayMs || 0)));
-        } catch (err) {
-            const msg = err && err.message ? err.message : String(err);
-            if (this.fixtureRunActive && this.fixtureRunToken === token) {
-                this.appendLog(`Fixture inject run failed: ${msg}`);
-                this.fixtureRunActive = false;
-                this.fixtureRunLabel = "";
-                this.restoreDemoLanguage();
-                if (this.audioStreaming) {
-                    this.stopMic();
-                }
-                this.updateControls();
-            }
-        }
+        return startLiveFixtureInjectRun(this, fixture);
     }
 
     async startUploadedAudioInjectRun() {
-        const file = this.selectedInjectAudioFile instanceof File ? this.selectedInjectAudioFile : null;
-        if (!file) {
-            this.appendLog("Audio file inject ignored (no file selected)");
-            return;
-        }
-        if (this.fixtureRunActive || this.audioStreaming) {
-            this.appendLog("Audio file inject ignored (already active or recording)");
-            return;
-        }
-
-        this.cancelFixtureRun("replace");
-        this.fixtureRunActive = true;
-        this.fixtureRunLabel = `${String(file.name || "audio file")} (inject)`;
-        const token = this.fixtureRunToken + 1;
-        this.fixtureRunToken = token;
-        this.updateControls();
-
-        const waitMs = (ms) => new Promise((resolve) => {
-            window.setTimeout(resolve, Math.max(0, Number(ms || 0)));
-        });
-
-        try {
-            this.appendLog(`Audio file inject run start: ${String(file.name || "audio file")}`);
-            const connectStarted = await this.connectSession();
-            if (!connectStarted) throw new Error("Live session connect failed");
-            if (this.sessionService && this.sessionService.isConnecting()) {
-                const opened = await this.waitForSocketOpen(5000);
-                if (!opened) throw new Error("WebSocket did not open in time");
-            }
-            if (!this.sessionService || !this.sessionService.isOpen()) {
-                throw new Error("Live connection is not open");
-            }
-
-            this.stopRecordingTimer({ reset: true });
-            this.audioStreaming = true;
-            this.audioPaused = false;
-            this.awaitingLiveResult = false;
-            this.remoteState = "listening";
-            this.sessionService.sendControl("start");
-            this.setStatus("listening", "Audio file inject in progress.");
-            this.currentFixtureMeta = null;
-            this.updatePartialPlaceholder();
-            this.updateQualityPlaceholder();
-            this.updateControls();
-
-            await waitMs(700);
-            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-
-            const decoded = await this.decodeAudioArrayBufferToMono(await file.arrayBuffer());
-            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-            this.startRecordingTimer();
-            await this.streamDecodedAudioRealtime(decoded.samples, decoded.sampleRate, token, "Audio file inject");
-            if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-
-            this.appendLog(`Audio file inject completed: ${String(file.name || "audio file")}; stopping recording...`);
-            this.fixtureStopTimerId = window.setTimeout(() => {
-                this.fixtureStopTimerId = null;
-                if (!this.fixtureRunActive || this.fixtureRunToken !== token) return;
-                this.fixtureRunActive = false;
-                this.fixtureRunLabel = "";
-                try {
-                    void this.stopMic();
-                } finally {
-                    this.updateControls();
-                }
-            }, 1200);
-        } catch (err) {
-            const msg = err && err.message ? err.message : String(err);
-            if (this.fixtureRunActive && this.fixtureRunToken === token) {
-                this.appendLog(`Audio file inject run failed: ${msg}`);
-                this.fixtureRunActive = false;
-                this.fixtureRunLabel = "";
-                if (this.audioStreaming) {
-                    this.stopMic();
-                }
-                this.updateControls();
-            }
-        }
+        return startUploadedLiveAudioInjectRun(this);
     }
 
     stopMic() {
-        this.cancelFixtureRun("user_stop");
-        this.stopAudioCapture({ quiet: true });
+        this.cancelFixtureRun();
+        this.stopAudioCapture();
         this.stopRecordingTimer({ reset: false });
 
         if (this.sessionService) {
-            const ok = this.sessionService.sendControl("stop");
-            if (!ok) {
-                this.appendLog("Failed to send stop control (socket not open)");
-            }
+            this.sessionService.sendControl("stop");
         }
 
         this.awaitingLiveResult = true;
@@ -3096,12 +1909,9 @@ export class LiveView {
         this.updateControls();
     }
 
-    stopAudioCapture(options = {}) {
-        const quiet = options.quiet === true;
-
+    stopAudioCapture() {
         if (this.audioService && this.audioService.isCapturing()) {
             this.audioService.stop();
-            if (!quiet) this.appendLog("Microphone capture stopped");
         }
 
         this.audioStreaming = false;
@@ -3110,8 +1920,8 @@ export class LiveView {
     }
 
     cleanupSession(reason = "manual_close", options = {}) {
-        this.cancelFixtureRun(`cleanup:${reason}`);
-        this.stopAudioCapture({ quiet: true });
+        this.cancelFixtureRun();
+        this.stopAudioCapture();
         this.stopRecordingTimer({ reset: true });
         this.awaitingLiveResult = false;
 
@@ -3131,14 +1941,10 @@ export class LiveView {
         const msgType = String(type || "").trim().toLowerCase();
         if (!msgType) return;
         if (!this.sessionService || !this.sessionService.isOpen()) {
-            this.appendLog(`Cannot send '${msgType}', websocket is not open.`);
             return;
         }
 
-        const ok = this.sessionService.sendControl(msgType);
-        if (!ok) {
-            this.appendLog(`Failed to send '${msgType}'.`);
-        }
+        this.sessionService.sendControl(msgType);
     }
 
     startRecordingTimer() {
@@ -3272,12 +2078,10 @@ export class LiveView {
         try {
             payload = JSON.parse(String(raw || ""));
         } catch {
-            this.appendLog(`Invalid JSON from server: ${String(raw || "")}`);
             return;
         }
 
         const t = String(payload.type || "").toLowerCase();
-        this.appendLog(`Server -> ${t || "unknown"}`);
 
         if (t === "ready") {
             this.remoteState = "ready";
@@ -3303,18 +2107,18 @@ export class LiveView {
         } else if (t === "stats") {
             this.applyVadStateFromStats(payload);
         } else if (t === "ended") {
-            this.stopAudioCapture({ quiet: true });
+            this.stopAudioCapture();
             this.stopRecordingTimer({ reset: false });
             this.awaitingLiveResult = false;
             this.remoteState = "ended";
             this.setStatus("ready", `Recording finished (${payload.reason || "unknown"}).`);
             this.updatePartialPlaceholder();
-            void this.refreshLiveResult({ quiet: true });
+            void this.refreshLiveResult();
         } else if (t === "error") {
             const msg = String(payload.message || "Live error");
             this.setStatus("error", msg);
             if (payload.fatal) {
-                this.stopAudioCapture({ quiet: true });
+                this.stopAudioCapture();
                 this.stopRecordingTimer({ reset: false });
             }
             if (this.app && typeof this.app.showAlert === "function") {

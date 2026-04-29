@@ -1,13 +1,5 @@
 import { fetchServiceSettings, fetchUiSettings } from "../api.js";
-
-function escHtml(value) {
-    return String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-}
+import { escHtml } from "../utils.js";
 
 function fmtUtcOrDash(raw) {
     const s = String(raw || "").trim();

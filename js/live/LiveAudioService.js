@@ -109,7 +109,6 @@ export class LiveAudioService {
         this.chunkMs = Number(options.chunkMs || DEFAULT_CHUNK_MS);
         this.onChunk = typeof options.onChunk === "function" ? options.onChunk : null;
         this.onError = typeof options.onError === "function" ? options.onError : null;
-        this.onLog = typeof options.onLog === "function" ? options.onLog : null;
 
         this.mediaStream = null;
         this.audioContext = null;
@@ -121,20 +120,14 @@ export class LiveAudioService {
         this.analyserNode = null;
         this.analyserDataArray = null;
 
-        this.mode = "idle";
         this.started = false;
         this.paused = true;
 
         this.inputSampleRate = 0;
         this.chunkSamples = Math.max(80, Math.round((this.targetSampleRate * this.chunkMs) / 1000));
         this.pendingSamples = new Float32Array(0);
-        this.sentChunks = 0;
 
         this.settings = { ...DEFAULT_SETTINGS };
-    }
-
-    log(msg) {
-        if (this.onLog) this.onLog(String(msg || ""));
     }
 
     fail(err) {
@@ -153,15 +146,14 @@ export class LiveAudioService {
         try {
             const devices = await navigator.mediaDevices.enumerateDevices();
             return devices.filter(d => d.kind === 'audioinput');
-        } catch (e) {
+        } catch {
             return [];
         }
     }
 
-    async _tryGetUserMedia(constraints, label) {
+    async _tryGetUserMedia(constraints) {
         try {
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            this.log(`Mic acquired${label ? ` (${label})` : ''}`);
             return stream;
         } catch (err) {
             const name = String(err && err.name ? err.name : "").trim();
@@ -185,7 +177,7 @@ export class LiveAudioService {
 
         if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
             throw new Error("Microphone API not available in this browser.");
-        }        
+        }
         // Strategy 1: Try standard constraints first
         const standardConstraints = {
             audio: {
@@ -197,52 +189,45 @@ export class LiveAudioService {
             },
             video: false,
         };
-        
-        let result = await this._tryGetUserMedia(standardConstraints, "standard constraints");
+
+        let result = await this._tryGetUserMedia(standardConstraints);
         if (result instanceof MediaStream) {
             this.mediaStream = result;
         } else if (result.isPermissionError) {
             throw result.error;
         } else {
             // Strategy 2: Get list of available devices and try each one
-            this.log(`Standard constraints failed (${result.error && result.error.message ? result.error.message : String(result.error)}); scanning for available mics...`);
-            
             const devices = await this._enumerateAudioInputs();
             const deviceIds = devices
                 .filter(d => d.deviceId)
-                .map(d => ({ id: d.deviceId, label: d.label || d.deviceId.slice(0, 8) }));
-            
-            this.log(`Found ${deviceIds.length} audio input(s)`);
-            
+                .map(d => d.deviceId);
+
             let acquiredStream = null;
-            
+
             // Try each device with relaxed constraints
-            for (const device of deviceIds) {
-                this.log(`Trying device: ${device.label}...`);
+            for (const deviceId of deviceIds) {
                 const deviceConstraints = {
                     audio: {
-                        deviceId: { exact: device.id },
+                        deviceId: { exact: deviceId },
                         noiseSuppression: this.settings.noiseSuppression,
                         echoCancellation: this.settings.echoCancellation,
                         autoGainControl: this.settings.autoGainControl,
                     },
                     video: false,
                 };
-                
-                result = await this._tryGetUserMedia(deviceConstraints, `device ${device.label}`);
+
+                result = await this._tryGetUserMedia(deviceConstraints);
                 if (result instanceof MediaStream) {
                     acquiredStream = result;
-                    this.log(`Successfully acquired mic: ${device.label}`);
                     break;
                 }
                 if (result.isPermissionError) {
                     throw result.error;
                 }
             }
-            
+
             // Strategy 3: If no specific device worked, try default
             if (!acquiredStream) {
-                this.log("No specific device worked; trying default mic...");
                 const defaultConstraints = {
                     audio: {
                         noiseSuppression: this.settings.noiseSuppression,
@@ -251,19 +236,18 @@ export class LiveAudioService {
                     },
                     video: false,
                 };
-                
-                result = await this._tryGetUserMedia(defaultConstraints, "default");
+
+                result = await this._tryGetUserMedia(defaultConstraints);
                 if (result instanceof MediaStream) {
                     acquiredStream = result;
                 } else if (result.isPermissionError) {
                     throw result.error;
                 }
             }
-            
+
             // Strategy 4: Last resort - any audio
             if (!acquiredStream) {
-                this.log("Default failed; trying any available audio...");
-                result = await this._tryGetUserMedia({ audio: true, video: false }, "any audio");
+                result = await this._tryGetUserMedia({ audio: true, video: false });
                 if (result instanceof MediaStream) {
                     acquiredStream = result;
                 } else if (result.isPermissionError) {
@@ -272,7 +256,7 @@ export class LiveAudioService {
                     throw result.error;
                 }
             }
-            
+
             this.mediaStream = acquiredStream;
         }
 
@@ -307,13 +291,12 @@ export class LiveAudioService {
                 // Chain: source -> preGain -> processor
                 this.preGainNode.connect(node);
                 this.processorNode = node;
-                this.mode = "worklet";
                 workletReady = true;
 
                 // Add analyser for VU meter (after preGain so it reflects the gain)
                 this.setupAnalyser();
-            } catch (err) {
-                this.log(`AudioWorklet unavailable, fallback to ScriptProcessor (${err && err.message ? err.message : err})`);
+            } catch {
+                // Fall back to ScriptProcessor below.
             }
         }
 
@@ -354,7 +337,6 @@ export class LiveAudioService {
 
             this.processorNode = node;
             this.fallbackGainNode = muteGain;
-            this.mode = "script_processor";
 
             // Add analyser for VU meter (after preGain)
             this.setupAnalyser();
@@ -369,23 +351,18 @@ export class LiveAudioService {
         }
 
         this.pendingSamples = new Float32Array(0);
-        this.sentChunks = 0;
         this.started = true;
         this.paused = false;
-
-        this.log(`Mic capture started (${this.mode}, input ${Math.round(this.inputSampleRate)}Hz -> ${Math.round(this.targetSampleRate)}Hz)`);
     }
 
     pause() {
         if (!this.started) return;
         this.paused = true;
-        this.log("Mic capture paused");
     }
 
     resume() {
         if (!this.started) return;
         this.paused = false;
-        this.log("Mic capture resumed");
     }
 
     handleFloatChunk(rawChunk) {
@@ -404,7 +381,6 @@ export class LiveAudioService {
                 this.pendingSamples = this.pendingSamples.slice(this.chunkSamples);
                 const pcm = float32ToPcm16LeBuffer(frame);
                 if (this.onChunk) this.onChunk(pcm);
-                this.sentChunks += 1;
             }
         } catch (err) {
             this.fail(err);
@@ -491,10 +467,8 @@ export class LiveAudioService {
         }
         this.analyserDataArray = null;
 
-        this.mode = "idle";
         this.inputSampleRate = 0;
         this.pendingSamples = new Float32Array(0);
-        this.log(`Mic capture stopped (${this.sentChunks} chunks sent)`);
     }
 
     setupAnalyser() {
@@ -507,8 +481,8 @@ export class LiveAudioService {
             // Connect preGainNode to analyser so VU meter reflects the gain
             // (analyser is not connected to destination - it's just for monitoring)
             this.preGainNode.connect(this.analyserNode);
-        } catch (err) {
-            this.log(`Analyser setup failed: ${err && err.message ? err.message : err}`);
+        } catch {
+            // VU meter is optional; capture can continue without it.
         }
     }
 

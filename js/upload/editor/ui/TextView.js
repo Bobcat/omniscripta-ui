@@ -1,6 +1,6 @@
 
-import { secondsToTimecodeWhole } from '../utils.js';
-import { buildSpeakerParagraphs } from '../text/paragraphs.js';
+import { secondsToTimecodeWhole } from '../../../utils.js';
+import { buildSpeakerParagraphs } from '../../../text/paragraphs.js';
 
 const COMPACT_META_BREAKPOINT_PX = 760;
 

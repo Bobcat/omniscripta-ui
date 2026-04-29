@@ -1,5 +1,5 @@
 
-import { _srtTcToSeconds } from '../utils.js';
+import { _srtTcToSeconds } from '../../../utils.js';
 
 export class TopicsView {
     constructor({ containerId, onSeek }) {
@@ -7,9 +7,6 @@ export class TopicsView {
         this.onSeek = onSeek;
         this.topics = [];
     }
-
-    // Old load() logic removed. Topics are now injected by server into SRT metadata and extracted by app.js.
-    // This component is now purely for rendering.
 
     render() {
         if (!this.container) return;

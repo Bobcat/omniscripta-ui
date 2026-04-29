@@ -1,10 +1,10 @@
-import { UploadView } from "./components/UploadView.js";
-import { EditorView } from "./components/EditorView.js";
-import { SettingsView } from "./components/SettingsView.js";
-import { LiveView } from "./components/LiveView.js";
-import { LiveBenchmarkView } from "./components/LiveBenchmarkView.js";
-import { ProjectService } from "./services/ProjectService.js";
-import { FileHandleService } from "./services/FileHandleService.js";
+import { UploadView } from "./upload/UploadView.js";
+import { EditorView } from "./upload/editor/EditorView.js";
+import { SettingsView } from "./settings/SettingsView.js";
+import { LiveView } from "./live/LiveView.js";
+import { LiveBenchmarkView } from "./live/LiveBenchmarkView.js";
+import { ProjectService } from "./upload/projects/ProjectService.js";
+import { FileHandleService } from "./upload/files/FileHandleService.js";
 import { fetchJobStatus } from "./api.js";
 import { RouterCore, ShellState, DialogService, DialogAnchor, ModalController, bindMobileSidebarDismiss, createShellPersistence } from "@spa-foundation/core";
 
@@ -1153,7 +1153,7 @@ class App {
             // Create separator and container
             const separator = document.createElement('div');
             separator.className = 'separator projects-separator';
-            separator.textContent = 'Recent projects'; // Changed case
+            separator.textContent = 'Recent projects';
 
             container = document.createElement('ul');
             container.id = 'sidebar-projects';
@@ -1256,7 +1256,6 @@ class App {
                         } catch (err) {
                             console.warn("Failed to re-open local file:", err);
                             this.showAlert("File Missing", "Cannot re-open file (moved or deleted). Please open it again.");
-                            // Optional: remove handle from DB?
                         }
                     } else {
                         if (!this.canUseFileSystem()) {

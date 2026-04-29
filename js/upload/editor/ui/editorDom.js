@@ -12,7 +12,6 @@ export function getEditorBootDom() {
         modeTextBtn: document.getElementById('modeTextBtn'),
         saveBtn: document.getElementById('saveBtn'),
         saveAsBtn: document.getElementById('saveAsBtn'),
-        exportDocBtn: document.getElementById('exportDocBtn'),
         historyBtn: document.getElementById('historyBtn'),
         historyModal: document.getElementById('historyModal'),
         closeHistoryBtn: document.getElementById('closeHistoryBtn'),

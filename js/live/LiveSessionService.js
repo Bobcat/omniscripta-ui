@@ -10,7 +10,6 @@ export class LiveSessionService {
         this.onClose = typeof options.onClose === "function" ? options.onClose : null;
         this.onError = typeof options.onError === "function" ? options.onError : null;
         this.onMessage = typeof options.onMessage === "function" ? options.onMessage : null;
-        this.onLog = typeof options.onLog === "function" ? options.onLog : null;
 
         this._onSocketOpen = null;
         this._onSocketClose = null;
@@ -31,12 +30,6 @@ export class LiveSessionService {
             ? String(this.sessionPayload.session.session_id || "")
             : "";
         return current || String(this.lastSessionId || "");
-    }
-
-    log(line) {
-        if (this.onLog) {
-            this.onLog(String(line || ""));
-        }
     }
 
     resolveWsUrl(payload) {
@@ -79,9 +72,6 @@ export class LiveSessionService {
         this.sessionPayload = await createLiveSession(options);
         this.lastSessionId = this.getSessionId();
         const wsUrl = this.resolveWsUrl(this.sessionPayload);
-
-        this.log(`Session created: ${this.getSessionId() || "(unknown)"}`);
-        this.log(`Connecting websocket: ${wsUrl}`);
 
         this.socket = new WebSocket(wsUrl);
         this.socket.binaryType = "arraybuffer";
@@ -130,20 +120,14 @@ export class LiveSessionService {
         if (!msgType) return false;
         if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return false;
 
-        const shouldLog = options.log !== false;
         const payload = options && typeof options.payload === "object"
             ? { ...options.payload }
             : {};
         payload.type = msgType;
         try {
             this.socket.send(JSON.stringify(payload));
-            if (shouldLog) this.log(`Client -> ${msgType}`);
             return true;
-        } catch (err) {
-            if (shouldLog) {
-                const msg = err && err.message ? err.message : String(err);
-                this.log(`Failed to send '${msgType}': ${msg}`);
-            }
+        } catch {
             return false;
         }
     }

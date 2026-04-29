@@ -4,8 +4,8 @@
  * Functions receive a `ctx` object for shared editor state.
  * Pure utility functions take explicit parameters.
  */
-import { secondsToTimecodeWhole } from "../utils.js";
-import { secondsToSrtTimecode } from "./editorSave.js";
+import { secondsToTimecodeWhole } from "../../utils.js";
+import { secondsToSrtTimecode } from "./export/editorSave.js";
 
 // ========================
 // Pure utilities (no ctx)

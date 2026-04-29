@@ -1,5 +1,5 @@
 
-import { secondsToTimecodeWhole } from "../utils.js";
+import { secondsToTimecodeWhole } from "../../../utils.js";
 
 export class AudioPlayer {
     constructor(options) {

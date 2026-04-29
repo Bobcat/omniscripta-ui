@@ -1,5 +1,5 @@
 import { getApiUrl } from "../api.js";
-import { ProjectService } from "../services/ProjectService.js";
+import { ProjectService } from "./projects/ProjectService.js";
 import { TRANSCRIPT_LANGUAGES } from "../constants/languages.js";
 
 export class UploadView {

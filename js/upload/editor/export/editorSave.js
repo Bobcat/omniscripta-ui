@@ -4,8 +4,8 @@
  * All functions that need shared editor state receive a `ctx` object.
  * Pure utility functions take explicit parameters.
  */
-import { getApiUrl } from "../api.js";
-import { embedMetadata } from "../utils.js";
+import { getApiUrl } from "../../../api.js";
+import { embedMetadata } from "../../../utils.js";
 
 // ========================
 // Pure utilities (no ctx)

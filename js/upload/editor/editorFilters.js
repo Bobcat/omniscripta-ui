@@ -1,5 +1,5 @@
 import { ModalController } from "@spa-foundation/core";
-import { normSpeaker } from "../utils.js";
+import { normSpeaker } from "../../utils.js";
 
 export function isFilterActive(filterState) {
     return (filterState.speakers.size > 0) || (filterState.changedMode !== 'all') || (filterState.doneMode !== 'all');

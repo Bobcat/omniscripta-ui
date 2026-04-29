@@ -4,7 +4,7 @@
  * Functions receive a `ctx` object for shared editor state.
  * DOM elements are looked up via ctx or getElementById.
  */
-import { safePreview } from "../utils.js";
+import { safePreview } from "../../utils.js";
 
 // ========================
 // Pure utilities (no ctx)
@@ -64,10 +64,6 @@ export function applyReplacementString(matchObj, replaceStr, allowDollarExpansio
  *   recomputeChangedSegIds(), pruneForcedVisibleIds(),
  *   resetFindDrag(), onFindDragUp(), player
  */
-
-export function isFindOpen(ctx) {
-    return ctx.findModal && !ctx.findModal.classList.contains('hidden');
-}
 
 export function setFindStatus(ctx, msg, isError = false) {
     if (!ctx.findStatus) return;

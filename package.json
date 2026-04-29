@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build:js": "esbuild js/app.js --bundle --outfile=/tmp/omniscripta-ui-check-app.bundle.js --target=es2020 --log-level=error",
+    "build:css": "esbuild css/style.css --bundle --outfile=/tmp/omniscripta-ui-check-style.css --loader:.svg=dataurl --target=es2020 --log-level=error",
+    "check": "npm run build:js && npm run build:css",
+    "test": "npm run check"
   },
   "repository": {
     "type": "git",

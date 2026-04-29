@@ -5,6 +5,15 @@ export function safePreview(s, n = 70) {
     return t.slice(0, n - 1) + '…';
 }
 
+export function escHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
 export function normSpeaker(v) {
     return String(v || '').trim();
 }

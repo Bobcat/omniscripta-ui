@@ -1,14 +1,13 @@
-import { loadSettings as apiLoadSettings, saveSettings as apiSaveSettings, fetchJobStatus as apiFetchJobStatus, fetchSrt as apiFetchSrt, getApiUrl } from "../api.js";
-import { safePreview, normSpeaker, secondsToTimecodeWhole, hashString, _parseSrt, extractMetadata } from "../utils.js";
-import { TextView } from "../components/TextView.js";
-import { TopicsView } from "../components/TopicsView.js";
-import { AudioPlayer } from "../components/AudioPlayer.js";
+import { loadSettings as apiLoadSettings, saveSettings as apiSaveSettings, fetchJobStatus as apiFetchJobStatus, fetchSrt as apiFetchSrt, getApiUrl } from "../../api.js";
+import { safePreview, normSpeaker, secondsToTimecodeWhole, hashString, _parseSrt, extractMetadata } from "../../utils.js";
+import { TextView } from "./ui/TextView.js";
+import { TopicsView } from "./ui/TopicsView.js";
+import { AudioPlayer } from "./ui/AudioPlayer.js";
 import {
   secondsToSrtTimecode,
   suggestSrtName as _suggestSrtName,
-  saveSrtLocally as _saveSrtLocally,
-  exportDocumentsLocally as _exportDocumentsLocally
-} from "./editorSave.js";
+  saveSrtLocally as _saveSrtLocally
+} from "./export/editorSave.js";
 import {
   findNext as _findNext,
   replaceCurrent as _replaceCurrent, openReplaceAllConfirm as _openReplaceAllConfirm,
@@ -24,10 +23,10 @@ import {
   splitSegment as _splitSegment
 } from "./editorSegments.js";
 import { actionToDebugJson, timecodeToSeconds, nowHHMMSS } from "./editorHelpers.js";
-import { getEditorBootDom } from "./editorDom.js";
-import { setupHistoryModal, setupHelpModal, setupSettingsModal } from "./editorModals.js";
+import { getEditorBootDom } from "./ui/editorDom.js";
+import { setupHistoryModal, setupHelpModal, setupSettingsModal } from "./ui/editorModals.js";
 import { ModalController, createDialogDragController } from "@spa-foundation/core";
-import { createSpeakerDropdownController } from "./editorSpeakerDropdown.js";
+import { createSpeakerDropdownController } from "./ui/editorSpeakerDropdown.js";
 import {
   wireEditorHotkeys as shortcutsWireEditorHotkeys,
 } from "./editorShortcuts.js";
@@ -56,6 +55,7 @@ import {
   wireFilterControlEvents as filtersWireFilterControlEvents,
   createFilterApplyScheduler as filtersCreateFilterApplyScheduler,
 } from "./editorFilters.js";
+import { setupExportModal } from "./export/editorExportModal.js";
 // ... imports ...
 export function mountEditor(options = {}) {
   // Capture options if needed
@@ -83,7 +83,6 @@ export function mountEditor(options = {}) {
     modeTextBtn,
     saveBtn,
     saveAsBtn,
-    exportDocBtn,
     historyBtn,
     historyModal,
     closeHistoryBtn,
@@ -1013,91 +1012,12 @@ export function mountEditor(options = {}) {
     setAutoAssignSplitTs: (value) => { autoAssignSplitTs = value; },
   });
 
-  const exportModal = document.getElementById('exportModal');
-  const exportCard = exportModal ? exportModal.querySelector('.export-card') : null;
-  const exportDragHandle = document.getElementById('exportDragHandle');
-  const cancelExportBtn = document.getElementById('cancelExportBtn');
-  const downloadExportBtn = document.getElementById('downloadExportBtn');
-  const exportFormatList = document.getElementById('exportFormatList');
-
-  const exportDrag = createDialogDragController((x, y) => {
-    if (exportCard) {
-      exportCard.style.setProperty('--drag-x', `${x}px`);
-      exportCard.style.setProperty('--drag-y', `${y}px`);
-    }
+  const { exportModal, closeExportModal } = setupExportModal({
+    flushPendingText,
+    player,
+    getExportContext: () => ctx,
+    showToast,
   });
-
-  function resetExportDrag() { exportDrag.reset(); }
-  function onExportDragUp() { exportDrag.onUp(); }
-
-  if (exportDragHandle) {
-    exportDragHandle.addEventListener('mousedown', exportDrag.onMouseDown);
-  }
-
-  const exportModalController = exportModal
-    ? new ModalController(exportModal, {
-      backdropEvent: 'mousedown',
-      onBackdrop: () => closeExportModal(),
-    })
-    : null;
-
-  function getSelectedExportFormats() {
-    if (!exportFormatList) return [];
-    const checkboxes = exportFormatList.querySelectorAll('input[type="checkbox"]:not([disabled])');
-    const selected = [];
-    for (const cb of checkboxes) {
-      if (cb.checked) selected.push(String(cb.value || '').trim().toLowerCase());
-    }
-    return selected;
-  }
-
-  function syncExportDownloadButton() {
-    if (!downloadExportBtn) return;
-    downloadExportBtn.disabled = getSelectedExportFormats().length === 0;
-  }
-
-  function openExportModal() {
-    if (!exportModalController) return;
-    flushPendingText();
-    try { player.pause(); } catch { }
-    resetExportDrag();
-    syncExportDownloadButton();
-    exportModalController.open();
-  }
-
-  function closeExportModal() {
-    if (!exportModalController) return;
-    onExportDragUp();
-    exportModalController.close();
-  }
-
-  if (exportDocBtn) exportDocBtn.addEventListener('click', openExportModal);
-  if (cancelExportBtn) cancelExportBtn.addEventListener('click', closeExportModal);
-  if (exportFormatList) {
-    exportFormatList.addEventListener('change', () => syncExportDownloadButton());
-  }
-  if (downloadExportBtn) {
-    downloadExportBtn.addEventListener('click', async () => {
-      const formats = getSelectedExportFormats();
-      if (formats.length === 0) {
-        showToast("Select at least one format");
-        return;
-      }
-      try {
-        const result = await _exportDocumentsLocally(formats, ctx);
-        if (result && result.archive) {
-          showToast(`Downloaded: ${result.archiveName || "export.zip"}`);
-        } else {
-          const names = (result && Array.isArray(result.downloaded)) ? result.downloaded : [];
-          showToast(`Downloaded: ${names[0] || "document"}`);
-        }
-        closeExportModal();
-      } catch (e) {
-        const msg = (e && e.message) ? e.message : "Export failed";
-        showToast(msg);
-      }
-    });
-  }
 
 
   let segments = [];

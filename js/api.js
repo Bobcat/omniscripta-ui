@@ -113,14 +113,6 @@ export async function createLiveSession(options = {}) {
     return await r.json();
 }
 
-export async function fetchLiveSession(sessionId) {
-    const sid = String(sessionId || "").trim();
-    if (!sid) throw new Error("Missing session id");
-    const r = await fetch(getApiUrl(`/api/demo/live/sessions/${encodeURIComponent(sid)}`), { cache: "no-store" });
-    if (!r.ok) throw new Error(`Fetch live session failed: ${r.status}`);
-    return await r.json();
-}
-
 export async function fetchLiveBenchmarks(options = {}) {
     const qs = new URLSearchParams();
     const limit = Number(options && options.limit);
